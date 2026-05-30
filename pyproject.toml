@@ -16,7 +16,7 @@ dependencies = [
     "psycopg[binary]>=3.2",
     # data / ml
     "pandas>=2.2",
-    "numpy>=1.26",
+    "numpy>=2.4.6",
     "scikit-learn>=1.5",
     "statsmodels>=0.14",
     "joblib>=1.4",
