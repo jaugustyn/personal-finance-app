@@ -1,0 +1,68 @@
+"use client";
+
+import {
+  CartesianGrid,
+  ComposedChart,
+  Legend,
+  Line,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
+import { useMemo } from "react";
+import type { ForecastPoint } from "@/lib/api";
+import { formatCurrency, formatMonth } from "@/lib/utils";
+import { tooltipStyle } from "./chart-utils";
+
+export function ForecastChart({
+  history,
+  forecast,
+}: {
+  history: ForecastPoint[];
+  forecast: ForecastPoint[];
+}) {
+  const data = useMemo(
+    () => [
+      ...history.map((h) => ({
+        label: formatMonth(String(h.month).slice(0, 7)),
+        historia: Number(h.amount),
+        prognoza: null as number | null,
+      })),
+      ...forecast.map((f) => ({
+        label: formatMonth(String(f.month).slice(0, 7)),
+        historia: null as number | null,
+        prognoza: Number(f.amount),
+      })),
+    ],
+    [history, forecast],
+  );
+  return (
+    <ResponsiveContainer width="100%" height={320}>
+      <ComposedChart data={data} margin={{ top: 10, right: 10, bottom: 0, left: 0 }}>
+        <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+        <XAxis dataKey="label" tick={{ fontSize: 12 }} stroke="hsl(var(--muted-foreground))" />
+        <YAxis
+          tick={{ fontSize: 12 }}
+          stroke="hsl(var(--muted-foreground))"
+          tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`}
+        />
+        <Tooltip
+          contentStyle={tooltipStyle()}
+          formatter={(value) => (value == null ? "-" : formatCurrency(Number(value)))}
+        />
+        <Legend wrapperStyle={{ fontSize: 12 }} />
+        <Line type="monotone" dataKey="historia" name="Historia" stroke="hsl(var(--chart-2))" strokeWidth={2} connectNulls />
+        <Line
+          type="monotone"
+          dataKey="prognoza"
+          name="Prognoza"
+          stroke="hsl(var(--chart-4))"
+          strokeWidth={2}
+          strokeDasharray="5 5"
+          connectNulls
+        />
+      </ComposedChart>
+    </ResponsiveContainer>
+  );
+}

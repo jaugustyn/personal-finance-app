@@ -1,0 +1,2 @@
+"""Dashboard statistics service."""
+

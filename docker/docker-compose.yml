@@ -1,0 +1,80 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-finance}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-finance}
+      POSTGRES_DB: ${POSTGRES_DB:-finance}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-finance}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.api
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-finance}:${POSTGRES_PASSWORD:-finance}@postgres:5432/${POSTGRES_DB:-finance}
+      # Ollama runs on the host machine to spare the dev box.
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.1:8b-instruct-q4_K_M}
+      LLM_ENABLED: ${LLM_ENABLED:-true}
+      AUTH_USERNAME: ${AUTH_USERNAME:-}
+      AUTH_PASSWORD: ${AUTH_PASSWORD:-}
+      SCHEDULER_ENABLED: ${SCHEDULER_ENABLED:-false}
+      RETRAIN_CRON_HOUR: ${RETRAIN_CRON_HOUR:-3}
+      RETRAIN_CRON_MINUTE: ${RETRAIN_CRON_MINUTE:-0}
+      RETRAIN_ESTIMATOR: ${RETRAIN_ESTIMATOR:-linear_svc}
+      APP_ENV: ${APP_ENV:-dev}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      CORS_ALLOW_ORIGINS: ${CORS_ALLOW_ORIGINS:-http://localhost:3000}
+      RATE_LIMIT_PER_MINUTE: ${RATE_LIMIT_PER_MINUTE:-120}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    volumes:
+      # Make trained model + data dir available inside the container.
+      - ../data:/app/data
+    command: >
+      sh -c "alembic upgrade head &&
+             uvicorn apps.api.main:app --host 0.0.0.0 --port 8000"
+
+  ui:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.ui
+    environment:
+      API_BASE_URL: http://api:8000
+      AUTH_USERNAME: ${AUTH_USERNAME:-}
+      AUTH_PASSWORD: ${AUTH_PASSWORD:-}
+    depends_on:
+      - api
+    ports:
+      - "8501:8501"
+
+  web:
+    build:
+      context: ..
+      dockerfile: docker/web.Dockerfile
+    environment:
+      API_URL: http://api:8000
+      API_USERNAME: ${AUTH_USERNAME:-}
+      API_PASSWORD: ${AUTH_PASSWORD:-}
+      NEXT_PUBLIC_LEGACY_UI_URL: ${LEGACY_UI_URL:-http://localhost:8501}
+    depends_on:
+      - api
+    ports:
+      - "3000:3000"
+
+volumes:
+  postgres-data:

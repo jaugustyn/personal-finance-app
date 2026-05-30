@@ -1,0 +1,184 @@
+"""Assets portfolio: CRUD, refresh prices, history, and Sankey flow."""
+from __future__ import annotations
+
+from datetime import date
+from decimal import Decimal
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel, Field
+from sqlalchemy.orm import Session
+
+from finance.assets import service as asset_service
+from finance.db import get_session
+
+router = APIRouter(prefix="/assets", tags=["assets"])
+fetch_quote = asset_service.asset_quotes.fetch_quote
+
+
+# --- Schemas ---------------------------------------------------------------
+
+
+class AssetIn(BaseModel):
+    symbol: str = Field(min_length=1, max_length=32)
+    name: str = ""
+    asset_class: str = "equity"
+    currency: str = "USD"
+    quantity: Decimal = Decimal("0")
+    cost_basis: Decimal = Decimal("0")
+    notes: str | None = None
+
+
+class AssetPatch(BaseModel):
+    name: str | None = None
+    asset_class: str | None = None
+    currency: str | None = None
+    quantity: Decimal | None = None
+    cost_basis: Decimal | None = None
+    notes: str | None = None
+
+
+class AssetOut(BaseModel):
+    id: int
+    symbol: str
+    name: str
+    asset_class: str
+    currency: str
+    quantity: Decimal
+    cost_basis: Decimal
+    notes: str | None
+    last_price: Decimal | None
+    last_value_pln: Decimal | None
+    last_snapshot_date: date | None
+    pnl_pln: Decimal | None
+
+
+class PortfolioSummary(BaseModel):
+    total_value_pln: Decimal
+    total_cost_pln: Decimal
+    pnl_pln: Decimal
+    pnl_pct: float
+    asset_count: int
+    last_refresh: date | None
+
+
+class HistoryPoint(BaseModel):
+    snapshot_date: date
+    value_pln: Decimal
+
+
+class SankeyNode(BaseModel):
+    name: str
+
+
+class SankeyLink(BaseModel):
+    source: int
+    target: int
+    value: Decimal
+
+
+class SankeyData(BaseModel):
+    nodes: list[SankeyNode]
+    links: list[SankeyLink]
+
+
+# --- CRUD endpoints --------------------------------------------------------
+
+
+@router.get("", response_model=list[AssetOut])
+def list_assets(session: Session = Depends(get_session)) -> list[AssetOut]:
+    return [AssetOut(**asset.__dict__) for asset in asset_service.list_assets(session)]
+
+
+@router.get("/summary", response_model=PortfolioSummary)
+def summary(session: Session = Depends(get_session)) -> PortfolioSummary:
+    return PortfolioSummary(**asset_service.portfolio_summary(session).__dict__)
+
+
+@router.post("", response_model=AssetOut, status_code=201)
+def create_asset(payload: AssetIn, session: Session = Depends(get_session)) -> AssetOut:
+    asset = asset_service.create_asset(
+        session,
+        symbol=payload.symbol,
+        name=payload.name,
+        asset_class=payload.asset_class,
+        currency=payload.currency,
+        quantity=payload.quantity,
+        cost_basis=payload.cost_basis,
+        notes=payload.notes,
+    )
+    if asset is None:
+        raise HTTPException(status_code=409, detail="Symbol already exists")
+    return AssetOut(**asset_service.to_asset_view(session, asset).__dict__)
+
+
+@router.patch("/{asset_id}", response_model=AssetOut)
+def patch_asset(
+    asset_id: int,
+    payload: AssetPatch,
+    session: Session = Depends(get_session),
+) -> AssetOut:
+    asset = asset_service.patch_asset(
+        session,
+        asset_id,
+        payload.model_dump(exclude_unset=True),
+    )
+    if asset is None:
+        raise HTTPException(status_code=404, detail="Asset not found")
+    return AssetOut(**asset_service.to_asset_view(session, asset).__dict__)
+
+
+@router.delete("/{asset_id}", status_code=204)
+def delete_asset(asset_id: int, session: Session = Depends(get_session)) -> None:
+    if not asset_service.delete_asset(session, asset_id):
+        raise HTTPException(status_code=404, detail="Asset not found")
+
+
+class RefreshResult(BaseModel):
+    refreshed: int
+    skipped: int
+    total: int
+
+
+@router.post("/refresh", response_model=RefreshResult)
+def refresh_all(session: Session = Depends(get_session)) -> RefreshResult:
+    return RefreshResult(**asset_service.refresh_all(session).__dict__)
+
+
+@router.get("/history", response_model=list[HistoryPoint])
+def history(
+    session: Session = Depends(get_session),
+    days: int = Query(default=180, ge=7, le=3650),
+) -> list[HistoryPoint]:
+    return [
+        HistoryPoint(snapshot_date=snapshot_date, value_pln=value)
+        for snapshot_date, value in asset_service.history(session, days=days)
+    ]
+
+
+# --- Sankey: income -> categories -> merchants ----------------------------
+
+
+@router.get("/sankey", response_model=SankeyData)
+def sankey(
+    session: Session = Depends(get_session),
+    months: int = Query(default=3, ge=1, le=36),
+    top_categories: int = Query(default=8, ge=1, le=30),
+    top_merchants_per_cat: int = Query(default=4, ge=1, le=20),
+) -> SankeyData:
+    nodes, links = asset_service.sankey(
+        session,
+        months=months,
+        top_categories=top_categories,
+        top_merchants_per_cat=top_merchants_per_cat,
+    )
+    return SankeyData(
+        nodes=[SankeyNode(**node) for node in nodes],
+        links=[
+            SankeyLink(
+                source=int(link["source"]),
+                target=int(link["target"]),
+                value=Decimal(link["value"]),
+            )
+            for link in links
+        ],
+    )

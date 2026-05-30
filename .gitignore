@@ -1,0 +1,59 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.hypothesis/
+.coverage
+coverage.xml
+htmlcov/
+build/
+dist/
+
+# Virtual envs
+.venv/
+venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+
+# Env
+.env
+.env.local
+
+# Data (private)
+data/raw/
+data/processed/
+data/private/
+data/synthetic/
+data/external/
+data/models/
+data/reports/
+*.csv
+!tests/**/*.csv
+
+# Streamlit
+.streamlit/secrets.toml
+
+# Notebooks
+.ipynb_checkpoints/
+
+# Docker
+postgres-data/
+ollama-data/
+chroma-data/
+
+# Frontend
+apps/web/node_modules/
+apps/web/.next/
+apps/web/out/
+apps/web/tsconfig.tsbuildinfo
+
+# OS
+.DS_Store
+Thumbs.db
