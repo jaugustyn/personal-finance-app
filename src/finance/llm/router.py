@@ -16,10 +16,29 @@ from sqlalchemy.orm import Session
 
 from finance.llm import client
 from finance.llm.formatters import format_answer
-from finance.llm.heuristics import ToolCall, heuristic_route
+from finance.llm.heuristics import ToolCall, heuristic_route, normalize_question_text
+from finance.llm.periods import extract_period
 from finance.llm.tools import TOOL_SCHEMAS, TOOLS
 
 logger = logging.getLogger(__name__)
+
+_PERIOD_FOLLOWUP_TOOLS = frozenset(
+    {
+        "cashflow_overview",
+        "get_spending",
+        "top_categories",
+        "top_merchants",
+        "list_anomalies",
+        "recommend_savings",
+    }
+)
+
+FALLBACK_ANSWER = (
+    "Nie wiem jak odpowiedzieć na to pytanie. Obsługuję teraz m.in.: "
+    "'Ile wydałem w tym miesiącu?', 'Na co wydaję najwięcej?', "
+    "'Gdzie wydałem najwięcej?', 'Jaki mam cashflow w tym miesiącu?', "
+    "'Jakie mam subskrypcje?', 'Anomalie?', 'Co mogę ograniczyć?'."
+)
 
 # ---------------------------------------------------------------------------
 # LLM fallback (tool-calling)
@@ -83,6 +102,26 @@ def _llm_summarise(question: str, tool: str, result: dict[str, Any]) -> str | No
     return content.strip() if isinstance(content, str) else None
 
 
+def _contextual_route(
+    question: str,
+    *,
+    previous_tool: str | None,
+    previous_tool_args: dict[str, Any] | None,
+) -> ToolCall | None:
+    """Handle short follow-ups like "a w kwietniu?" without requiring an LLM."""
+    if previous_tool not in _PERIOD_FOLLOWUP_TOOLS:
+        return None
+    period = extract_period(question)
+    if not period:
+        return None
+    tokens = normalize_question_text(question).split()
+    if len(tokens) > 5:
+        return None
+    args = dict(previous_tool_args or {})
+    args["period"] = period
+    return ToolCall(previous_tool, args)
+
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
@@ -93,7 +132,7 @@ class ChatResult:
     tool: str | None
     tool_args: dict[str, Any] | None
     data: dict[str, Any] | None
-    source: str  # "heuristic" | "llm" | "smalltalk"
+    source: str  # "heuristic" | "context" | "llm" | "smalltalk"
 
 
 @lru_cache(maxsize=128)
@@ -106,6 +145,8 @@ def answer(
     session: Session,
     *,
     use_llm_summary: bool = False,
+    previous_tool: str | None = None,
+    previous_tool_args: dict[str, Any] | None = None,
     today: date | None = None,
 ) -> ChatResult:
     """Main entrypoint.
@@ -123,16 +164,20 @@ def answer(
     source = "heuristic"
 
     if call is None:
+        call = _contextual_route(
+            question,
+            previous_tool=previous_tool,
+            previous_tool_args=previous_tool_args,
+        )
+        source = "context"
+
+    if call is None:
         call = _llm_pick_tool(question)
         source = "llm"
 
     if call is None:
         return ChatResult(
-            answer=(
-                "Nie wiem jak odpowiedzieć. Spróbuj zapytać np.: "
-                "'Ile wydałem w tym miesiącu?', 'Top sklepy w kwietniu 2026', "
-                "'Subskrypcje?', 'Anomalie?'."
-            ),
+            answer=FALLBACK_ANSWER,
             tool=None, tool_args=None, data=None, source="smalltalk",
         )
 

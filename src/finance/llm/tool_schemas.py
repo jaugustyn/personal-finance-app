@@ -21,6 +21,21 @@ class TopMerchantsArgs(BaseModel):
     category: str | None = None
 
 
+class TopCategoriesArgs(BaseModel):
+    period: str | None = Field(
+        default=None,
+        description="Okres np. 'ten miesiąc', 'kwiecień 2026', '2026-04'.",
+    )
+    limit: int = Field(default=5, ge=1, le=20)
+
+
+class CashflowOverviewArgs(BaseModel):
+    period: str | None = Field(
+        default=None,
+        description="Okres np. 'ten miesiąc', 'kwiecień 2026', '2026-04'.",
+    )
+
+
 class ListSubscriptionsArgs(BaseModel):
     min_confidence: float = Field(default=0.5, ge=0.0, le=1.0)
 

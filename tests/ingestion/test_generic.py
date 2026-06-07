@@ -9,6 +9,11 @@ from finance.ingestion.generic import (
     auto_detect_columns,
     preview_csv,
 )
+from finance.ingestion.schema import (
+    clean_column_map,
+    import_quality_warnings,
+    validate_column_map,
+)
 
 
 def test_auto_detect_polish_headers() -> None:
@@ -85,6 +90,35 @@ def test_generic_parser_with_explicit_column_map() -> None:
     assert dtos[0].amount == -50
 
 
+def test_generic_parser_maps_source_categories() -> None:
+    raw = (
+        b"Date,Amount,Currency,Description,Category\n"
+        b"2026-04-01,-50.00,PLN,Allegro,shopping\n"
+        b"2026-04-02,-40.00,PLN,Lidl,groceries\n"
+        b"2026-04-03,3000.00,PLN,Client,income\n"
+        b"2026-04-04,20.00,PLN,Shop,refund\n"
+        b"2026-04-05,-100.00,PLN,ATM,cash\n"
+        b"2026-04-06,-80.00,PLN,Nike,Zakupy\n"
+        b"2026-04-07,-500.00,PLN,Booking.com,Travel\n"
+        b"2026-04-08,-450.00,PLN,Hotel,Rezerwacja noclegu\n"
+        b"2026-04-09,-300.00,PLN,Auto Serwis Kowalski,Serwis samochodowy\n"
+    )
+
+    dtos = GenericCsvParser().parse(io.BytesIO(raw))
+
+    assert [dto.category.value if dto.category else None for dto in dtos] == [
+        "shopping",
+        "food",
+        None,
+        None,
+        None,
+        "shopping",
+        "transport",
+        "transport",
+        "transport",
+    ]
+
+
 def test_generic_parser_handles_european_decimals() -> None:
     raw = b"Data,Kwota\n2026-04-01,\"1 234,56\"\n"
     dtos = GenericCsvParser().parse(io.BytesIO(raw))
@@ -107,6 +141,22 @@ def test_generic_parser_raises_when_required_columns_missing() -> None:
     raw = b"Foo,Bar\n1,2\n"
     with pytest.raises(ParseError):
         GenericCsvParser().parse(io.BytesIO(raw))
+
+
+def test_column_map_validation_and_quality_warnings() -> None:
+    mapping = clean_column_map({
+        "date": "Date",
+        "amount": "Amount",
+        "unknown": "Ignored",
+        "merchant": "",
+        "title": None,
+    })
+
+    assert mapping == {"date": "Date", "amount": "Amount"}
+    assert validate_column_map(mapping, headers=["Date", "Amount"]) == []
+    assert validate_column_map({"date": "Missing", "amount": "Amount"}, headers=["Amount"])
+    warnings = import_quality_warnings(mapping)
+    assert any("merchant or title" in warning for warning in warnings)
 
 
 def test_generic_parser_decodes_cp1250() -> None:

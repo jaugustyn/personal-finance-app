@@ -28,6 +28,21 @@ def test_upload_rejects_unknown_extension(client) -> None:
     assert r.status_code == 415
 
 
+def test_upload_rejects_excel_until_parser_support_exists(client) -> None:
+    r = client.post(
+        "/imports",
+        files={
+            "file": (
+                "payload.xlsx",
+                io.BytesIO(b"not-really-excel"),
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+        },
+        data={"source": "generic"},
+    )
+    assert r.status_code == 415
+
+
 def test_upload_rejects_unknown_mime(client) -> None:
     r = client.post(
         "/imports",

@@ -4,6 +4,18 @@ from __future__ import annotations
 import json
 from typing import Any
 
+_CATEGORY_LABELS_PL = {
+    "food": "Jedzenie",
+    "transport": "Transport i podróże",
+    "subscriptions": "Subskrypcje",
+    "health": "Zdrowie",
+    "entertainment": "Rozrywka",
+    "housing": "Dom i rachunki",
+    "savings": "Oszczędności",
+    "shopping": "Zakupy",
+    "other": "Inne",
+}
+
 
 def fmt_money(value: float) -> str:
     try:
@@ -11,6 +23,12 @@ def fmt_money(value: float) -> str:
     except (TypeError, ValueError):
         numeric = 0.0
     return f"{numeric:,.2f} zł".replace(",", " ").replace(".", ",")
+
+
+def _category_label(value: str | None) -> str:
+    if not value:
+        return "(bez kategorii)"
+    return _CATEGORY_LABELS_PL.get(value, value)
 
 
 def format_answer(tool: str, result: dict[str, Any]) -> str:
@@ -34,6 +52,38 @@ def format_answer(tool: str, result: dict[str, Any]) -> str:
                 f"({merchant['transactions']} tx)"
             )
         return "Top wydatki:\n" + "\n".join(lines)
+    if tool == "top_categories":
+        categories = result.get("categories") or []
+        total = float(result.get("total_candidate_spend") or 0.0)
+        if not categories and total <= 0:
+            return "Brak potwierdzonych wydatków-kandydatów w tym okresie."
+        lines = ["Największe potwierdzone kategorie wydatków:"]
+        for idx, category in enumerate(categories):
+            share = float(category.get("share") or 0.0) * 100.0
+            lines.append(
+                f"{idx + 1}. {_category_label(category.get('category'))} - "
+                f"{fmt_money(category.get('total', 0.0))} "
+                f"({share:.1f}%, {category.get('transactions', 0)} tx)"
+            )
+        uncategorized = float(result.get("uncategorized_total") or 0.0)
+        coverage = float(result.get("category_coverage") or 0.0) * 100.0
+        if uncategorized > 0:
+            lines.append(
+                f"Bez potwierdzonej kategorii: {fmt_money(uncategorized)}. "
+                f"Pokrycie kategorii: {coverage:.1f}%."
+            )
+        return "\n".join(lines)
+    if tool == "cashflow_overview":
+        period = result["period"]
+        savings_rate = float(result.get("savings_rate") or 0.0) * 100.0
+        return (
+            f"W okresie {period['start']} - {period['end']} przychody wyniosły "
+            f"{fmt_money(result.get('income', 0.0))}, wydatki "
+            f"{fmt_money(result.get('expenses', 0.0))}, a wynik netto "
+            f"{fmt_money(result.get('net', 0.0))}. "
+            f"Stopa oszczędności: {savings_rate:.1f}% "
+            f"({result.get('transactions', 0)} transakcji)."
+        )
     if tool == "list_subscriptions":
         subscriptions = result.get("subscriptions") or []
         if not subscriptions:

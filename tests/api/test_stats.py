@@ -115,6 +115,30 @@ def test_by_category_uses_confirmed_categories_by_default(
     assert Decimal(by_category[None]["amount"]) == Decimal("80.00")
 
 
+def test_debt_payments_count_in_cashflow_but_not_category_breakdown(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    _add_tx(
+        db_session,
+        amount=Decimal("-600.00"),
+        merchant="Alior Bank",
+        title="Rata kredytu gotówkowego",
+        category=None,
+        transaction_type="debt_payment",
+        dedup_hash="stats-debt-payment",
+    )
+    db_session.commit()
+
+    overview_response = client.get("/stats/overview?months=120")
+    by_category_response = client.get("/stats/by-category?months=120&limit=10")
+
+    assert overview_response.status_code == 200
+    assert Decimal(overview_response.json()["total_expenses"]) >= Decimal("600.00")
+    assert by_category_response.status_code == 200
+    assert all(row["category"] is not None for row in by_category_response.json())
+
+
 def test_by_category_can_include_predictions_explicitly(
     client: TestClient,
     db_session: Session,
@@ -166,3 +190,164 @@ def test_top_merchants_excludes_transfers_by_default(
     assert [row["merchant"] for row in default_response.json()] == ["Market"]
     assert with_transfers_response.status_code == 200
     assert with_transfers_response.json()[0]["merchant"] == "Own Broker"
+
+
+def test_top_merchants_groups_normalized_merchant_variants(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    _add_tx(
+        db_session,
+        amount=Decimal("-40.00"),
+        merchant="LIDL 1234",
+        title="",
+        category="food",
+        dedup_hash="stats-top-lidl-1",
+    )
+    _add_tx(
+        db_session,
+        amount=Decimal("-60.00"),
+        merchant="Lidl sp. z o.o.",
+        title="",
+        category="food",
+        dedup_hash="stats-top-lidl-2",
+    )
+    _add_tx(
+        db_session,
+        amount=Decimal("-25.00"),
+        merchant="",
+        title="LIDL zakupy karta",
+        category="food",
+        dedup_hash="stats-top-lidl-title",
+    )
+    _add_tx(
+        db_session,
+        amount=Decimal("-90.00"),
+        merchant="Other",
+        title="",
+        category="shopping",
+        dedup_hash="stats-top-other",
+    )
+    db_session.commit()
+
+    response = client.get("/stats/top-merchants?months=120&limit=5")
+
+    assert response.status_code == 200
+    rows = response.json()
+    lidl = next(row for row in rows if row["merchant"].lower().startswith("lidl"))
+    assert Decimal(lidl["amount"]) == Decimal("125.00")
+    assert lidl["count"] == 3
+    assert lidl["category"] == "food"
+
+
+def test_stats_all_data_ignores_month_window(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    _add_tx(
+        db_session,
+        booking_date=date(2020, 1, 1),
+        amount=Decimal("-77.00"),
+        merchant="Old Shop",
+        dedup_hash="stats-old-shop",
+    )
+    db_session.commit()
+
+    recent_response = client.get("/stats/top-merchants?months=1&limit=5")
+    all_response = client.get("/stats/top-merchants?months=1&all_data=true&limit=5")
+
+    assert recent_response.status_code == 200
+    assert all_response.status_code == 200
+    assert "Old Shop" not in [row["merchant"] for row in recent_response.json()]
+    assert "Old Shop" in [row["merchant"] for row in all_response.json()]
+
+
+def test_category_trend_shape() -> None:
+    r = client.get("/stats/category-trend?months=6&limit=5")
+    if r.status_code >= 500:
+        return
+    assert r.status_code == 200
+    assert isinstance(r.json(), list)
+
+
+def test_category_trend_returns_top_categories_by_month(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    _add_tx(
+        db_session,
+        amount=Decimal("-100.00"),
+        category="food",
+        dedup_hash="trend-food-1",
+    )
+    _add_tx(
+        db_session,
+        amount=Decimal("-50.00"),
+        category="food",
+        dedup_hash="trend-food-2",
+    )
+    _add_tx(
+        db_session,
+        amount=Decimal("-30.00"),
+        category=None,
+        dedup_hash="trend-uncat",
+    )
+    db_session.commit()
+
+    response = client.get("/stats/category-trend?months=60&limit=5")
+
+    assert response.status_code == 200
+    rows = response.json()
+    categories = {row["category"] for row in rows}
+    assert "food" in categories
+    assert None not in categories
+    total_food = sum(
+        Decimal(row["amount"]) for row in rows if row["category"] == "food"
+    )
+    assert total_food == Decimal("150.00")
+
+
+def test_spend_distribution_shape_and_outlier_fence(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    for i in range(6):
+        _add_tx(
+            db_session,
+            amount=Decimal("-20.00"),
+            dedup_hash=f"dist-small-{i}",
+        )
+    _add_tx(
+        db_session,
+        amount=Decimal("-5000.00"),
+        dedup_hash="dist-outlier",
+    )
+    db_session.commit()
+
+    response = client.get("/stats/spend-distribution?months=60&bins=6")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["count"] == 7
+    assert isinstance(body["buckets"], list)
+    assert sum(b["count"] for b in body["buckets"]) == body["count"]
+    assert body["max"] == 5000.0
+    # The 5000 transaction sits above the Tukey upper fence.
+    assert body["iqr_upper"] < 5000.0
+
+
+def test_recap_shape() -> None:
+    r = client.get("/stats/recap?period=month")
+    if r.status_code >= 500:
+        return
+    assert r.status_code == 200
+    body = r.json()
+    for key in (
+        "period",
+        "cashflow",
+        "category_changes",
+        "top_merchants",
+        "limit_breaches",
+        "savings_progress",
+    ):
+        assert key in body

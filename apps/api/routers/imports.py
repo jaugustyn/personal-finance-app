@@ -35,23 +35,28 @@ from finance.domain.models import Import, Transaction
 from finance.ingestion import ParseError
 from finance.ingestion.generic import GenericCsvParser, preview_csv
 from finance.ingestion.registry import detect_source
+from finance.ingestion.schema import (
+    clean_column_map,
+    import_field_specs_payload,
+    import_quality_warnings,
+    validate_column_map,
+)
 from finance.ingestion.service import ingest_file
 from finance.ml.classification.predict import ClassifierNotAvailable, reclassify_unlabelled
 
 router = APIRouter(prefix="/imports", tags=["imports"])
 logger = logging.getLogger(__name__)
 
-# Maximum CSV upload size (10 MiB). Hand-tuned: full-year Pekao XLSX export
-# is ~1.5 MiB; this leaves headroom and protects against zip-bomb-style abuse.
+# Maximum text upload size (10 MiB). Full-year CSV exports are typically much
+# smaller; this leaves headroom and protects against oversized payloads.
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
-ALLOWED_EXTENSIONS = (".csv", ".tsv", ".txt", ".xlsx", ".xls")
+ALLOWED_EXTENSIONS = (".csv", ".tsv", ".txt")
 ALLOWED_CONTENT_TYPES = {
     "text/csv",
     "text/plain",
     "text/tab-separated-values",
     "application/csv",
-    "application/vnd.ms-excel",
-    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "application/vnd.ms-excel",  # Windows often reports CSV as this MIME type.
     "application/octet-stream",  # browsers often default to this for CSV
     "",  # some HTTP clients omit content-type
 }
@@ -102,6 +107,9 @@ class PreviewResponse(BaseModel):
     encoding: str
     detected_source: BankSource | None
     detected_mapping: dict[str, str | None]
+    field_specs: list[dict[str, object]]
+    quality_warnings: list[str]
+    supported_extensions: list[str]
 
 
 @router.post("/preview", response_model=PreviewResponse)
@@ -118,6 +126,11 @@ def preview_import(file: UploadFile = File(...)) -> PreviewResponse:
         encoding=prev.encoding,
         detected_source=detect_source(prev.headers),
         detected_mapping=prev.detected_mapping,
+        field_specs=import_field_specs_payload(),
+        quality_warnings=import_quality_warnings(
+            {k: v for k, v in prev.detected_mapping.items() if v}
+        ),
+        supported_extensions=list(ALLOWED_EXTENSIONS),
     )
 
 
@@ -148,13 +161,25 @@ def upload_import(
     elif src_lower == "generic":
         chosen_source = BankSource.UNKNOWN
         mapping: dict[str, str] | None = None
+        try:
+            prev = preview_csv(io.BytesIO(raw))
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=422, detail=f"Cannot parse CSV: {exc}") from exc
         if column_map:
             try:
-                mapping = json.loads(column_map)
+                parsed = json.loads(column_map)
             except json.JSONDecodeError as exc:
                 raise HTTPException(
                     status_code=422, detail=f"Invalid column_map JSON: {exc}"
                 ) from exc
+            if not isinstance(parsed, dict):
+                raise HTTPException(status_code=422, detail="column_map must be an object.")
+            mapping = clean_column_map(parsed)
+        else:
+            mapping = clean_column_map(prev.detected_mapping)
+        errors = validate_column_map(mapping or {}, headers=prev.headers)
+        if errors:
+            raise HTTPException(status_code=422, detail="; ".join(errors))
         parser = GenericCsvParser(mapping)
     else:
         try:

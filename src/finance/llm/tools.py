@@ -8,8 +8,15 @@ from pydantic import BaseModel
 from finance.llm.insight_tools import forecast_for, list_anomalies, list_subscriptions
 from finance.llm.recommendation_tools import recommend_savings
 from finance.llm.review_tools import category_review_summary
-from finance.llm.spending_tools import compare_periods, get_spending, top_merchants
+from finance.llm.spending_tools import (
+    cashflow_overview,
+    compare_periods,
+    get_spending,
+    top_categories,
+    top_merchants,
+)
 from finance.llm.tool_schemas import (
+    CashflowOverviewArgs,
     CategoryReviewArgs,
     ComparePeriodsArgs,
     ForecastArgs,
@@ -17,12 +24,15 @@ from finance.llm.tool_schemas import (
     ListAnomaliesArgs,
     ListSubscriptionsArgs,
     SavingsRecommendationsArgs,
+    TopCategoriesArgs,
     TopMerchantsArgs,
 )
 
 TOOLS: dict[str, Any] = {
     "get_spending": get_spending,
     "top_merchants": top_merchants,
+    "top_categories": top_categories,
+    "cashflow_overview": cashflow_overview,
     "list_subscriptions": list_subscriptions,
     "list_anomalies": list_anomalies,
     "forecast_for": forecast_for,
@@ -51,6 +61,16 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
     ),
     _schema("top_merchants", TopMerchantsArgs, "Top sprzedawców wg wydatków w okresie."),
     _schema(
+        "top_categories",
+        TopCategoriesArgs,
+        "Top potwierdzonych kategorii wydatków w okresie.",
+    ),
+    _schema(
+        "cashflow_overview",
+        CashflowOverviewArgs,
+        "Przychody, wydatki, saldo netto i stopa oszczędności w okresie.",
+    ),
+    _schema(
         "list_subscriptions",
         ListSubscriptionsArgs,
         "Wykryte subskrypcje (cykliczne płatności).",
@@ -78,13 +98,16 @@ __all__ = [
     "ComparePeriodsArgs",
     "ForecastArgs",
     "GetSpendingArgs",
+    "CashflowOverviewArgs",
     "CategoryReviewArgs",
     "ListAnomaliesArgs",
     "ListSubscriptionsArgs",
     "SavingsRecommendationsArgs",
+    "TopCategoriesArgs",
     "TOOLS",
     "TOOL_SCHEMAS",
     "TopMerchantsArgs",
+    "cashflow_overview",
     "compare_periods",
     "category_review_summary",
     "forecast_for",
@@ -92,5 +115,6 @@ __all__ = [
     "list_anomalies",
     "list_subscriptions",
     "recommend_savings",
+    "top_categories",
     "top_merchants",
 ]

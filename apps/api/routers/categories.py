@@ -1,6 +1,6 @@
 """Category catalog endpoints — system + user-defined categories.
 
-System categories (the eight built-in classes) are seeded on first read so
+System categories are seeded on first read so
 the table is populated even when migrations were skipped (e.g. SQLite tests
 that use ``Base.metadata.create_all``).
 """
@@ -12,36 +12,38 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from finance.db import get_session
-from finance.domain.enums import Category
+from finance.domain.category_mapping import (
+    SYSTEM_CATEGORY_COLORS,
+    SYSTEM_SUBCATEGORIES,
+)
 from finance.domain.models import CategoryDef, Transaction
 
 router = APIRouter(prefix="/categories", tags=["categories"])
 
 
-SYSTEM_CATEGORY_COLORS: dict[str, str] = {
-    Category.FOOD.value: "#f59e0b",
-    Category.TRANSPORT.value: "#3b82f6",
-    Category.SUBSCRIPTIONS.value: "#a855f7",
-    Category.HEALTH.value: "#ef4444",
-    Category.ENTERTAINMENT.value: "#ec4899",
-    Category.HOUSING.value: "#10b981",
-    Category.SAVINGS.value: "#14b8a6",
-    Category.OTHER.value: "#6b7280",
-}
-
-
 def ensure_system_categories(session: Session) -> None:
-    """Seed the eight system categories if they are missing."""
+    """Seed the system groups and their subcategories if missing."""
     existing = {
         name for (name,) in session.execute(select(CategoryDef.name)).all()
     }
     added = False
-    for name, color in SYSTEM_CATEGORY_COLORS.items():
-        if name not in existing:
+    for group, color in SYSTEM_CATEGORY_COLORS.items():
+        if group.value not in existing:
             session.add(
-                CategoryDef(name=name, is_system=True, color=color)
+                CategoryDef(name=group.value, is_system=True, color=color)
             )
             added = True
+        for sub in SYSTEM_SUBCATEGORIES.get(group, ()):
+            if sub not in existing:
+                session.add(
+                    CategoryDef(
+                        name=sub,
+                        is_system=True,
+                        parent=group.value,
+                        color=color,
+                    )
+                )
+                added = True
     if added:
         session.commit()
 
@@ -50,6 +52,7 @@ class CategoryRow(BaseModel):
     id: int
     name: str
     is_system: bool
+    parent: str | None = None
     color: str | None
     icon: str | None
     usage_count: int = 0
@@ -59,6 +62,7 @@ class CategoryRow(BaseModel):
 
 class CategoryCreate(BaseModel):
     name: str = Field(min_length=1, max_length=64)
+    parent: str | None = Field(default=None, max_length=64)
     color: str | None = Field(default=None, max_length=16)
     icon: str | None = Field(default=None, max_length=32)
 
@@ -80,7 +84,8 @@ def list_categories(session: Session = Depends(get_session)) -> list[CategoryRow
             CategoryDef.is_system.desc(), CategoryDef.name.asc()
         )
     ).scalars().all()
-    # Build usage counts in a single grouped query.
+    # Build usage counts in single grouped queries: group-level usage comes
+    # from ``Transaction.category``; subcategory usage from ``subcategory``.
     from sqlalchemy import func
 
     usage: dict[str, int] = {}
@@ -91,11 +96,19 @@ def list_categories(session: Session = Depends(get_session)) -> list[CategoryRow
     ).all():
         if cat_name:
             usage[str(cat_name)] = int(count)
+    for sub_name, count in session.execute(
+        select(Transaction.subcategory, func.count(Transaction.id)).group_by(
+            Transaction.subcategory
+        )
+    ).all():
+        if sub_name:
+            usage[str(sub_name)] = usage.get(str(sub_name), 0) + int(count)
     return [
         CategoryRow(
             id=c.id,
             name=c.name,
             is_system=c.is_system,
+            parent=c.parent,
             color=c.color,
             icon=c.icon,
             usage_count=usage.get(c.name, 0),
@@ -112,12 +125,29 @@ def create_category(
     name = _normalize(payload.name)
     if not name:
         raise HTTPException(status_code=422, detail="Category name cannot be empty.")
+    parent = _normalize(payload.parent) if payload.parent else None
+    if parent is not None:
+        parent_def = session.execute(
+            select(CategoryDef).where(CategoryDef.name == parent)
+        ).scalar_one_or_none()
+        if parent_def is None:
+            raise HTTPException(status_code=422, detail="Parent category not found.")
+        if parent_def.parent is not None:
+            raise HTTPException(
+                status_code=422, detail="Subcategories cannot be nested."
+            )
     existing = session.execute(
         select(CategoryDef).where(CategoryDef.name == name)
     ).scalar_one_or_none()
     if existing is not None:
         raise HTTPException(status_code=409, detail="Category already exists.")
-    cat = CategoryDef(name=name, is_system=False, color=payload.color, icon=payload.icon)
+    cat = CategoryDef(
+        name=name,
+        is_system=False,
+        parent=parent,
+        color=payload.color,
+        icon=payload.icon,
+    )
     session.add(cat)
     session.commit()
     session.refresh(cat)

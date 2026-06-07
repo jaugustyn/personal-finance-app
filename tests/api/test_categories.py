@@ -9,9 +9,9 @@ def test_list_seeds_system_categories(client, db_session) -> None:
     assert r.status_code == 200
     body = r.json()
     names = {c["name"] for c in body}
-    # All 8 built-ins.
+    # All built-ins.
     assert {"food", "transport", "subscriptions", "health",
-            "entertainment", "housing", "savings", "other"} <= names
+            "entertainment", "housing", "savings", "shopping", "other"} <= names
     # All marked as system.
     assert all(c["is_system"] for c in body)
 

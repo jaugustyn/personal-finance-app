@@ -9,12 +9,14 @@ from sqlalchemy.orm import Session
 
 from finance.domain.models import Base, Transaction
 from finance.llm.tools import (
+    cashflow_overview,
     category_review_summary,
     compare_periods,
     get_spending,
     list_anomalies,
     list_subscriptions,
     recommend_savings,
+    top_categories,
     top_merchants,
 )
 from finance.profile.service import update_profile
@@ -89,6 +91,111 @@ def test_top_merchants_orders_by_total(session):
     names = [m["merchant"] for m in res["merchants"]]
     assert names[0] == "OpenAI"
     assert "Lidl" in names
+
+
+def test_top_categories_uses_confirmed_candidate_expenses_only(session):
+    _add_tx(
+        session,
+        booking_date=date(2026, 4, 1),
+        amount=Decimal("-100"),
+        category="food",
+        transaction_type="purchase",
+        dedup_hash="llm-cat-food",
+    )
+    _add_tx(
+        session,
+        booking_date=date(2026, 4, 2),
+        amount=Decimal("-50"),
+        category="shopping",
+        transaction_type="purchase",
+        dedup_hash="llm-cat-shopping",
+    )
+    _add_tx(
+        session,
+        booking_date=date(2026, 4, 3),
+        amount=Decimal("-70"),
+        category=None,
+        category_predicted="food",
+        transaction_type="purchase",
+        dedup_hash="llm-cat-predicted-only",
+    )
+    _add_tx(
+        session,
+        booking_date=date(2026, 4, 4),
+        amount=Decimal("-999"),
+        category="food",
+        is_transfer=True,
+        transaction_type="own_transfer",
+        dedup_hash="llm-cat-transfer",
+    )
+    _add_tx(
+        session,
+        booking_date=date(2026, 4, 5),
+        amount=Decimal("-888"),
+        category="food",
+        transaction_type="refund",
+        dedup_hash="llm-cat-refund",
+    )
+    _add_tx(
+        session,
+        booking_date=date(2026, 4, 6),
+        amount=Decimal("-777"),
+        category="housing",
+        transaction_type="debt_payment",
+        dedup_hash="llm-cat-debt",
+    )
+    _add_tx(
+        session,
+        booking_date=date(2026, 4, 7),
+        amount=Decimal("-666"),
+        category="other",
+        transaction_type="cash_withdrawal",
+        dedup_hash="llm-cat-cash",
+    )
+    session.commit()
+
+    res = top_categories(session, {"period": "2026-04", "limit": 5})
+
+    assert res["total_candidate_spend"] == pytest.approx(220.0)
+    assert res["categorized_total"] == pytest.approx(150.0)
+    assert res["uncategorized_total"] == pytest.approx(70.0)
+    assert res["category_coverage"] == pytest.approx(150.0 / 220.0)
+    assert [row["category"] for row in res["categories"]] == ["food", "shopping"]
+
+
+def test_cashflow_overview_excludes_transfers(session):
+    _add_tx(
+        session,
+        booking_date=date(2026, 4, 1),
+        amount=Decimal("1000"),
+        direction="credit",
+        merchant="Employer",
+        dedup_hash="llm-cashflow-income",
+    )
+    _add_tx(
+        session,
+        booking_date=date(2026, 4, 2),
+        amount=Decimal("-300"),
+        merchant="Market",
+        dedup_hash="llm-cashflow-expense",
+    )
+    _add_tx(
+        session,
+        booking_date=date(2026, 4, 3),
+        amount=Decimal("-500"),
+        merchant="Own account",
+        is_transfer=True,
+        dedup_hash="llm-cashflow-transfer",
+    )
+    session.commit()
+
+    res = cashflow_overview(session, {"period": "2026-04"})
+
+    assert res["income"] == pytest.approx(1000.0)
+    assert res["expenses"] == pytest.approx(300.0)
+    assert res["net"] == pytest.approx(700.0)
+    assert res["savings_rate"] == pytest.approx(0.7)
+    assert res["transactions"] == 2
 
 
 def test_compare_periods_delta(session):

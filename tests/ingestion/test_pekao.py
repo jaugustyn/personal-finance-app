@@ -49,3 +49,22 @@ def test_pekao_parser_basic() -> None:
 
     # "Bez kategorii" is left unmapped so it doesn't pollute training.
     assert unknown.category is None
+
+
+def test_pekao_parser_does_not_require_operation_type() -> None:
+    header = (
+        "Data księgowania;Data waluty;Nadawca / Odbiorca;Adres nadawcy / odbiorcy;"
+        "Rachunek źródłowy;Rachunek docelowy;Tytułem;Kwota operacji;Waluta;"
+        "Numer referencyjny;Kategoria"
+    )
+    row = (
+        "01.04.2026;01.04.2026;CARREFOUR;;'91...;;Zakupy;-31,41;PLN;"
+        "'C99261082;Artykuły spożywcze"
+    )
+    sample = f"{header}\n{row}\n".encode("cp1250")
+
+    out = PekaoParser().parse(io.BytesIO(sample), filename="pekao.csv")
+
+    assert len(out) == 1
+    assert out[0].merchant == "CARREFOUR"
+    assert out[0].category is Category.FOOD

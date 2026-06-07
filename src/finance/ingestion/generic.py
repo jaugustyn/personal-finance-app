@@ -22,9 +22,11 @@ from datetime import datetime
 from decimal import Decimal, InvalidOperation
 from typing import IO
 
+from finance.domain.category_mapping import map_source_category
 from finance.domain.dto import TransactionDTO
 from finance.domain.enums import BankSource, TransactionDirection
 from finance.ingestion.base import BankParser, ParseError
+from finance.ingestion.schema import REQUIRED_IMPORT_FIELDS, clean_column_map
 
 # ---------------------------------------------------------------------------
 # Header aliases — case-insensitive, whitespace-collapsed match.
@@ -206,12 +208,13 @@ class GenericCsvParser(BankParser):
         if not headers:
             raise ParseError("Empty CSV (no header row).")
 
-        mapping = self.column_map or {
+        mapping = clean_column_map(self.column_map) if self.column_map else {
             k: v for k, v in auto_detect_columns(headers).items() if v is not None
         }
-        if "date" not in mapping or "amount" not in mapping:
+        missing_required = sorted(REQUIRED_IMPORT_FIELDS - set(mapping))
+        if missing_required:
             raise ParseError(
-                f"Could not locate required columns 'date' and 'amount' in {headers!r}. "
+                f"Could not locate required columns {missing_required!r} in {headers!r}. "
                 "Provide an explicit column_map."
             )
 
@@ -250,7 +253,7 @@ class GenericCsvParser(BankParser):
                     merchant=merchant or title or "(brak)",
                     title=title,
                     raw_category=raw_category,
-                    category=None,
+                    category=map_source_category(raw_category),
                     source=BankSource.UNKNOWN,
                     external_id=external_id,
                 )

@@ -6,57 +6,119 @@ so the ML category suggester can handle it.
 """
 from __future__ import annotations
 
-import re
-
 from finance.domain.enums import Category, TransactionDirection, TransactionType
-
-_OWN_TRANSFER_KEYWORDS: tuple[str, ...] = (
-    "przelew własny",
-    "przelew wlasny",
-    "rachunek własny",
-    "rachunek wlasny",
-    "przelew wewnętrzny",
-    "przelew wewnetrzny",
-    "przelew między rachunkami",
-    "przelew miedzy rachunkami",
-    "między rachunkami",
-    "miedzy rachunkami",
-    "to my account",
-    "from my account",
-    "between accounts",
-    "account top-up",
-    "transfer to savings",
-    "transfer from savings",
-    "top up by bank card",
-)
-_PERSON_TRANSFER_PATTERNS: tuple[re.Pattern[str], ...] = (
-    re.compile(r"\bprzelew\b", re.I),
-    re.compile(r"\bblik(?:\s+przelew|\s+na\s+telefon|\s+p2p)?\b", re.I),
-    re.compile(r"\btransfer\b", re.I),
-    re.compile(r"\bwire\b", re.I),
-)
-_SALARY_KEYWORDS = ("wynagrodzenie", "salary", "payroll", "pensja")
-_REFUND_KEYWORDS = ("zwrot", "refund", "cashback", "reversal")
-_CASH_KEYWORDS = ("bankomat", "atm", "wypłata gotówki", "wyplata gotowki", "cash withdrawal")
-_BANK_FEE_KEYWORDS = ("opłata", "oplata", "prowizja", "bank fee", "fee", "commission")
-_SAVINGS_KEYWORDS = (
-    "oszczędności",
-    "oszczednosci",
-    "lokata",
-    "inwest",
-    "maklerski",
-    "broker",
-    "xtb",
-    "trading",
-)
-_SAVINGS_PATTERNS: tuple[re.Pattern[str], ...] = (
-    re.compile(r"\bike\b", re.I),
-    re.compile(r"\bikze\b", re.I),
+from finance.transactions.normalization import normalize_text
+from finance.transactions.system_rules import (
+    RuleDecision,
+    SystemRulesRegistry,
+    TransactionTypeRule,
+    system_rules_registry,
 )
 
 
 def _text(merchant: str | None, title: str | None, raw_category: str | None = None) -> str:
     return f"{merchant or ''} {title or ''} {raw_category or ''}".lower()
+
+
+def _looks_like_person_counterparty(
+    merchant: str | None,
+    registry: SystemRulesRegistry,
+) -> bool:
+    norm = normalize_text(merchant)
+    if not norm:
+        return False
+    tokens = [token for token in norm.split() if token]
+    if len(tokens) < 2 or len(tokens) > 4:
+        return False
+    if any(token in registry.business_counterparty_terms for token in tokens):
+        return False
+    return all(token.isalpha() and len(token) >= 2 for token in tokens)
+
+
+def _person_transfer_decision(
+    merchant: str | None,
+    haystack: str,
+    raw_category: str | None,
+    registry: SystemRulesRegistry,
+) -> RuleDecision | None:
+    raw_norm = normalize_text(raw_category)
+    for term in registry.person_transfer_exclusions:
+        if term in haystack:
+            return None
+    if raw_norm in registry.person_transfer_source_categories:
+        return RuleDecision(
+            TransactionType.PERSON_TRANSFER.value,
+            "tx_type.person_transfer.semantic",
+            "Raw/source category marks a private transfer.",
+            raw_norm,
+        )
+    for pattern in registry.person_transfer_patterns:
+        match = pattern.search(haystack)
+        if match:
+            return RuleDecision(
+                TransactionType.PERSON_TRANSFER.value,
+                "tx_type.person_transfer.semantic",
+                "Transfer marker in merchant/title.",
+                match.group(0),
+            )
+    if _looks_like_person_counterparty(merchant, registry) and any(
+        keyword in haystack for keyword in registry.person_refund_keywords
+    ):
+        return RuleDecision(
+            TransactionType.PERSON_TRANSFER.value,
+            "tx_type.person_transfer.semantic",
+            "Person-like counterparty with private settlement marker.",
+            merchant,
+        )
+    return None
+
+
+def _matches_rule(rule: TransactionTypeRule, haystack: str) -> str | None:
+    for keyword in rule.keywords:
+        if keyword in haystack:
+            return keyword
+    for pattern in rule.regexes:
+        match = pattern.search(haystack)
+        if match:
+            return match.group(0)
+    return None
+
+
+def explain_transaction_type(
+    merchant: str | None,
+    title: str | None,
+    direction: str | TransactionDirection,
+    *,
+    raw_category: str | None = None,
+) -> RuleDecision:
+    """Return the transaction-type decision with the matched system rule."""
+    registry = system_rules_registry()
+    haystack = _text(merchant, title, raw_category)
+    direction_value = str(direction)
+
+    for rule in registry.transaction_type_rules:
+        if rule.direction is not None and direction_value != rule.direction:
+            continue
+        if rule.special == "person_transfer":
+            decision = _person_transfer_decision(merchant, haystack, raw_category, registry)
+            if decision is not None:
+                return RuleDecision(rule.result, rule.id, rule.reason, decision.matched)
+            continue
+        matched = _matches_rule(rule, haystack)
+        if matched is not None:
+            return RuleDecision(rule.result, rule.id, rule.reason, matched)
+
+    if direction_value == TransactionDirection.DEBIT:
+        return RuleDecision(
+            TransactionType.PURCHASE.value,
+            "tx_type.fallback.debit_purchase",
+            "Debit fallback for expense-like transactions.",
+        )
+    return RuleDecision(
+        TransactionType.INCOME.value,
+        "tx_type.fallback.credit_income",
+        "Credit fallback for uncategorised inflows.",
+    )
 
 
 def detect_transaction_type(
@@ -66,34 +128,14 @@ def detect_transaction_type(
     *,
     raw_category: str | None = None,
 ) -> TransactionType:
-    haystack = _text(merchant, title, raw_category)
-    direction_value = str(direction)
-
-    if any(keyword in haystack for keyword in _OWN_TRANSFER_KEYWORDS):
-        return TransactionType.OWN_TRANSFER
-    if direction_value == TransactionDirection.CREDIT and any(
-        keyword in haystack for keyword in _SALARY_KEYWORDS
-    ):
-        return TransactionType.SALARY
-    if any(keyword in haystack for keyword in _REFUND_KEYWORDS):
-        return TransactionType.REFUND
-    if direction_value == TransactionDirection.DEBIT and any(
-        keyword in haystack for keyword in _CASH_KEYWORDS
-    ):
-        return TransactionType.CASH_WITHDRAWAL
-    if any(keyword in haystack for keyword in _BANK_FEE_KEYWORDS):
-        return TransactionType.BANK_FEE
-    if any(keyword in haystack for keyword in _SAVINGS_KEYWORDS) or any(
-        pattern.search(haystack) for pattern in _SAVINGS_PATTERNS
-    ):
-        return TransactionType.SAVINGS_INVESTMENT
-    if direction_value == TransactionDirection.DEBIT and any(
-        pattern.search(haystack) for pattern in _PERSON_TRANSFER_PATTERNS
-    ):
-        return TransactionType.PERSON_TRANSFER
-    if direction_value == TransactionDirection.DEBIT:
-        return TransactionType.PURCHASE
-    return TransactionType.OTHER
+    return TransactionType(
+        explain_transaction_type(
+            merchant,
+            title,
+            direction,
+            raw_category=raw_category,
+        ).result
+    )
 
 
 def detect_transfer(merchant: str | None, title: str | None) -> bool:
@@ -105,20 +147,17 @@ def detect_transfer(merchant: str | None, title: str | None) -> bool:
 
 
 def rule_category_for_type(transaction_type: TransactionType) -> Category | None:
-    if transaction_type == TransactionType.BANK_FEE:
-        return Category.OTHER
-    if transaction_type == TransactionType.SAVINGS_INVESTMENT:
-        return Category.SAVINGS
-    return None
+    category = system_rules_registry().category_for_transaction_type(transaction_type)
+    return Category(category) if category is not None else None
 
 
 def is_category_suggestion_candidate(transaction_type: str | TransactionType | None) -> bool:
     if transaction_type is None:
         return True
     value = str(transaction_type)
-    return value in {
-        TransactionType.PURCHASE.value,
-        TransactionType.BANK_FEE.value,
-        TransactionType.SAVINGS_INVESTMENT.value,
-        TransactionType.OTHER.value,
-    }
+    return value in system_rules_registry().category_suggestion_candidate_types
+
+
+def category_suggestion_candidate_values() -> frozenset[str]:
+    """Transaction types that can carry an expense-category label."""
+    return system_rules_registry().category_suggestion_candidate_types

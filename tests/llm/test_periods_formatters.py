@@ -32,6 +32,46 @@ def test_format_answer_get_spending_is_deterministic() -> None:
     assert "123,45 zł" in answer
 
 
+def test_format_answer_top_categories_is_deterministic() -> None:
+    answer = format_answer(
+        "top_categories",
+        {
+            "period": {"start": "2026-04-01", "end": "2026-04-30"},
+            "total_candidate_spend": 220.0,
+            "categorized_total": 150.0,
+            "uncategorized_total": 70.0,
+            "category_coverage": 150.0 / 220.0,
+            "transactions": 3,
+            "categories": [
+                {
+                    "category": "food",
+                    "total": 100.0,
+                    "transactions": 1,
+                    "share": 100.0 / 220.0,
+                }
+            ],
+        },
+    )
+    assert "Jedzenie" in answer
+    assert "Bez potwierdzonej kategorii" in answer
+
+
+def test_format_answer_cashflow_overview_is_deterministic() -> None:
+    answer = format_answer(
+        "cashflow_overview",
+        {
+            "period": {"start": "2026-04-01", "end": "2026-04-30"},
+            "income": 1000.0,
+            "expenses": 300.0,
+            "net": 700.0,
+            "savings_rate": 0.7,
+            "transactions": 2,
+        },
+    )
+    assert "przychody" in answer
+    assert "700,00 zł" in answer
+
+
 def test_format_answer_recommend_savings_is_deterministic() -> None:
     answer = format_answer(
         "recommend_savings",

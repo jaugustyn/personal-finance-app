@@ -152,7 +152,16 @@ def recommend_savings(session: Session, args: dict[str, Any]) -> dict[str, Any]:
         period_df = df[(df["booking_date"] >= start) & (df["booking_date"] <= end)]
         if not period_df.empty:
             scored = detect_anomalies(period_df, direction="debit").df
-            flagged = scored[scored["anomaly"]]
+            anomaly_type = scored.get("anomaly_type")
+            non_model_only = (
+                anomaly_type.fillna("").ne("model_only")
+                if anomaly_type is not None
+                else True
+            )
+            flagged = scored[
+                scored["anomaly"]
+                & non_model_only
+            ]
             anomaly_summary = {
                 "count": int(len(flagged)),
                 "max_severity": _safe_float(

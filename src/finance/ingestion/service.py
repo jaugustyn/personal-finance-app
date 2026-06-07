@@ -7,6 +7,7 @@ from typing import IO
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
+from finance.analytics.filters import is_expense_category_candidate
 from finance.domain.dto import ImportSummary, TransactionDTO
 from finance.domain.enums import BankSource, CategorySource, TransactionType
 from finance.domain.models import Import, Transaction
@@ -73,17 +74,26 @@ def transaction_values_for_dto(
         else transaction_type == "own_transfer"
     )
 
+    can_assign_category = is_expense_category_candidate(
+        dto.direction.value,
+        is_transfer,
+        transaction_type,
+    )
     rule_category = rule_category_for_type(TransactionType(transaction_type))
-    category = dto.category.value if dto.category else None
+    category = (
+        dto.category.value
+        if dto.category and can_assign_category
+        else None
+    )
     category_source = CategorySource.BANK.value if category is not None else None
-    if category is None and rule_category is not None:
+    if category is None and rule_category is not None and can_assign_category:
         category = rule_category.value
         category_source = CategorySource.RULE.value
 
     category_predicted = None
     category_confidence = None
     category_predicted_source = None
-    if personal and personal.category and category is None:
+    if personal and personal.category and category is None and can_assign_category:
         if personal.mode == RULE_MODE_AUTO:
             category = personal.category
             category_source = CategorySource.RULE.value

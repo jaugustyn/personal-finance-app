@@ -8,9 +8,23 @@ from typing import Any
 from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
 
-from finance.analytics.filters import non_transfer_filters
+from finance.analytics.filters import category_candidate_type_filter, non_transfer_filters
 from finance.domain.models import Transaction
+from finance.stats.recap import custom_recap, period_recap
+from finance.transactions.normalization import normalize_merchant
 
+__all__ = [
+    "months_ago",
+    "overview",
+    "cashflow",
+    "by_category",
+    "networth",
+    "top_merchants",
+    "category_trend",
+    "spend_distribution",
+    "period_recap",
+    "custom_recap",
+]
 
 def months_ago(months: int) -> date:
     today = date.today()
@@ -44,20 +58,69 @@ def _abs_amount_sum() -> Any:
     return func.coalesce(func.sum(func.abs(Transaction.amount)), 0)
 
 
-def _base_filters(start: date, *, include_transfers: bool) -> list[Any]:
-    return [
-        Transaction.booking_date >= start,
-        *non_transfer_filters(include_transfers=include_transfers),
+def _period_start(months: int | None) -> date | None:
+    return months_ago(months - 1) if months is not None else None
+
+
+def _base_filters(start: date | None, *, include_transfers: bool) -> list[Any]:
+    filters = [*non_transfer_filters(include_transfers=include_transfers)]
+    if start is not None:
+        filters.append(Transaction.booking_date >= start)
+    return filters
+
+
+_MERCHANT_GROUP_STOPWORDS = {
+    "card",
+    "karta",
+    "mastercard",
+    "nr",
+    "platnosc",
+    "payment",
+    "pos",
+    "ref",
+    "terminal",
+    "transakcja",
+    "visa",
+    "zakup",
+}
+_LEGAL_SUFFIXES = {"sa", "s", "a", "sp", "z", "oo", "o", "pl"}
+
+
+def _merchant_label(merchant: str | None, title: str | None) -> str:
+    return (merchant or "").strip() or (title or "").strip()
+
+
+def _merchant_group_key(merchant: str | None, title: str | None) -> str:
+    """Stable display grouping for dashboard top merchants.
+
+    Bank exports often append terminal IDs, card-payment prefixes or legal
+    suffixes to the same merchant. For dashboard-level "top spend" we group by
+    the first meaningful normalized token, with title as a fallback when the
+    merchant field is empty.
+    """
+    normalized = normalize_merchant(_merchant_label(merchant, title))
+    tokens = [
+        token
+        for token in normalized.split()
+        if len(token) > 1
+        and not token.isdigit()
+        and token not in _MERCHANT_GROUP_STOPWORDS
+        and token not in _LEGAL_SUFFIXES
     ]
+    return tokens[0] if tokens else normalized
+
+
+def _category_candidate_type_filter() -> Any:
+    return category_candidate_type_filter()
 
 
 def overview(
     session: Session,
     *,
-    months: int,
+    months: int | None,
     include_transfers: bool = False,
 ) -> dict[str, Any]:
-    start = months_ago(months - 1)
+    start = _period_start(months)
     stmt = select(
         _income_expr().label("inc"),
         _expense_expr().label("exp"),
@@ -84,10 +147,10 @@ def overview(
 def cashflow(
     session: Session,
     *,
-    months: int,
+    months: int | None,
     include_transfers: bool = False,
 ) -> list[dict[str, Any]]:
-    start = months_ago(months - 1)
+    start = _period_start(months)
     bucket = func.to_char(Transaction.booking_date, "YYYY-MM").label("month")
     stmt = (
         select(
@@ -118,13 +181,13 @@ def cashflow(
 def by_category(
     session: Session,
     *,
-    months: int,
+    months: int | None,
     direction: str,
     limit: int,
     include_transfers: bool = False,
     include_predictions: bool = False,
 ) -> list[dict[str, Any]]:
-    start = months_ago(months - 1)
+    start = _period_start(months)
     category = (
         func.coalesce(Transaction.category, Transaction.category_predicted)
         if include_predictions
@@ -132,10 +195,15 @@ def by_category(
     )
     amount = _abs_amount_sum().label("amount")
     count = func.count().label("cnt")
+    filters = [
+        *_base_filters(start, include_transfers=include_transfers),
+        Transaction.direction == direction,
+    ]
+    if direction == "debit":
+        filters.append(_category_candidate_type_filter())
     stmt = (
         select(category.label("category"), amount, count)
-        .where(*_base_filters(start, include_transfers=include_transfers))
-        .where(Transaction.direction == direction)
+        .where(*filters)
         .group_by(category)
         .order_by(amount.desc())
         .limit(limit)
@@ -159,10 +227,10 @@ def by_category(
 def networth(
     session: Session,
     *,
-    months: int,
+    months: int | None,
     include_transfers: bool = False,
 ) -> list[dict[str, Any]]:
-    start = months_ago(months - 1)
+    start = _period_start(months)
     bucket = func.to_char(Transaction.booking_date, "YYYY-MM").label("month")
     stmt = (
         select(
@@ -185,30 +253,206 @@ def networth(
 def top_merchants(
     session: Session,
     *,
-    months: int,
+    months: int | None,
     limit: int,
     direction: str,
     include_transfers: bool = False,
+    sort: str = "amount",
 ) -> list[dict[str, Any]]:
-    start = months_ago(months - 1)
-    amount = _abs_amount_sum().label("amount")
-    count = func.count().label("cnt")
-    stmt = (
-        select(Transaction.merchant, amount, count)
+    start = _period_start(months)
+    rows = session.execute(
+        select(
+            Transaction.merchant,
+            Transaction.title,
+            func.abs(Transaction.amount).label("amount"),
+            Transaction.category,
+        )
         .where(*_base_filters(start, include_transfers=include_transfers))
         .where(Transaction.direction == direction)
-        .where(Transaction.merchant != "")
-        .group_by(Transaction.merchant)
+    ).all()
+
+    groups: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        key = _merchant_group_key(row.merchant, row.title)
+        if not key:
+            continue
+        label = _merchant_label(row.merchant, row.title)
+        value = Decimal(row.amount or 0)
+        group = groups.setdefault(
+            key,
+            {
+                "amount": Decimal(0),
+                "count": 0,
+                "labels": {},
+                "categories": {},
+            },
+        )
+        group["amount"] += value
+        group["count"] += 1
+        labels = group["labels"]
+        label_stats = labels.setdefault(label, {"count": 0, "amount": Decimal(0)})
+        label_stats["count"] += 1
+        label_stats["amount"] += value
+        if row.category:
+            categories = group["categories"]
+            categories[row.category] = categories.get(row.category, Decimal(0)) + value
+
+    order_key = (
+        (lambda item: (item[1]["count"], item[1]["amount"]))
+        if sort == "count"
+        else (lambda item: (item[1]["amount"], item[1]["count"]))
+    )
+    sorted_groups = sorted(groups.items(), key=order_key, reverse=True)[:limit]
+
+    out: list[dict[str, Any]] = []
+    for _key, group in sorted_groups:
+        label = max(
+            group["labels"].items(),
+            key=lambda item: (item[1]["count"], item[1]["amount"], item[0]),
+        )[0]
+        dominant_category = None
+        if group["categories"]:
+            dominant_category = max(
+                group["categories"].items(),
+                key=lambda item: item[1],
+            )[0]
+        out.append(
+            {
+                "merchant": label,
+                "amount": group["amount"],
+                "count": int(group["count"]),
+                "category": dominant_category,
+            }
+        )
+    return out
+
+
+def category_trend(
+    session: Session,
+    *,
+    months: int | None,
+    direction: str,
+    limit: int,
+    include_transfers: bool = False,
+) -> list[dict[str, Any]]:
+    """Monthly spend per category for the top ``limit`` categories.
+
+    Returns a flat, chronologically ordered list of ``{month, category,
+    amount}`` rows covering only the categories with the highest total spend in
+    the window. Uncategorised transactions (NULL category) are excluded so the
+    series stay interpretable; the dashboard pivots these rows into a per-month
+    multi-series chart.
+    """
+    start = _period_start(months)
+    amount = _abs_amount_sum().label("amount")
+    base = (
+        *_base_filters(start, include_transfers=include_transfers),
+        Transaction.direction == direction,
+        Transaction.category.is_not(None),
+    )
+    if direction == "debit":
+        base = (*base, _category_candidate_type_filter())
+
+    totals = session.execute(
+        select(Transaction.category.label("category"), amount)
+        .where(*base)
+        .group_by(Transaction.category)
         .order_by(amount.desc())
         .limit(limit)
-    )
-    rows = session.execute(stmt).all()
+    ).all()
+    top_categories = [row.category for row in totals]
+    if not top_categories:
+        return []
+
+    # Bucket per (month, category) in Python so the aggregation works on both
+    # Postgres (production) and SQLite (tests) without dialect-specific date
+    # functions.
+    rows = session.execute(
+        select(
+            Transaction.booking_date,
+            Transaction.category.label("category"),
+            func.abs(Transaction.amount).label("amount"),
+        ).where(*base, Transaction.category.in_(top_categories))
+    ).all()
+    sums: dict[tuple[str, str], Decimal] = {}
+    for row in rows:
+        key = (row.booking_date.strftime("%Y-%m"), row.category)
+        sums[key] = sums.get(key, Decimal(0)) + Decimal(row.amount or 0)
     return [
-        {
-            "merchant": row.merchant,
-            "amount": Decimal(row.amount or 0),
-            "count": int(row.cnt),
-        }
-        for row in rows
+        {"month": month, "category": category, "amount": value}
+        for (month, category), value in sorted(sums.items())
     ]
 
+
+def spend_distribution(
+    session: Session,
+    *,
+    months: int | None,
+    direction: str,
+    bins: int = 12,
+    include_transfers: bool = False,
+) -> dict[str, Any]:
+    """Histogram and summary statistics of single-transaction amounts.
+
+    Powers the dashboard distribution/outlier view: equal-width histogram
+    buckets plus median, mean, the 95th percentile and the inter-quartile
+    bounds used to flag outliers. Computation happens in Python over the
+    in-window amounts, which is bounded for a personal-finance dataset.
+    """
+    start = _period_start(months)
+    rows = session.execute(
+        select(func.abs(Transaction.amount))
+        .where(
+            *_base_filters(start, include_transfers=include_transfers),
+            Transaction.direction == direction,
+        )
+    ).all()
+    amounts = sorted(float(row[0]) for row in rows)
+    if not amounts:
+        return {
+            "buckets": [],
+            "count": 0,
+            "mean": 0.0,
+            "median": 0.0,
+            "p95": 0.0,
+            "max": 0.0,
+            "iqr_upper": 0.0,
+        }
+
+    def _percentile(data: list[float], q: float) -> float:
+        if len(data) == 1:
+            return data[0]
+        pos = q * (len(data) - 1)
+        low = int(pos)
+        high = min(low + 1, len(data) - 1)
+        return data[low] + (data[high] - data[low]) * (pos - low)
+
+    count = len(amounts)
+    mean = sum(amounts) / count
+    median = _percentile(amounts, 0.5)
+    q1 = _percentile(amounts, 0.25)
+    q3 = _percentile(amounts, 0.75)
+    p95 = _percentile(amounts, 0.95)
+    maximum = amounts[-1]
+    iqr_upper = q3 + 1.5 * (q3 - q1)
+
+    lo, hi = amounts[0], maximum
+    width = (hi - lo) / bins if hi > lo else 1.0
+    buckets: list[dict[str, Any]] = []
+    for i in range(bins):
+        lower = lo + i * width
+        upper = lo + (i + 1) * width if i < bins - 1 else hi
+        in_bucket = sum(1 for a in amounts if lower <= a <= upper) if i == bins - 1 else sum(
+            1 for a in amounts if lower <= a < upper
+        )
+        buckets.append({"lower": lower, "upper": upper, "count": in_bucket})
+
+    return {
+        "buckets": buckets,
+        "count": count,
+        "mean": mean,
+        "median": median,
+        "p95": p95,
+        "max": maximum,
+        "iqr_upper": iqr_upper,
+    }

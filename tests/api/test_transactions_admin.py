@@ -2,7 +2,7 @@
 from datetime import date
 from decimal import Decimal
 
-from finance.domain.models import Import, Transaction
+from finance.domain.models import Import, MlFeedbackEvent, Transaction
 
 
 def _tx(session, **overrides) -> Transaction:
@@ -32,6 +32,29 @@ def test_delete_transaction(client, db_session) -> None:
     assert r.status_code == 204
     db_session.expire_all()
     assert db_session.get(Transaction, tx_id) is None
+
+
+def test_delete_transaction_detaches_ml_feedback(client, db_session) -> None:
+    tx = _tx(db_session, dedup_hash="d-feedback")
+    tx_id = tx.id
+    event = MlFeedbackEvent(
+        transaction_id=tx_id,
+        event_type="anomaly_relevant",
+        entity_type="anomaly_merchant",
+        entity_key=tx.merchant,
+    )
+    db_session.add(event)
+    db_session.commit()
+    event_id = event.id
+
+    r = client.delete(f"/transactions/{tx_id}")
+
+    assert r.status_code == 204
+    db_session.expire_all()
+    assert db_session.get(Transaction, tx_id) is None
+    stored_event = db_session.get(MlFeedbackEvent, event_id)
+    assert stored_event is not None
+    assert stored_event.transaction_id is None
 
 
 def test_bulk_delete(client, db_session) -> None:

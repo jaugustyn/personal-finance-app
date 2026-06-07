@@ -1,5 +1,34 @@
 """Tests for heuristic Polish router (no LLM, no DB)."""
+import pytest
+
 from finance.llm.router import heuristic_route
+
+
+@pytest.mark.parametrize(
+    ("question", "tool", "expected_args"),
+    [
+        ("Na co wydaję najwięcej?", "top_categories", {}),
+        ("Co pochłania mój budżet?", "top_categories", {}),
+        ("Gdzie wydałem najwięcej?", "top_merchants", {}),
+        ("Ile wydałem na zakupy?", "get_spending", {"category": "shopping"}),
+        ("Ile wydałem na zakupy spożywcze?", "get_spending", {"category": "food"}),
+        (
+            "Ile zarobiłem w tym miesiącu?",
+            "cashflow_overview",
+            {"period": "this_month"},
+        ),
+        ("Jakie mam subskrypcje?", "list_subscriptions", {}),
+        ("Anomalie w maju 2026", "list_anomalies", {}),
+        ("Co mogę ograniczyć?", "recommend_savings", {}),
+    ],
+)
+def test_heuristic_router_golden_set(question, tool, expected_args):
+    call = heuristic_route(question)
+
+    assert call is not None
+    assert call.name == tool
+    for key, value in expected_args.items():
+        assert call.args.get(key) == value
 
 
 def test_routes_subscriptions():
@@ -18,6 +47,42 @@ def test_routes_top_merchants_category():
     assert call is not None and call.name == "top_merchants"
     assert call.args.get("period") == "this_month"
     assert call.args.get("category") == "food"
+
+
+def test_routes_top_categories_question():
+    call = heuristic_route("Na co wydaję najwięcej?")
+    assert call is not None and call.name == "top_categories"
+
+
+def test_routes_budget_structure_question_to_top_categories():
+    call = heuristic_route("Co pochłania mój budżet?")
+    assert call is not None and call.name == "top_categories"
+
+
+def test_routes_where_spending_question_to_top_merchants():
+    call = heuristic_route("Gdzie wydaję najwięcej?")
+    assert call is not None and call.name == "top_merchants"
+
+
+def test_routes_where_spent_question_with_polish_l_to_top_merchants():
+    call = heuristic_route("Gdzie wydałem najwięcej?")
+    assert call is not None and call.name == "top_merchants"
+
+
+def test_routes_cashflow_question():
+    call = heuristic_route("Ile zarobiłem w tym miesiącu?")
+    assert call is not None and call.name == "cashflow_overview"
+    assert call.args.get("period") == "this_month"
+
+
+def test_routes_shopping_category_without_groceries_collision():
+    call = heuristic_route("Ile wydałem na zakupy w kwietniu 2026?")
+    assert call is not None and call.name == "get_spending"
+    assert call.args.get("category") == "shopping"
+
+    groceries = heuristic_route("Ile wydałem na zakupy spożywcze?")
+    assert groceries is not None and groceries.name == "get_spending"
+    assert groceries.args.get("category") == "food"
 
 
 def test_routes_spending_health_with_polish_month():
@@ -43,6 +108,12 @@ def test_routes_get_spending():
 def test_routes_forecast():
     call = heuristic_route("Prognoza wydatków na transport")
     assert call is not None and call.name == "forecast_for"
+    assert call.args.get("category") == "transport"
+
+
+def test_routes_travel_as_transport():
+    call = heuristic_route("Ile wydałem na podróże i noclegi w maju?")
+    assert call is not None and call.name == "get_spending"
     assert call.args.get("category") == "transport"
 
 

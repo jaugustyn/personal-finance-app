@@ -6,9 +6,10 @@ from datetime import date
 from decimal import Decimal
 from typing import Literal
 
-from sqlalchemy import case, func, select
+from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.orm import Session
 
+from finance.analytics.filters import expense_category_candidate_filters
 from finance.domain.models import Transaction
 
 CategoryState = Literal[
@@ -28,6 +29,9 @@ class TransactionFilters:
     include_transfers: bool = True
     import_id: int | None = None
     merchant: str | None = None
+    search: str | None = None
+    direction: str | None = None
+    category: str | None = None
     category_state: CategoryState = "all"
     has_suggestion: bool | None = None
     min_confidence: float | None = None
@@ -52,6 +56,10 @@ class MerchantGroupSummary:
     total_credit: Decimal
     common_category: str | None
     sample_titles: list[str]
+
+
+def _category_candidate_conditions():
+    return tuple(expense_category_candidate_filters())
 
 
 def _review_priority_expr():
@@ -96,6 +104,30 @@ def filtered_transactions_stmt(filters: TransactionFilters):
         stmt = stmt.where(Transaction.import_id == filters.import_id)
     if filters.merchant:
         stmt = stmt.where(Transaction.merchant == filters.merchant)
+    if filters.search:
+        pattern = f"%{filters.search.strip().lower()}%"
+        stmt = stmt.where(
+            or_(
+                func.lower(Transaction.merchant).like(pattern),
+                func.lower(Transaction.title).like(pattern),
+            )
+        )
+    if filters.direction in {"debit", "credit"}:
+        stmt = stmt.where(Transaction.direction == filters.direction)
+    if filters.category:
+        predicted_match = and_(
+            Transaction.category.is_(None),
+            Transaction.category_predicted == filters.category,
+            *_category_candidate_conditions(),
+        )
+        if filters.category_state != "rejected":
+            predicted_match = and_(
+                predicted_match,
+                Transaction.category_suggestion_rejected.is_(False),
+            )
+        stmt = stmt.where(
+            or_(Transaction.category == filters.category, predicted_match)
+        )
     if filters.transaction_type:
         stmt = stmt.where(Transaction.transaction_type == filters.transaction_type)
     if filters.category_state == "categorized":
@@ -104,13 +136,16 @@ def filtered_transactions_stmt(filters: TransactionFilters):
         stmt = stmt.where(Transaction.category.is_(None))
     elif filters.category_state == "suggested":
         stmt = stmt.where(Transaction.category.is_(None))
+        stmt = stmt.where(*_category_candidate_conditions())
         stmt = stmt.where(Transaction.category_predicted.is_not(None))
         stmt = stmt.where(Transaction.category_suggestion_rejected.is_(False))
     elif filters.category_state == "needs_review":
         stmt = stmt.where(Transaction.category.is_(None))
+        stmt = stmt.where(*_category_candidate_conditions())
         stmt = stmt.where(Transaction.category_suggestion_rejected.is_(False))
     elif filters.category_state == "rejected":
         stmt = stmt.where(Transaction.category.is_(None))
+        stmt = stmt.where(*_category_candidate_conditions())
         stmt = stmt.where(Transaction.category_suggestion_rejected.is_(True))
     if filters.has_suggestion is True:
         stmt = stmt.where(Transaction.category_predicted.is_not(None))
@@ -193,6 +228,7 @@ def merchant_groups(
     )
     if only_uncategorized:
         stmt = stmt.where(Transaction.category.is_(None))
+        stmt = stmt.where(*_category_candidate_conditions())
     stmt = stmt.group_by(Transaction.merchant).having(tx_count >= min_count)
     stmt = stmt.order_by(tx_count.desc()).limit(limit)
     rows = session.execute(stmt).all()

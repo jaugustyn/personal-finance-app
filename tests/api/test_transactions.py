@@ -78,7 +78,6 @@ def test_list_transactions_filters_suggestions_and_type(client, db_session) -> N
         category=None,
         category_predicted="other",
         category_suggestion_rejected=True,
-        transaction_type="person_transfer",
         dedup_hash="h-rejected",
     )
 
@@ -87,10 +86,75 @@ def test_list_transactions_filters_suggestions_and_type(client, db_session) -> N
     assert r.status_code == 200
     assert [row["id"] for row in r.json()] == [suggested.id]
 
-    r2 = client.get("/transactions?category_state=rejected&transaction_type=person_transfer")
+    r2 = client.get("/transactions?category_state=rejected")
     assert r2.status_code == 200
     assert len(r2.json()) == 1
     assert r2.json()[0]["category_suggestion_rejected"] is True
+
+
+def test_list_transactions_search_direction_and_category_filters(
+    client, db_session
+) -> None:
+    allegro = _seed(
+        db_session,
+        merchant="Allegro",
+        title="Płatność online Allegro",
+        category=None,
+        category_predicted="shopping",
+        category_confidence=0.86,
+        category_predicted_source="model",
+        dedup_hash="h-filter-allegro",
+    )
+    income = _seed(
+        db_session,
+        amount=Decimal("5000"),
+        direction="credit",
+        merchant="ACME Sp. z o.o.",
+        title="Wynagrodzenie za pracę",
+        category=None,
+        transaction_type="income",
+        dedup_hash="h-filter-income",
+    )
+    _seed(
+        db_session,
+        amount=Decimal("-1200"),
+        direction="debit",
+        merchant="Anna Nowak",
+        title="Przelew na telefon",
+        category=None,
+        category_predicted="shopping",
+        category_confidence=0.99,
+        transaction_type="person_transfer",
+        dedup_hash="h-filter-stale-prediction",
+    )
+    transport = _seed(
+        db_session,
+        merchant="Uber",
+        title="Przejazd",
+        category="transport",
+        dedup_hash="h-filter-transport",
+    )
+
+    search = client.get("/transactions?search=allegro")
+    assert search.status_code == 200
+    assert [row["id"] for row in search.json()] == [allegro.id]
+
+    direction = client.get("/transactions?direction=credit")
+    assert direction.status_code == 200
+    assert [row["id"] for row in direction.json()] == [income.id]
+
+    predicted_category = client.get("/transactions?category=shopping")
+    assert predicted_category.status_code == 200
+    assert [row["id"] for row in predicted_category.json()] == [allegro.id]
+
+    assigned_category = client.get("/transactions?category=transport")
+    assert assigned_category.status_code == 200
+    assert [row["id"] for row in assigned_category.json()] == [transport.id]
+
+    export = client.get("/transactions/export.csv?category=shopping")
+    assert export.status_code == 200
+    assert "Allegro" in export.text
+    assert "Uber" not in export.text
 
 
 def test_export_csv_streams_attachment(client, db_session) -> None:
@@ -126,6 +190,39 @@ def test_export_csv_escapes_formula_injection(client, db_session) -> None:
     assert ",+1+1" not in text
 
 
+def test_review_summary_buckets_and_recurring(client, db_session) -> None:
+    # confirmed label
+    _seed(db_session, merchant="Biedronka", category="health", dedup_hash="h-conf")
+    # ready to accept
+    _seed(
+        db_session,
+        merchant="Uber",
+        category=None,
+        category_predicted="transport",
+        category_confidence=0.90,
+        dedup_hash="h-ready",
+    )
+    # recurring uncategorized merchant (3x) with no rule
+    for i in range(3):
+        _seed(db_session, merchant="Local Cafe", category=None, dedup_hash=f"h-cafe-{i}")
+
+    r = client.get("/transactions/review-summary?rare_class_threshold=5&recurring_min_count=3")
+
+    assert r.status_code == 200
+    body = r.json()
+    assert body["counts"]["categorized"] == 1
+    assert body["counts"]["ready_to_accept"] == 1
+    assert body["counts"]["uncategorized"] == 4
+    # health has 1 label -> below threshold 5
+    assert {"category": "health", "count": 1} in body["rare_classes"]
+    # Local Cafe appears 3x uncategorized with no personal rule
+    assert any(m["merchant"] == "Local Cafe" for m in body["recurring_unruled"])
+    assert body["feedback_quality"]["total_events"] == 0
+    assert body["confusion_hotspots"] == []
+    assert body["anomaly_feedback"]["reviewed"] == 0
+    assert body["subscription_feedback"]["hidden"] == 0
+
+
 def test_patch_category_updates(client, db_session) -> None:
     tx = _seed(db_session, category=None, dedup_hash="h-patch")
     r = client.patch(f"/transactions/{tx.id}/category", json={"category": "transport"})
@@ -136,6 +233,45 @@ def test_patch_category_updates(client, db_session) -> None:
     # Persistence check via fresh GET
     r2 = client.get("/transactions")
     assert r2.json()[0]["category"] == "transport"
+
+
+def test_patch_category_rejects_non_expense_candidate(client, db_session) -> None:
+    tx = _seed(
+        db_session,
+        amount=Decimal("500"),
+        direction="credit",
+        transaction_type="income",
+        category=None,
+        dedup_hash="h-patch-income",
+    )
+
+    r = client.patch(f"/transactions/{tx.id}/category", json={"category": "food"})
+
+    assert r.status_code == 422
+
+
+def test_patch_category_derives_parent_from_subcategory(client, db_session) -> None:
+    tx = _seed(db_session, category=None, dedup_hash="h-patch-sub")
+
+    r = client.patch(
+        f"/transactions/{tx.id}/category",
+        json={"category": None, "subcategory": "fuel"},
+    )
+
+    assert r.status_code == 200
+    assert r.json()["category"] == "transport"
+    assert r.json()["subcategory"] == "fuel"
+
+
+def test_patch_category_rejects_mismatched_subcategory(client, db_session) -> None:
+    tx = _seed(db_session, category=None, dedup_hash="h-patch-bad-sub")
+
+    r = client.patch(
+        f"/transactions/{tx.id}/category",
+        json={"category": "food", "subcategory": "fuel"},
+    )
+
+    assert r.status_code == 422
 
 
 def test_patch_category_can_remember_merchant_rule(client, db_session) -> None:
@@ -163,6 +299,77 @@ def test_patch_category_clears_with_null(client, db_session) -> None:
 
 def test_patch_category_404_on_missing(client) -> None:
     r = client.patch("/transactions/9999/category", json={"category": "food"})
+    assert r.status_code == 404
+
+
+def test_patch_type_updates_and_sets_transfer(client, db_session) -> None:
+    tx = _seed(db_session, category=None, dedup_hash="h-type")
+    r = client.patch(
+        f"/transactions/{tx.id}/type",
+        json={"transaction_type": "person_transfer"},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["transaction_type"] == "person_transfer"
+    assert body["is_transfer"] is False
+
+    r2 = client.patch(
+        f"/transactions/{tx.id}/type", json={"transaction_type": "own_transfer"}
+    )
+    assert r2.status_code == 200
+    assert r2.json()["is_transfer"] is True
+
+
+def test_patch_type_404_on_invalid(client, db_session) -> None:
+    tx = _seed(db_session, category=None, dedup_hash="h-type-bad")
+    r = client.patch(
+        f"/transactions/{tx.id}/type", json={"transaction_type": "nonsense"}
+    )
+    assert r.status_code == 404
+
+
+def test_patch_annotations_sets_notes_and_dedup_tags(client, db_session) -> None:
+    tx = _seed(db_session, category=None, dedup_hash="h-annot")
+    r = client.patch(
+        f"/transactions/{tx.id}/annotations",
+        json={"notes": "  split with flatmate  ", "tags": ["Food", "food", " gift "]},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["notes"] == "split with flatmate"
+    assert body["tags"] == ["Food", "gift"]
+
+    # Omitted fields stay unchanged; blank/null notes clear the note.
+    r2 = client.patch(
+        f"/transactions/{tx.id}/annotations", json={"notes": "   "}
+    )
+    assert r2.status_code == 200
+    body2 = r2.json()
+    assert body2["notes"] is None
+    assert body2["tags"] == ["Food", "gift"]
+
+    r3 = client.patch(
+        f"/transactions/{tx.id}/annotations", json={"notes": "again"}
+    )
+    assert r3.status_code == 200
+    assert r3.json()["notes"] == "again"
+
+    r4 = client.patch(
+        f"/transactions/{tx.id}/annotations", json={"notes": None}
+    )
+    assert r4.status_code == 200
+    assert r4.json()["notes"] is None
+
+    r5 = client.patch(
+        f"/transactions/{tx.id}/annotations", json={"tags": ["keep"]}
+    )
+    assert r5.status_code == 200
+    assert r5.json()["notes"] is None
+    assert r5.json()["tags"] == ["keep"]
+
+
+def test_patch_annotations_404(client, db_session) -> None:
+    r = client.patch("/transactions/999999/annotations", json={"notes": "x"})
     assert r.status_code == 404
 
 
@@ -213,6 +420,30 @@ def test_accept_suggestions_endpoint(client, db_session) -> None:
     assert tx.category_source == "model"
 
 
+def test_accept_suggestions_endpoint_allows_low_confidence_override(
+    client, db_session
+) -> None:
+    tx = _seed(
+        db_session,
+        category=None,
+        category_predicted="shopping",
+        category_confidence=0.18,
+        category_predicted_source="model",
+        dedup_hash="h-suggest-low-override",
+    )
+
+    r = client.post(
+        "/transactions/bulk/accept-suggestions",
+        json={"ids": [tx.id], "min_confidence": 0},
+    )
+
+    assert r.status_code == 200
+    assert r.json()["affected"] == 1
+    db_session.refresh(tx)
+    assert tx.category == "shopping"
+    assert tx.category_source == "model"
+
+
 def test_reject_suggestions_endpoint(client, db_session) -> None:
     tx = _seed(
         db_session,
@@ -229,7 +460,27 @@ def test_reject_suggestions_endpoint(client, db_session) -> None:
     assert r.json()["affected"] == 1
     db_session.refresh(tx)
     assert tx.category is None
-    assert tx.category_predicted is None
-    assert tx.category_confidence is None
-    assert tx.category_predicted_source is None
+    assert tx.category_predicted == "food"
+    assert tx.category_confidence == 0.88
+    assert tx.category_predicted_source == "model"
     assert tx.category_suggestion_rejected is True
+
+
+def test_restore_suggestions_endpoint(client, db_session) -> None:
+    tx = _seed(
+        db_session,
+        category=None,
+        category_predicted="food",
+        category_confidence=0.88,
+        category_predicted_source="model",
+        category_suggestion_rejected=True,
+        dedup_hash="h-restore",
+    )
+
+    r = client.post("/transactions/bulk/restore-suggestions", json={"ids": [tx.id]})
+
+    assert r.status_code == 200
+    assert r.json()["affected"] == 1
+    db_session.refresh(tx)
+    assert tx.category_predicted == "food"
+    assert tx.category_suggestion_rejected is False

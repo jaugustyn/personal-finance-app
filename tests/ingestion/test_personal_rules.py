@@ -45,7 +45,6 @@ def test_personal_rule_can_auto_apply_transfer_type(db_session) -> None:
         db_session,
         pattern="broker",
         transaction_type="own_transfer",
-        is_transfer=True,
         category="savings",
         mode="auto_apply",
     )
@@ -59,6 +58,23 @@ def test_personal_rule_can_auto_apply_transfer_type(db_session) -> None:
 
     assert values["transaction_type"] == "own_transfer"
     assert values["is_transfer"] is True
-    assert values["category"] == "savings"
-    assert values["category_source"] == "rule"
+    assert values["category"] is None
+    assert values["category_source"] is None
 
+
+def test_rule_category_is_not_applied_to_credit_income(db_session) -> None:
+    values = transaction_values_for_dto(
+        db_session,
+        _dto(
+            amount=Decimal("15.00"),
+            direction=TransactionDirection.CREDIT,
+            merchant="Bank",
+            title="Odsetki",
+        ),
+        import_id=1,
+        dedup_hash="hash",
+    )
+
+    assert values["transaction_type"] == "income"
+    assert values["category"] is None
+    assert values["category_source"] is None

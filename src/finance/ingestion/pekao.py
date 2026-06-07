@@ -34,7 +34,6 @@ _EXPECTED_HEADER = {
     "Tytułem",
     "Kwota operacji",
     "Waluta",
-    "Typ operacji",
     "Kategoria",
 }
 

@@ -56,7 +56,10 @@ def _seed(session) -> None:
 def test_chat_health_reports_unavailable(client) -> None:
     r = client.get("/chat/health")
     assert r.status_code == 200
-    assert r.json()["ollama_available"] is False
+    body = r.json()
+    assert body["ollama_available"] is False
+    assert body["mode"] == "deterministic"
+    assert "top_categories" in body["deterministic_tools"]
 
 
 def test_heuristic_question_answers_without_ollama(client, db_session) -> None:
@@ -67,6 +70,65 @@ def test_heuristic_question_answers_without_ollama(client, db_session) -> None:
     assert body["source"] == "heuristic"
     assert body["tool"] is not None
     assert body["data"] is not None
+
+
+def test_top_categories_question_answers_without_ollama(client, db_session) -> None:
+    _seed(db_session)
+    r = client.post("/chat", json={"question": "Na co wydaję najwięcej?"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["source"] == "heuristic"
+    assert body["tool"] == "top_categories"
+    assert body["data"]["categories"]
+
+
+def test_top_merchants_question_with_polish_l_answers_without_ollama(
+    client,
+    db_session,
+) -> None:
+    _seed(db_session)
+    r = client.post("/chat", json={"question": "Gdzie wydałem najwięcej?"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["source"] == "heuristic"
+    assert body["tool"] == "top_merchants"
+    assert body["data"]["merchants"]
+
+
+def test_cashflow_question_answers_without_ollama(client, db_session) -> None:
+    _seed(db_session)
+    r = client.post(
+        "/chat",
+        json={"question": "Jaki mam cashflow w tym miesiącu?"},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["source"] == "heuristic"
+    assert body["tool"] == "cashflow_overview"
+    assert body["data"] is not None
+
+
+def test_period_followup_reuses_previous_tool_without_ollama(client, db_session) -> None:
+    _seed(db_session)
+    first = client.post(
+        "/chat",
+        json={"question": "Jaki mam cashflow w poprzednim miesiącu?"},
+    )
+    assert first.status_code == 200
+    first_body = first.json()
+    followup = client.post(
+        "/chat",
+        json={
+            "question": "a w kwietniu?",
+            "previous_tool": first_body["tool"],
+            "previous_tool_args": first_body["tool_args"],
+        },
+    )
+    assert followup.status_code == 200
+    body = followup.json()
+    assert body["source"] == "context"
+    assert body["tool"] == "cashflow_overview"
+    assert body["tool_args"]["period"] == "kwiet"
 
 
 def test_unmatched_question_returns_smalltalk(client) -> None:

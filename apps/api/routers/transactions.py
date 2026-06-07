@@ -1,7 +1,7 @@
 """GET endpoints for transactions: listing and basic aggregations."""
 from datetime import date
 from decimal import Decimal
-from typing import Literal
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
@@ -23,6 +23,7 @@ class TransactionRow(BaseModel):
     merchant: str
     title: str
     category: str | None
+    subcategory: str | None = None
     category_source: str | None = None
     category_predicted: str | None
     category_confidence: float | None
@@ -31,6 +32,8 @@ class TransactionRow(BaseModel):
     transaction_type: str = "purchase"
     source: str
     is_transfer: bool = False
+    notes: str | None = None
+    tags: list[str] = Field(default_factory=list)
     import_id: int | None = None
 
     model_config = {"from_attributes": True}
@@ -63,6 +66,9 @@ def list_transactions(
     include_transfers: bool = Query(default=True),
     import_id: int | None = None,
     merchant: str | None = None,
+    search: str | None = None,
+    direction: Literal["debit", "credit"] | None = None,
+    category: str | None = None,
     category_state: CategoryState = Query(default="all"),
     has_suggestion: bool | None = Query(default=None),
     min_confidence: float | None = Query(default=None, ge=0.0, le=1.0),
@@ -76,6 +82,9 @@ def list_transactions(
         include_transfers=include_transfers,
         import_id=import_id,
         merchant=merchant,
+        search=search,
+        direction=direction,
+        category=category,
         category_state=category_state,
         has_suggestion=has_suggestion,
         min_confidence=min_confidence,
@@ -95,6 +104,9 @@ def export_csv(
     include_transfers: bool = Query(default=True),
     import_id: int | None = None,
     merchant: str | None = None,
+    search: str | None = None,
+    direction: Literal["debit", "credit"] | None = None,
+    category: str | None = None,
     category_state: CategoryState = Query(default="all"),
     has_suggestion: bool | None = Query(default=None),
     min_confidence: float | None = Query(default=None, ge=0.0, le=1.0),
@@ -109,6 +121,9 @@ def export_csv(
         include_transfers=include_transfers,
         import_id=import_id,
         merchant=merchant,
+        search=search,
+        direction=direction,
+        category=category,
         category_state=category_state,
         has_suggestion=has_suggestion,
         min_confidence=min_confidence,
@@ -172,8 +187,69 @@ def merchant_groups(
     return [MerchantGroup(**r.__dict__) for r in rows]
 
 
+class ReviewCounts(BaseModel):
+    uncategorized: int
+    no_suggestion: int
+    low_confidence: int
+    ready_to_accept: int
+    rejected: int
+    categorized: int
+
+
+class RareClass(BaseModel):
+    category: str
+    count: int
+
+
+class RecurringMerchant(BaseModel):
+    merchant: str
+    count: int
+
+
+class ReviewSummary(BaseModel):
+    counts: ReviewCounts
+    rare_classes: list[RareClass]
+    recurring_unruled: list[RecurringMerchant]
+    feedback_quality: dict[str, Any] = Field(default_factory=dict)
+    confusion_hotspots: list[dict[str, Any]] = Field(default_factory=list)
+    anomaly_feedback: dict[str, Any] = Field(default_factory=dict)
+    subscription_feedback: dict[str, Any] = Field(default_factory=dict)
+    confidence_threshold: float
+    rare_class_threshold: int
+
+
+@router.get("/review-summary", response_model=ReviewSummary)
+def review_summary(
+    session: Session = Depends(get_session),
+    rare_class_threshold: int = Query(default=40, ge=1, le=1000),
+    recurring_min_count: int = Query(default=3, ge=1, le=100),
+    recurring_limit: int = Query(default=10, ge=1, le=100),
+) -> ReviewSummary:
+    """Data-quality buckets that most improve ML training data (Review Center)."""
+    data = tx_service.review_summary(
+        session,
+        rare_class_threshold=rare_class_threshold,
+        recurring_min_count=recurring_min_count,
+        recurring_limit=recurring_limit,
+    )
+    return ReviewSummary(
+        counts=ReviewCounts(**data["counts"].__dict__),
+        rare_classes=[RareClass(**r.__dict__) for r in data["rare_classes"]],
+        recurring_unruled=[
+            RecurringMerchant(**r.__dict__) for r in data["recurring_unruled"]
+        ],
+        feedback_quality=data["feedback_quality"],
+        confusion_hotspots=data["confusion_hotspots"],
+        anomaly_feedback=data["anomaly_feedback"],
+        subscription_feedback=data["subscription_feedback"],
+        confidence_threshold=data["confidence_threshold"],
+        rare_class_threshold=data["rare_class_threshold"],
+    )
+
+
 class CategoryUpdate(BaseModel):
     category: str | None  # None clears the manual label.
+    subcategory: str | None = None  # optional refinement within the group.
     remember_rule: bool = False
 
 
@@ -184,11 +260,60 @@ def update_category(
     session: Session = Depends(get_session),
 ) -> TransactionRow:
     """Manual override of a transaction category (active learning)."""
-    tx = tx_service.update_category(
+    try:
+        tx = tx_service.update_category(
+            session,
+            tx_id,
+            payload.category,
+            subcategory=payload.subcategory,
+            remember_rule=payload.remember_rule,
+        )
+    except tx_service.InvalidCategoryAssignment as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if tx is None:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    return TransactionRow.model_validate(tx)
+
+
+class TypeUpdate(BaseModel):
+    transaction_type: str
+
+
+@router.patch("/{tx_id}/type", response_model=TransactionRow)
+def update_type(
+    tx_id: int,
+    payload: TypeUpdate,
+    session: Session = Depends(get_session),
+) -> TransactionRow:
+    """Manual override of a transaction type (e.g. mark a personal transfer)."""
+    tx = tx_service.update_transaction_type(
+        session, tx_id, payload.transaction_type
+    )
+    if tx is None:
+        raise HTTPException(
+            status_code=404, detail="Transaction not found or invalid type"
+        )
+    return TransactionRow.model_validate(tx)
+
+
+class AnnotationUpdate(BaseModel):
+    notes: str | None = None  # omitted leaves unchanged; null/empty clears
+    tags: list[str] | None = None  # None leaves tags unchanged
+
+
+@router.patch("/{tx_id}/annotations", response_model=TransactionRow)
+def update_annotations(
+    tx_id: int,
+    payload: AnnotationUpdate,
+    session: Session = Depends(get_session),
+) -> TransactionRow:
+    """Set user notes and/or tags on a transaction (curation metadata)."""
+    fields = payload.model_fields_set
+    tx = tx_service.update_annotations(
         session,
         tx_id,
-        payload.category,
-        remember_rule=payload.remember_rule,
+        notes=payload.notes if "notes" in fields else tx_service.UNCHANGED,
+        tags=payload.tags if "tags" in fields else tx_service.UNCHANGED,
     )
     if tx is None:
         raise HTTPException(status_code=404, detail="Transaction not found")
@@ -259,6 +384,15 @@ def reject_suggestions(
     return BulkResult(affected=affected)
 
 
+@router.post("/bulk/restore-suggestions", response_model=BulkResult)
+def restore_suggestions(
+    payload: RejectSuggestions,
+    session: Session = Depends(get_session),
+) -> BulkResult:
+    affected = tx_service.restore_suggestions(session, ids=payload.ids)
+    return BulkResult(affected=affected)
+
+
 class BulkDelete(BaseModel):
     ids: list[int] = Field(default_factory=list)
 
@@ -277,4 +411,3 @@ def delete_transaction(
     deleted = tx_service.delete_transaction(session, tx_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Transaction not found")
-

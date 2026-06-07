@@ -62,8 +62,8 @@ class Import(Base):
 class CategoryDef(Base):
     """User-manageable category catalog.
 
-    System categories (the eight built-in ones from :class:`Category`) are
-    seeded on first use and cannot be deleted. Users may add their own.
+    System categories from :class:`Category` are seeded on first use and cannot
+    be deleted. Users may add their own.
     The ``Transaction.category`` column stores the category *name* (string),
     so removing a custom category simply leaves transactions with an unknown
     label until they are re-categorised.
@@ -75,6 +75,7 @@ class CategoryDef(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(64))
     is_system: Mapped[bool] = mapped_column(Boolean, default=False)
+    parent: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     color: Mapped[str | None] = mapped_column(String(16), nullable=True)
     icon: Mapped[str | None] = mapped_column(String(32), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
@@ -148,6 +149,7 @@ class Transaction(Base):
 
     raw_category: Mapped[str | None] = mapped_column(String(128), nullable=True)
     category: Mapped[Category | None] = mapped_column(String(32), nullable=True)
+    subcategory: Mapped[str | None] = mapped_column(String(64), nullable=True)
     category_source: Mapped[str | None] = mapped_column(String(32), nullable=True)
     category_predicted: Mapped[Category | None] = mapped_column(String(32), nullable=True)
     category_confidence: Mapped[float | None] = mapped_column(nullable=True)
@@ -165,12 +167,45 @@ class Transaction(Base):
 
     is_transfer: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
 
+    notes: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    tags: Mapped[list[str]] = mapped_column(JSON, default=list, server_default="[]")
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
 
     account: Mapped[Account | None] = relationship(back_populates="transactions")
     import_: Mapped[Import | None] = relationship(back_populates="transactions")
+
+
+class MlFeedbackEvent(Base):
+    """Audit trail of user feedback on ML/AI suggestions."""
+
+    __tablename__ = "ml_feedback_events"
+    __table_args__ = (
+        Index("ix_ml_feedback_event_type", "event_type"),
+        Index("ix_ml_feedback_created_at", "created_at"),
+        Index("ix_ml_feedback_predicted_category", "predicted_category"),
+        Index("ix_ml_feedback_entity", "entity_type", "entity_key"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    transaction_id: Mapped[int | None] = mapped_column(
+        ForeignKey("transactions.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    entity_type: Mapped[str | None] = mapped_column(String(48), nullable=True)
+    entity_key: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    event_type: Mapped[str] = mapped_column(String(48))
+    predicted_category: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    final_category: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    source: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    model_artifact: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
 
 
 class Asset(Base):

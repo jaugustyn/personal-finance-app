@@ -65,9 +65,23 @@ def list_anomalies(session: Session, args: dict[str, Any]) -> dict[str, Any]:
     if df.empty:
         return {"anomalies": []}
     result = detect_anomalies(df, direction="debit")
+    scored = result.df.copy()
+    if "severity" not in scored.columns:
+        scored["severity"] = 0.0
+    if "priority_score" not in scored.columns:
+        scored["priority_score"] = scored["severity"]
+    anomaly_type = scored.get("anomaly_type")
+    non_model_only = (
+        anomaly_type.fillna("").ne("model_only")
+        if anomaly_type is not None
+        else True
+    )
     flagged = (
-        result.df[result.df["anomaly"]]
-        .sort_values("severity", ascending=False)
+        scored[
+            scored["anomaly"]
+            & non_model_only
+        ]
+        .sort_values(["priority_score", "severity"], ascending=False)
         .head(parsed.limit)
     )
     out = []
@@ -85,6 +99,8 @@ def list_anomalies(session: Session, args: dict[str, Any]) -> dict[str, Any]:
                 "merchant": row.get("merchant") or "",
                 "amount": _safe_float(row["amount"]),
                 "severity": _safe_float(row["severity"]),
+                "priority_score": _safe_float(row.get("priority_score", 0.0)),
+                "anomaly_type": row.get("anomaly_type") or "",
                 "reasons": _split_reasons(row.get("reasons")),
             }
         )

@@ -5,6 +5,7 @@ import pandas as pd
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from finance.analytics.filters import transfer_mask
 from finance.domain.models import Transaction
 
 
@@ -44,5 +45,5 @@ def load_transactions_df(session: Session) -> pd.DataFrame:
         return df
     df["amount"] = df["amount"].astype(float)
     df["abs_amount"] = df["amount"].abs()
-    df["is_transfer"] = df["is_transfer"].fillna(False).astype(bool)
+    df["is_transfer"] = transfer_mask(df)
     return df
