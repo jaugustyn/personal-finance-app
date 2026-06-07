@@ -36,7 +36,7 @@ experiments = [
     "pmdarima>=2.0",
     "prophet>=1.1.6",
     "chromadb>=0.5",
-    "sentence-transformers>=3.2",
+    "sentence-transformers>=5.5.1",
     "pyarrow>=17.0",
 ]
 dev = [
