@@ -8,9 +8,9 @@ import pandas as pd
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from finance.analytics.filters import expense_category_candidate_filters
 from finance.domain.dto import TransactionDTO
 from finance.domain.models import Transaction
-from finance.transactions.rules import is_category_suggestion_candidate
 
 
 def dtos_to_dataframe(dtos: Iterable[TransactionDTO]) -> pd.DataFrame:
@@ -43,12 +43,10 @@ def dtos_to_dataframe(dtos: Iterable[TransactionDTO]) -> pd.DataFrame:
 def load_training_set(session: Session) -> pd.DataFrame:
     """Load all transactions with a non-null `category` from the DB."""
     stmt = select(Transaction).where(Transaction.category.is_not(None))
-    stmt = stmt.where(Transaction.is_transfer.is_(False))
+    stmt = stmt.where(*expense_category_candidate_filters())
     rows = session.execute(stmt).scalars().all()
     data = []
     for r in rows:
-        if not is_category_suggestion_candidate(r.transaction_type):
-            continue
         data.append(
             {
                 "text": f"{r.merchant} {r.title}".strip(),

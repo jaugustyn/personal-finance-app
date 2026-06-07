@@ -19,13 +19,15 @@
 ## 2. Zamierzony użytek
 
 - **Primary:** sugestia kategorii wydatkowej dla transakcji bankowych (PL/EN
-  merchant strings) na 8 kategorii zgodnie z ontologią użytkownika.
+  merchant strings) na 9 kategorii zgodnie z ontologią użytkownika.
 - **Secondary:** sugestia kategorii w UI z poziomem pewności.
+- **Evidence-only secondary:** analiza wieloklasowa `transaction_type` na
+  silver labels z obecnych reguł importu. Ten model służy do raportów i
+  argumentacji ML, nie do decyzji runtime.
 - **Out of scope:**
   - decyzje kredytowe / scoring,
   - profilowanie behawioralne,
-  - wykrywanie przelewów/przychodów jako kategorii ML (`transaction_type` i
-    `is_transfer` są osobną warstwą regułową),
+  - zastąpienie reguł wykrywania przelewów/przychodów modelem ML,
   - klasyfikacja transakcji w innych walutach niż PLN (eksperymentalne).
 
 ## 3. Dane treningowe
@@ -35,7 +37,7 @@
 | **Źródła**      | CSV: Pekao SA, Revolut                                                                                |
 | **Okres**       | 2024-01 – 2026-04                                                                                     |
 | **Wielkość**    | ~3 800 transakcji, ~2 200 oznakowanych ręcznie                                                        |
-| **Klasy**       | food, transport, housing, health, savings, subscriptions, entertainment, other                        |
+| **Klasy**       | food, transport, housing, health, savings, subscriptions, entertainment, shopping, other              |
 | **Augmentacja** | `finance.ml.classification.augment` (LLM Llama 3.1 8B) — synthetic merchant strings dla rzadkich klas |
 | **Train/test**  | StratifiedKFold (5-fold), MIN_PER_CLASS=2                                                             |
 
@@ -76,12 +78,36 @@ Per-class F1 (linear_svc, agregat 5 foldów):
 | housing       | 0.78 | 180     |
 | subscriptions | 0.81 | 95      |
 | entertainment | 0.72 | 120     |
+| shopping      | _TBD_ | _TBD_   |
 | health        | 0.68 | 70      |
 | savings       | 0.66 | 55      |
 | other         | 0.61 | 210     |
 
 > _Wartości orientacyjne — odtwórz z `data/reports/classification\__.json` po
 > ponownym treningu na własnym datasecie.\*
+
+### 4.1 Dodatkowy eksperyment: `transaction_type`
+
+| Pole | Wartość |
+| --- | --- |
+| **Nazwa** | `transaction_type_evidence` |
+| **Pipeline** | `src/finance/ml/transaction_type/pipeline.py` |
+| **Wejście** | `merchant + title + raw_category`, `abs_amount`, `direction`, opcjonalnie `source` |
+| **Target** | `Transaction.transaction_type` |
+| **Klasy** | `purchase`, `own_transfer`, `person_transfer`, `salary`, `income`, `refund`, `cash_withdrawal`, `debt_payment`, `bank_fee`, `savings_investment`, `other` |
+| **Label source** | `silver_transaction_type` |
+| **Runtime** | Bez zmian: import nadal używa `finance.transactions.rules.detect_transaction_type` |
+
+Raport `transaction_type_classification_*.json` porównuje
+`dummy_most_frequent`, `logreg` i `linear_svc`, zawiera macro-F1, weighted-F1,
+metryki per-class, confusion matrix, class counts oraz listę klas odrzuconych
+przez zbyt niski support. Wynik jest częścią wspólnego
+`evidence_package_*.json`.
+
+Ograniczenie metodologiczne: `Transaction.transaction_type` jest v1 silver
+label, bo repo nie ma osobnego pola `transaction_type_source`. To wystarcza do
+pokazania analizy wieloklasowej typu transakcji, ale nie dowodzi jeszcze, że
+model ML jest lepszy od reguł produkcyjnych.
 
 ## 5. Ograniczenia i ryzyka
 
@@ -96,6 +122,9 @@ Per-class F1 (linear_svc, agregat 5 foldów):
 - **Privacy** — model artefakt nie zawiera surowych transakcji, ale TF-IDF
   vocabulary potencjalnie ujawnia merchantów. Nie udostępniać artefaktu
   publicznie.
+- **Silver labels dla `transaction_type`** — nowy eksperyment uczy się na
+  etykietach pochodzących z reguł, więc raportuje zgodność z obecną semantyką,
+  a nie niezależną prawdę ekspercką.
 
 ## 6. Etyka i fairness
 
@@ -112,6 +141,11 @@ python -m finance.ml.classification.train \
     --from-files data/raw/*.csv \
     --augment data/synthetic/augmented.csv \
     --persist linear_svc
+
+python scripts/build_ml_evidence.py --from-db
+
+# Standalone wariant wymaga CSV z kolumną transaction_type.
+python -m finance.ml.transaction_type.train data/private/transaction_type_silver_labels.csv
 ```
 
 Seed: `random_state=42` w `StratifiedKFold`. Wersje bibliotek: zob.

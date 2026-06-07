@@ -16,6 +16,7 @@ class _FakePipeline:
     def __init__(self, *, category: str = "food", confidence: float = 0.8) -> None:
         self.category = category
         self.confidence = confidence
+        self.classes_ = np.asarray(["food", "transport"])
 
     def predict(self, _x):
         return np.asarray([self.category])
@@ -52,6 +53,23 @@ def test_predict_transaction_model_only(monkeypatch) -> None:
     assert result.confidence == 0.81
     assert result.source == "model"
     assert result.fallback_used is False
+    assert result.recommended_action == "accept_candidate"
+    assert result.top_predictions[0]["category"] == "food"
+    assert result.top_predictions[0]["confidence"] == 0.81
+
+
+def test_predict_transaction_marks_non_category_candidate(monkeypatch) -> None:
+    monkeypatch.setattr(predict_mod, "get_classifier", lambda: _FakePipeline(confidence=0.81))
+
+    result = predict_mod.predict_transaction(
+        "ACME",
+        "Wynagrodzenie",
+        Decimal("5000.00"),
+        date(2026, 1, 10),
+        transaction_type="income",
+    )
+
+    assert result.recommended_action == "not_category_candidate"
 
 
 def test_prediction_features_include_feature_v2_columns() -> None:
@@ -163,6 +181,103 @@ def test_reclassify_unlabelled_skips_person_transfers(db_session: Session, monke
     assert updated == 0
     db_session.refresh(tx)
     assert tx.transaction_type == "person_transfer"
+    assert tx.category_predicted is None
+
+
+def test_reclassify_unlabelled_skips_debt_payment_without_model(
+    db_session: Session,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        predict_mod,
+        "get_classifier",
+        lambda: (_ for _ in ()).throw(AssertionError("model should not be loaded")),
+    )
+    tx = Transaction(
+        booking_date=date(2026, 1, 10),
+        amount=Decimal("-650.00"),
+        currency="PLN",
+        direction="debit",
+        merchant="Alior Bank",
+        title="Rata kredytu gotówkowego",
+        category=None,
+        category_predicted="other",
+        source="pekao",
+        dedup_hash="pred-debt",
+    )
+    db_session.add(tx)
+    db_session.commit()
+
+    updated = predict_mod.reclassify_unlabelled(db_session)
+
+    assert updated == 0
+    db_session.refresh(tx)
+    assert tx.transaction_type == "debt_payment"
+    assert tx.category_predicted is None
+
+
+def test_reclassify_unlabelled_skips_credit_income_without_model(
+    db_session: Session,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        predict_mod,
+        "get_classifier",
+        lambda: (_ for _ in ()).throw(AssertionError("model should not be loaded")),
+    )
+    tx = Transaction(
+        booking_date=date(2026, 1, 10),
+        amount=Decimal("1220.00"),
+        currency="PLN",
+        direction="credit",
+        merchant="WYŻSZA SZKOŁA EKONOMII I INFORMATYK",
+        title="Stypendium rektora student",
+        category=None,
+        source="pekao",
+        dedup_hash="pred-income",
+    )
+    db_session.add(tx)
+    db_session.commit()
+
+    updated = predict_mod.reclassify_unlabelled(db_session)
+
+    assert updated == 0
+    db_session.refresh(tx)
+    assert tx.transaction_type == "income"
+    assert tx.category is None
+    assert tx.category_predicted is None
+
+
+def test_reclassify_unlabelled_applies_source_shopping_category_without_model(
+    db_session: Session,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        predict_mod,
+        "get_classifier",
+        lambda: (_ for _ in ()).throw(AssertionError("model should not be loaded")),
+    )
+    tx = Transaction(
+        booking_date=date(2026, 1, 10),
+        amount=Decimal("-120.00"),
+        currency="PLN",
+        direction="debit",
+        merchant="Allegro",
+        title="Płatność online Allegro",
+        raw_category="shopping",
+        category=None,
+        source="generic",
+        dedup_hash="pred-source-shopping",
+    )
+    db_session.add(tx)
+    db_session.commit()
+
+    updated = predict_mod.reclassify_unlabelled(db_session)
+
+    assert updated == 1
+    db_session.refresh(tx)
+    assert tx.category == "shopping"
+    assert tx.category_source == "bank"
     assert tx.category_predicted is None
 
 

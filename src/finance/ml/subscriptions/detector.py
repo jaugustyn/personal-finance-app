@@ -14,6 +14,7 @@ from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 
+from finance.analytics.filters import expense_category_candidate_mask
 from finance.transactions.normalization import normalize_merchant
 
 CADENCES: dict[str, int] = {
@@ -57,6 +58,8 @@ class Subscription:
     samples: pd.DataFrame
 
 
+# Legacy/non-expense category labels from older imports; current data should
+# represent these via transaction_type/is_transfer instead.
 EXCLUDED_CATEGORIES: set[str] = {"savings", "income", "salary", "transfer"}
 
 
@@ -102,11 +105,9 @@ def detect_subscriptions(
     """
     if df.empty:
         return []
-    d = df[df["direction"] == "debit"].copy()
+    d = df[expense_category_candidate_mask(df)].copy()
     if d.empty:
         return []
-    if "is_transfer" in d.columns:
-        d = d[~d["is_transfer"].fillna(False).astype(bool)]
     if "category" in d.columns:
         category = d["category"].fillna("").astype(str).str.lower()
         d = d[~category.isin(EXCLUDED_CATEGORIES)]

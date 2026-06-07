@@ -8,6 +8,7 @@ from finance.ml.evidence import (
     build_anomaly_review,
     build_eda_summary,
     build_forecasting_evidence,
+    build_subscription_evidence,
 )
 
 
@@ -24,6 +25,7 @@ def _df() -> pd.DataFrame:
                 "title": "Zakupy",
                 "category": "food",
                 "is_transfer": False,
+                "transaction_type": "purchase",
             }
         )
     rows.append(
@@ -36,6 +38,7 @@ def _df() -> pd.DataFrame:
             "title": "Large",
             "category": "other",
             "is_transfer": False,
+            "transaction_type": "purchase",
         }
     )
     rows.append(
@@ -48,6 +51,7 @@ def _df() -> pd.DataFrame:
             "title": "Salary",
             "category": None,
             "is_transfer": False,
+            "transaction_type": "salary",
         }
     )
     return pd.DataFrame(rows)
@@ -73,3 +77,39 @@ def test_build_anomaly_review_splits_private_and_public() -> None:
     assert "merchant" in review.private_rows.columns or review.private_rows.empty
     assert "examples" in review.public_summary
     assert "New Merchant" not in str(review.public_summary)
+
+
+def test_build_subscription_evidence_uses_aliases() -> None:
+    df = _df()
+    extra = pd.DataFrame(
+        [
+            {
+                "booking_date": date(2026, 1, 1),
+                "amount": -29.99,
+                "abs_amount": 29.99,
+                "direction": "debit",
+                "merchant": "Netflix",
+                "title": "subskrypcja",
+                "category": "subscriptions",
+                "is_transfer": False,
+                "transaction_type": "purchase",
+            },
+            {
+                "booking_date": date(2026, 2, 1),
+                "amount": -29.99,
+                "abs_amount": 29.99,
+                "direction": "debit",
+                "merchant": "Netflix",
+                "title": "subskrypcja",
+                "category": "subscriptions",
+                "is_transfer": False,
+                "transaction_type": "purchase",
+            },
+        ]
+    )
+    report = build_subscription_evidence(pd.concat([df, extra], ignore_index=True))
+
+    assert report["detector"] == "cadence_amount_heuristic"
+    assert report["subscriptions_detected"] >= 1
+    assert report["examples"][0]["subscription_alias"].startswith("subscription_")
+    assert "Netflix" not in str(report)

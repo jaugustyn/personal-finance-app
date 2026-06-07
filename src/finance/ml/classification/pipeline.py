@@ -80,6 +80,25 @@ def _numeric_features() -> Pipeline:
     )
 
 
+# --- Text-only pipeline for external datasets (HF, etc) ---
+def build_pipeline_text(estimator: BaseEstimator) -> Pipeline:
+    """Text-only TF-IDF pipeline (no numeric/categorical features)."""
+    features = ColumnTransformer(
+        transformers=[
+            ("text", _text_features(), "text"),
+        ],
+        remainder="drop",
+        sparse_threshold=1.0,
+    )
+    return Pipeline([("features", features), ("clf", estimator)])
+
+
+def to_features_text(df: pd.DataFrame) -> pd.DataFrame:
+    if "text" not in df.columns:
+        raise ValueError("Missing required 'text' column for text-only pipeline.")
+    return df[["text"]]
+
+
 def build_pipeline(estimator: BaseEstimator) -> Pipeline:
     """Build the full TF-IDF + numeric → estimator pipeline."""
     features = ColumnTransformer(

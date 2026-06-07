@@ -1,4 +1,4 @@
-"""ML classification of transactions into the unified 8-class schema."""
+"""ML classification of transactions into the unified expense-category schema."""
 
 from finance.ml.classification.dataset import dtos_to_dataframe, load_training_set
 from finance.ml.classification.pipeline import build_pipeline

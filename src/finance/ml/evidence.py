@@ -12,6 +12,21 @@ import pandas as pd
 
 from finance.ml.anomaly.detector import detect_anomalies
 from finance.ml.forecasting.pipeline import build_monthly_series, evaluate_walk_forward
+from finance.ml.subscriptions.detector import detect_subscriptions
+
+EVIDENCE_SCHEMA_VERSION = "2.0"
+EVIDENCE_SECTIONS = (
+    "category_classification",
+    "transaction_type_classification",
+    "forecasting",
+    "anomaly_detection",
+    "subscriptions",
+)
+EVIDENCE_SEMANTIC_NOTE = (
+    "transaction_type models money-flow semantics; category models expense "
+    "budget taxonomy. Hard financial facts for LLM answers are computed by "
+    "deterministic tools, not vector-only retrieval."
+)
 
 
 def _split_reasons(value: object) -> list[str]:
@@ -170,11 +185,25 @@ def build_anomaly_review(df: pd.DataFrame, *, top_n: int = 20) -> AnomalyReview:
         empty = pd.DataFrame()
         return AnomalyReview(
             private_rows=empty,
-            public_summary={"top_n": top_n, "flagged": 0, "reason_counts": {}},
+            public_summary={
+                "top_n": top_n,
+                "flagged": 0,
+                "reason_counts": {},
+                "examples": [],
+                "precision_at_k": None,
+                "precision_at_20": None,
+                "precision_at_50": None,
+                "reviewed_count": 0,
+                "precision_note": "Fill after manual private review of private_rows.",
+            },
         )
 
     scored = detect_anomalies(d, direction="debit").df
-    flagged = scored[scored["anomaly"]].sort_values("severity", ascending=False).head(top_n)
+    flagged = (
+        scored[scored["anomaly"] & (scored["anomaly_type"].fillna("") != "model_only")]
+        .sort_values(["priority_score", "severity"], ascending=False)
+        .head(top_n)
+    )
     private_rows = flagged[
         ["booking_date", "merchant", "title", "amount", "category", "severity", "reasons"]
     ].copy()
@@ -212,3 +241,111 @@ def build_anomaly_review(df: pd.DataFrame, *, top_n: int = 20) -> AnomalyReview:
             "precision_note": "Fill after manual private review of private_rows.",
         },
     )
+
+
+def build_subscription_evidence(df: pd.DataFrame, *, top_n: int = 10) -> dict[str, Any]:
+    """Return privacy-preserving aggregate evidence for subscription detection."""
+    d = _prepared(df)
+    if d.empty:
+        return {
+            "detector": "cadence_amount_heuristic",
+            "subscriptions_detected": 0,
+            "estimated_monthly_cost": 0.0,
+            "cadence_counts": {},
+            "confidence_summary": {},
+            "examples": [],
+        }
+
+    subs = detect_subscriptions(d)
+    cadence_counts: dict[str, int] = {}
+    confidences: list[float] = []
+    monthly_cost = 0.0
+    examples: list[dict[str, Any]] = []
+    for idx, sub in enumerate(subs):
+        cadence_counts[sub.cadence] = cadence_counts.get(sub.cadence, 0) + 1
+        confidences.append(float(sub.confidence))
+        monthly_cost += float(sub.estimated_monthly_cost)
+        if len(examples) < top_n:
+            examples.append(
+                {
+                    "subscription_alias": f"subscription_{idx + 1:02d}",
+                    "cadence": sub.cadence,
+                    "occurrences": int(sub.occurrences),
+                    "confidence": float(sub.confidence),
+                    "estimated_monthly_cost": float(sub.estimated_monthly_cost),
+                }
+            )
+
+    confidence_summary = {
+        "min": min(confidences) if confidences else None,
+        "mean": sum(confidences) / len(confidences) if confidences else None,
+        "max": max(confidences) if confidences else None,
+    }
+    return {
+        "detector": "cadence_amount_heuristic",
+        "subscriptions_detected": int(len(subs)),
+        "estimated_monthly_cost": float(round(monthly_cost, 2)),
+        "cadence_counts": cadence_counts,
+        "confidence_summary": confidence_summary,
+        "examples": examples,
+        "privacy_note": "Merchant names are replaced with stable aliases in public evidence.",
+    }
+
+
+def build_evidence_package(
+    *,
+    generated_at: str,
+    source: str,
+    category_classification: dict[str, Any],
+    transaction_type_classification: dict[str, Any],
+    forecasting: dict[str, Any],
+    anomaly_detection: dict[str, Any],
+    subscriptions: dict[str, Any],
+    privacy_check: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Build the stable public evidence package artifact."""
+    if source not in {"db", "files"}:
+        raise ValueError("source must be 'db' or 'files'")
+    return {
+        "report_type": "ml_evidence_package",
+        "schema_version": EVIDENCE_SCHEMA_VERSION,
+        "generated_at": generated_at,
+        "source": source,
+        "sections": {
+            "category_classification": category_classification,
+            "transaction_type_classification": transaction_type_classification,
+            "forecasting": forecasting,
+            "anomaly_detection": anomaly_detection,
+            "subscriptions": subscriptions,
+        },
+        "semantic_note": EVIDENCE_SEMANTIC_NOTE,
+        "privacy_check": privacy_check or {},
+    }
+
+
+def validate_evidence_package(package: dict[str, Any]) -> list[str]:
+    """Return structural validation errors for the stable evidence package."""
+    errors: list[str] = []
+    if package.get("report_type") != "ml_evidence_package":
+        errors.append("evidence_package.report_type must be ml_evidence_package")
+    if package.get("schema_version") != EVIDENCE_SCHEMA_VERSION:
+        errors.append(f"evidence_package.schema_version must be {EVIDENCE_SCHEMA_VERSION}")
+    if not package.get("generated_at"):
+        errors.append("evidence_package.generated_at is required")
+    if package.get("source") not in {"db", "files"}:
+        errors.append("evidence_package.source must be db or files")
+    sections = package.get("sections")
+    if not isinstance(sections, dict):
+        errors.append("evidence_package.sections must be an object")
+        sections = {}
+    for key in EVIDENCE_SECTIONS:
+        if key not in sections:
+            errors.append(f"evidence_package.sections.{key} is required")
+    if not package.get("semantic_note"):
+        errors.append("evidence_package.semantic_note is required")
+    privacy = package.get("privacy_check")
+    if not isinstance(privacy, dict):
+        errors.append("evidence_package.privacy_check must be an object")
+    elif privacy.get("passed") is not True:
+        errors.append("evidence_package.privacy_check.passed must be true")
+    return errors

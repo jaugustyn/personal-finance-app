@@ -26,11 +26,15 @@ import joblib
 import numpy as np
 import pandas as pd
 from sklearn.metrics import classification_report, confusion_matrix, f1_score
-from sklearn.model_selection import StratifiedKFold, cross_val_predict
+from sklearn.model_selection import GroupShuffleSplit, StratifiedKFold, cross_val_predict
 
-from finance.domain.enums import BankSource
+from finance.analytics.filters import expense_category_candidate_mask
+from finance.domain.enums import BankSource, Category
 from finance.ingestion import get_parser
-from finance.ml.classification.confidence import cross_val_prediction_confidence
+from finance.ml.classification.confidence import (
+    cross_val_prediction_confidence,
+    prediction_confidence_vector,
+)
 from finance.ml.classification.dataset import dtos_to_dataframe, load_training_set
 from finance.ml.classification.external import load_kaggle_personal_finance
 from finance.ml.classification.pipeline import (
@@ -40,14 +44,22 @@ from finance.ml.classification.pipeline import (
     to_features_v2,
 )
 from finance.ml.classification.registry import ESTIMATORS
+from finance.transactions.normalization import normalize_merchant
 
 MODELS_DIR = Path("data/models")
 REPORTS_DIR = Path("data/reports")
 MIN_PER_CLASS = 2  # minimum labelled samples per class to keep it for CV
 CONFIDENCE_THRESHOLDS = [0.0, 0.5, 0.55, 0.6, 0.7, 0.8, 0.9]
 EVIDENCE_THRESHOLD = 0.55
+TARGET_THRESHOLD_ACCURACY = 0.9
 FEATURE_SETS = {"baseline", "feature_v2"}
 DEFAULT_FEATURE_SET = "baseline"
+MINIMUM_LABELLED_ROWS = 300
+RECOMMENDED_LABELLED_ROWS = 800
+IDEAL_LABELLED_ROWS = 2000
+MINIMUM_PER_CATEGORY = 20
+RECOMMENDED_PER_CATEGORY = 50
+STRONG_PER_CATEGORY = 100
 
 
 def _load_from_files(paths: list[Path]) -> pd.DataFrame:
@@ -86,6 +98,80 @@ def _filter_rare_classes(df: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, int]
     keep = {c for c, n in counts.items() if n >= MIN_PER_CLASS}
     dropped = {c: n for c, n in counts.items() if n < MIN_PER_CLASS}
     return df[df["category"].isin(keep)].reset_index(drop=True), dropped
+
+
+def filter_category_training_rows(df: pd.DataFrame) -> pd.DataFrame:
+    """Keep only confirmed rows that are valid expense-category training labels."""
+    out = df[df["category"].notna()].copy() if "category" in df.columns else df.iloc[0:0]
+    if out.empty:
+        return out.reset_index(drop=True)
+    out = out[expense_category_candidate_mask(out)]
+    return out.reset_index(drop=True)
+
+
+def build_label_readiness(df: pd.DataFrame) -> dict[str, object]:
+    """Summarise whether confirmed labels are enough for reliable ML evidence."""
+    labelled = filter_category_training_rows(df)
+    counts = labelled["category"].astype(str).value_counts().to_dict() if not labelled.empty else {}
+    category_counts = {category.value: int(counts.get(category.value, 0)) for category in Category}
+    total = int(len(labelled))
+    below_minimum = [
+        category for category, count in category_counts.items() if count < MINIMUM_PER_CATEGORY
+    ]
+    below_recommended = [
+        category
+        for category, count in category_counts.items()
+        if count < RECOMMENDED_PER_CATEGORY
+    ]
+
+    if total >= IDEAL_LABELLED_ROWS and not below_recommended:
+        level = "thesis_ready"
+    elif total >= RECOMMENDED_LABELLED_ROWS and not below_minimum:
+        level = "good"
+    elif total >= MINIMUM_LABELLED_ROWS:
+        level = "minimum"
+    else:
+        level = "insufficient"
+
+    date_span_months = None
+    if "booking_date" in labelled.columns and not labelled.empty:
+        dates = pd.to_datetime(labelled["booking_date"], errors="coerce").dropna()
+        if not dates.empty:
+            date_span_months = int(
+                (dates.max().year - dates.min().year) * 12
+                + dates.max().month
+                - dates.min().month
+                + 1
+            )
+
+    return {
+        "level": level,
+        "total_labelled": total,
+        "minimum_total": MINIMUM_LABELLED_ROWS,
+        "recommended_total": RECOMMENDED_LABELLED_ROWS,
+        "ideal_total": IDEAL_LABELLED_ROWS,
+        "minimum_per_category": MINIMUM_PER_CATEGORY,
+        "recommended_per_category": RECOMMENDED_PER_CATEGORY,
+        "strong_per_category": STRONG_PER_CATEGORY,
+        "category_counts": category_counts,
+        "below_minimum_per_category": below_minimum,
+        "below_recommended_per_category": below_recommended,
+        "date_span_months": date_span_months,
+        "recommended_history_months": "6-12",
+        "training_labels_source": "confirmed Transaction.category only",
+        "category_predicted_is_ground_truth": False,
+        "language_note": (
+            "Polish real bank labels are the primary quality signal. English "
+            "external datasets are experiment-only and may hurt Polish merchant "
+            "generalisation."
+        ),
+        "next_review_priority": [
+            "unlabelled expense-like rows",
+            "low-confidence suggestions",
+            "rare categories below target",
+            "frequent merchants with repeated mistakes",
+        ],
+    }
 
 
 def _cross_val_confidence(
@@ -150,6 +236,127 @@ def _confidence_point(
         "coverage": None,
         "accuracy_on_covered": None,
         "covered": 0,
+    }
+
+
+def _per_category_metrics(report: dict, labels: list[str]) -> dict[str, dict[str, float | int]]:
+    raw = report.get("report", {}) if "report" in report else report
+    out: dict[str, dict[str, float | int]] = {}
+    for label in labels:
+        metrics = raw.get(label, {}) if isinstance(raw, dict) else {}
+        out[label] = {
+            "precision": float(metrics.get("precision", 0.0) or 0.0),
+            "recall": float(metrics.get("recall", 0.0) or 0.0),
+            "f1": float(metrics.get("f1-score", 0.0) or 0.0),
+            "support": int(metrics.get("support", 0) or 0),
+        }
+    return out
+
+
+def _confusion_hotspots_from_predictions(
+    y_true: pd.Series,
+    y_pred: np.ndarray,
+    *,
+    limit: int = 10,
+) -> list[dict[str, object]]:
+    truth = np.asarray(y_true.astype(str))
+    pred = np.asarray(pd.Series(y_pred).astype(str))
+    counts: dict[tuple[str, str], int] = {}
+    for actual, predicted in zip(truth, pred, strict=False):
+        if actual == predicted:
+            continue
+        key = (str(predicted), str(actual))
+        counts[key] = counts.get(key, 0) + 1
+    rows = sorted(counts.items(), key=lambda item: item[1], reverse=True)[:limit]
+    return [
+        {
+            "predicted_category": predicted,
+            "actual_category": actual,
+            "count": count,
+        }
+        for (predicted, actual), count in rows
+    ]
+
+
+def _recommended_thresholds_by_category(
+    y_true: pd.Series,
+    y_pred: np.ndarray,
+    confidence: np.ndarray | None,
+    labels: list[str],
+    *,
+    target_accuracy: float = TARGET_THRESHOLD_ACCURACY,
+) -> dict[str, dict[str, float | int | None]]:
+    if confidence is None:
+        return {
+            label: {
+                "threshold": EVIDENCE_THRESHOLD,
+                "coverage": None,
+                "accuracy_on_covered": None,
+                "covered": 0,
+            }
+            for label in labels
+        }
+    truth = np.asarray(y_true.astype(str))
+    pred = np.asarray(pd.Series(y_pred).astype(str))
+    conf = np.asarray(confidence, dtype=float)
+    out: dict[str, dict[str, float | int | None]] = {}
+    for label in labels:
+        predicted_label = pred == label
+        total_predicted = int(predicted_label.sum())
+        chosen: dict[str, float | int | None] | None = None
+        for threshold in sorted(CONFIDENCE_THRESHOLDS):
+            mask = predicted_label & (conf >= threshold)
+            covered = int(mask.sum())
+            if covered == 0:
+                continue
+            accuracy = float((truth[mask] == pred[mask]).mean())
+            candidate = {
+                "threshold": threshold,
+                "coverage": float(covered / total_predicted) if total_predicted else 0.0,
+                "accuracy_on_covered": accuracy,
+                "covered": covered,
+            }
+            if accuracy >= target_accuracy:
+                chosen = candidate
+                break
+            chosen = candidate
+        out[label] = chosen or {
+            "threshold": EVIDENCE_THRESHOLD,
+            "coverage": 0.0,
+            "accuracy_on_covered": None,
+            "covered": 0,
+        }
+    return out
+
+
+def _model_metrics_from_predictions(
+    y: pd.Series,
+    y_pred: np.ndarray,
+    confidence: np.ndarray | None,
+    labels: list[str],
+) -> dict[str, object]:
+    report = classification_report(
+        y,
+        y_pred,
+        labels=labels,
+        output_dict=True,
+        zero_division=0,
+    )
+    return {
+        "macro_f1": f1_score(y, y_pred, average="macro", zero_division=0),
+        "weighted_f1": f1_score(y, y_pred, average="weighted", zero_division=0),
+        "report": report,
+        "labels": labels,
+        "confusion_matrix": confusion_matrix(y, y_pred, labels=labels).tolist(),
+        "confidence_curve": _confidence_curve(y, y_pred, confidence),
+        "per_category": _per_category_metrics(report, labels),
+        "confusion_hotspots": _confusion_hotspots_from_predictions(y, y_pred),
+        "recommended_thresholds_by_category": _recommended_thresholds_by_category(
+            y,
+            y_pred,
+            confidence,
+            labels,
+        ),
     }
 
 
@@ -240,7 +447,7 @@ def evaluate(
     pipeline_builder=build_pipeline,
     feature_selector=to_features,
 ) -> dict:
-    df = df[df["category"].notna()].reset_index(drop=True)
+    df = filter_category_training_rows(df)
     if df.empty:
         raise SystemExit("No labelled rows to train on.")
     df, dropped = _filter_rare_classes(df)
@@ -258,16 +465,9 @@ def evaluate(
         try:
             y_pred = cross_val_predict(pipe, X, y, cv=cv, n_jobs=None)
             confidence = _cross_val_confidence(pipe, X, y, cv)
-            report = classification_report(
-                y, y_pred, labels=labels, output_dict=True, zero_division=0
-            )
+            metrics = _model_metrics_from_predictions(y, y_pred, confidence, labels)
             results[name] = {
-                "macro_f1": f1_score(y, y_pred, average="macro", zero_division=0),
-                "weighted_f1": f1_score(y, y_pred, average="weighted", zero_division=0),
-                "report": report,
-                "labels": labels,
-                "confusion_matrix": confusion_matrix(y, y_pred, labels=labels).tolist(),
-                "confidence_curve": _confidence_curve(y, y_pred, confidence),
+                **metrics,
                 "confidence_note": (
                     "For LinearSVC this is a softmax-normalized decision margin, "
                     "not a calibrated probability. Calibrated estimators expose "
@@ -309,6 +509,142 @@ def evaluate_feature_v2(df: pd.DataFrame, *, n_splits: int = 5, seed: int = 42) 
     )
 
 
+def _predict_confidence_after_fit(pipe, X: pd.DataFrame) -> np.ndarray | None:  # noqa: N803
+    vector = prediction_confidence_vector(pipe, X)
+    if vector is None:
+        return None
+    _, confidences = vector
+    if len(X) == 1:
+        return np.asarray([float(np.max(confidences))])
+    try:
+        if hasattr(pipe, "predict_proba"):
+            proba = np.asarray(pipe.predict_proba(X), dtype=float)
+            return proba.max(axis=1)
+        if hasattr(pipe, "decision_function"):
+            scores = np.asarray(pipe.decision_function(X), dtype=float)
+            if scores.ndim == 1:
+                scores = np.column_stack([-scores, scores])
+            scores = scores - scores.max(axis=1, keepdims=True)
+            exp = np.exp(scores)
+            proba = exp / exp.sum(axis=1, keepdims=True)
+            return proba.max(axis=1)
+    except Exception:
+        return None
+    return None
+
+
+def _evaluate_holdout(
+    df: pd.DataFrame,
+    *,
+    train_idx: pd.Index,
+    test_idx: pd.Index,
+    pipeline_builder=build_pipeline,
+    feature_selector=to_features,
+) -> dict[str, object]:
+    train_df = filter_category_training_rows(df.loc[train_idx]).reset_index(drop=True)
+    test_df = filter_category_training_rows(df.loc[test_idx]).reset_index(drop=True)
+    if train_df.empty or test_df.empty:
+        return {"skipped": True, "reason": "Empty train or test split."}
+    train_df, dropped = _filter_rare_classes(train_df)
+    train_labels = set(train_df["category"].astype(str))
+    test_df = test_df[test_df["category"].astype(str).isin(train_labels)].reset_index(drop=True)
+    if train_df.empty or test_df.empty or len(train_labels) < 2:
+        return {
+            "skipped": True,
+            "reason": "Not enough overlapping classes in train/test split.",
+            "dropped_rare_classes": dropped,
+        }
+
+    X_train = feature_selector(train_df)  # noqa: N806
+    y_train = train_df["category"].astype(str)
+    X_test = feature_selector(test_df)  # noqa: N806
+    y_test = test_df["category"].astype(str)
+    labels = sorted(set(y_train) | set(y_test))
+    results: dict[str, dict[str, object]] = {}
+    for name, factory in ESTIMATORS.items():
+        pipe = pipeline_builder(factory())
+        try:
+            pipe.fit(X_train, y_train)
+            y_pred = pipe.predict(X_test)
+            confidence = _predict_confidence_after_fit(pipe, X_test)
+            results[name] = {
+                **_model_metrics_from_predictions(y_test, y_pred, confidence, labels),
+                "skipped": False,
+            }
+        except Exception as exc:  # noqa: BLE001
+            results[name] = {
+                "macro_f1": 0.0,
+                "weighted_f1": 0.0,
+                "skipped": True,
+                "error": str(exc),
+            }
+    return {
+        "skipped": False,
+        "n_train": int(len(train_df)),
+        "n_test": int(len(test_df)),
+        "labels": labels,
+        "dropped_rare_classes": dropped,
+        "models": results,
+    }
+
+
+def _time_holdout(df: pd.DataFrame, *, test_fraction: float = 0.2) -> dict[str, object]:
+    labelled = filter_category_training_rows(df)
+    if labelled.empty or "booking_date" not in labelled.columns:
+        return {"skipped": True, "reason": "No booking_date in labelled data."}
+    ordered = labelled.sort_values("booking_date").reset_index(drop=True)
+    split = max(int(len(ordered) * (1.0 - test_fraction)), 1)
+    if split >= len(ordered):
+        return {"skipped": True, "reason": "Not enough rows for time holdout."}
+    return _evaluate_holdout(
+        ordered,
+        train_idx=ordered.index[:split],
+        test_idx=ordered.index[split:],
+    ) | {"split": "last_20_percent_by_booking_date"}
+
+
+def _merchant_group_holdout(
+    df: pd.DataFrame,
+    *,
+    test_fraction: float = 0.2,
+    seed: int = 42,
+) -> dict[str, object]:
+    labelled = filter_category_training_rows(df)
+    if labelled.empty:
+        return {"skipped": True, "reason": "No labelled data."}
+    merchant = labelled.get("merchant", labelled["text"]).fillna("").map(normalize_merchant)
+    groups = merchant.where(merchant.str.len() > 0, labelled["text"].fillna(""))
+    if groups.nunique() < 2:
+        return {"skipped": True, "reason": "Not enough merchant groups."}
+    splitter = GroupShuffleSplit(n_splits=1, test_size=test_fraction, random_state=seed)
+    train_pos, test_pos = next(splitter.split(labelled, labelled["category"], groups))
+    train_groups = set(groups.iloc[train_pos])
+    test_groups = set(groups.iloc[test_pos])
+    overlap = train_groups & test_groups
+    report = _evaluate_holdout(
+        labelled.reset_index(drop=True),
+        train_idx=pd.Index(train_pos),
+        test_idx=pd.Index(test_pos),
+    )
+    if isinstance(report, dict):
+        report["split"] = "group_shuffle_by_merchant_norm"
+        report["merchant_group_overlap"] = len(overlap)
+    return report
+
+
+def build_validation_slices(
+    real_df: pd.DataFrame,
+    *,
+    seed: int = 42,
+) -> dict[str, object]:
+    stratified = evaluate(real_df, seed=seed)
+    return {
+        "stratified_cv": stratified,
+        "time_holdout": _time_holdout(real_df),
+        "merchant_group_holdout": _merchant_group_holdout(real_df, seed=seed),
+    }
+
+
 def build_evidence_report(
     real_df: pd.DataFrame,
     *,
@@ -322,6 +658,7 @@ def build_evidence_report(
     The top level remains compatible with older ``classification_*.json``
     readers by exposing the selected experiment directly under ``models``.
     """
+    label_readiness = build_label_readiness(real_df)
     experiments = {
         "real_only": evaluate(real_df, n_splits=n_splits, seed=seed),
     }
@@ -357,24 +694,46 @@ def build_evidence_report(
         feature_variants["baseline"],
         feature_variants["feature_v2"],
     )
+    validation_slices = build_validation_slices(real_df, seed=seed)
     selected = "real_only"
     if augmented_df is not None:
         combined = pd.concat([real_df, augmented_df], ignore_index=True, sort=False)
         experiments["augmented"] = evaluate(combined, n_splits=n_splits, seed=seed)
-        selected = "augmented"
 
     report = dict(experiments[selected])
+    best_model = _best_non_dummy(experiments["real_only"])
+    best_report = (
+        experiments["real_only"]["models"].get(best_model, {})
+        if best_model is not None
+        else {}
+    )
     report.update(
         {
             "report_type": "classification_evidence",
             "selected_experiment": selected,
+            "selected_experiment_note": (
+                "real_only is the primary quality signal. Augmented/external "
+                "experiments are reported separately and do not replace real labels."
+            ),
             "experiments": experiments,
             "feature_variants": feature_variants,
             "feature_decision": feature_decision,
+            "validation_slices": validation_slices,
+            "confusion_hotspots": best_report.get("confusion_hotspots", []),
+            "confidence_policy": {
+                "source_model": best_model,
+                "default_threshold": EVIDENCE_THRESHOLD,
+                "target_accuracy": TARGET_THRESHOLD_ACCURACY,
+                "per_category": best_report.get(
+                    "recommended_thresholds_by_category",
+                    {},
+                ),
+            },
             "feature_v2_note": (
                 "Experimental comparison only. Runtime classifier_latest remains "
                 "on the baseline feature set until reviewed."
             ),
+            "label_readiness": label_readiness,
             "external_data": external_summary,
             "external_data_note": (
                 "External public/synthetic datasets are reported as separate "
@@ -404,7 +763,7 @@ def fit_final(
     *,
     feature_set: str = DEFAULT_FEATURE_SET,
 ):
-    df = df[df["category"].notna()].reset_index(drop=True)
+    df = filter_category_training_rows(df)
     df, _ = _filter_rare_classes(df)
     pipeline_builder, feature_selector = _feature_builder(feature_set)
     X = feature_selector(df)  # noqa: N806

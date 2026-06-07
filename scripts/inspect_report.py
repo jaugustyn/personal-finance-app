@@ -3,14 +3,23 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
 from typing import Any
 
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "src"))
+
+from finance.ml.evidence import EVIDENCE_SECTIONS, validate_evidence_package  # noqa: E402
+
 LATEST_REPORTS = {
     "classification": "latest_classification.json",
+    "transaction_type": "latest_transaction_type_classification.json",
     "eda": "latest_eda.json",
     "forecasting": "latest_forecasting.json",
+    "subscriptions": "latest_subscriptions.json",
     "anomaly": "latest_anomaly_summary.json",
+    "evidence_package": "latest_evidence_package.json",
     "privacy": "privacy_check_latest.json",
 }
 
@@ -34,6 +43,103 @@ def _classification_path(reports_dir: Path) -> Path | None:
     return reports[-1] if reports else None
 
 
+def _require_keys(report: dict[str, Any], keys: list[str], prefix: str) -> list[str]:
+    return [f"{prefix}.{key} is required" for key in keys if key not in report]
+
+
+def _validate_model_metrics(report: dict[str, Any], prefix: str) -> list[str]:
+    errors: list[str] = []
+    models = report.get("models")
+    if not isinstance(models, dict):
+        return [f"{prefix}.models must be an object"]
+    for model_name in ("dummy_most_frequent", "linear_svc"):
+        model = models.get(model_name)
+        if not isinstance(model, dict):
+            errors.append(f"{prefix}.models.{model_name} is required")
+            continue
+        errors.extend(
+            _require_keys(
+                model,
+                ["macro_f1", "weighted_f1", "confusion_matrix"],
+                f"{prefix}.models.{model_name}",
+            )
+        )
+        if "confusion_matrix" in model and not isinstance(model["confusion_matrix"], list):
+            errors.append(f"{prefix}.models.{model_name}.confusion_matrix must be a list")
+    return errors
+
+
+def _validate_category_section(report: dict[str, Any], prefix: str) -> list[str]:
+    errors = _require_keys(
+        report,
+        ["models", "class_counts", "n_total_labelled", "n_classes"],
+        prefix,
+    )
+    errors.extend(_validate_model_metrics(report, prefix))
+    return errors
+
+
+def _validate_transaction_type_section(report: dict[str, Any], prefix: str) -> list[str]:
+    errors = _require_keys(
+        report,
+        ["label_source", "runtime_policy", "models", "class_counts"],
+        prefix,
+    )
+    if report.get("label_source") != "silver_transaction_type":
+        errors.append(f"{prefix}.label_source must be silver_transaction_type")
+    if report.get("runtime_policy") != "evidence_only_rules_remain_source_of_truth":
+        errors.append(f"{prefix}.runtime_policy must keep runtime rules as source of truth")
+    errors.extend(_validate_model_metrics(report, prefix))
+    return errors
+
+
+def _validate_forecasting_section(report: dict[str, Any], prefix: str) -> list[str]:
+    errors = _require_keys(report, ["series"], prefix)
+    if "series" in report and not isinstance(report["series"], list):
+        errors.append(f"{prefix}.series must be a list")
+    return errors
+
+
+def _validate_anomaly_section(report: dict[str, Any], prefix: str) -> list[str]:
+    return _require_keys(
+        report,
+        ["flagged", "precision_at_k", "precision_at_20", "precision_at_50"],
+        prefix,
+    )
+
+
+def _validate_subscriptions_section(report: dict[str, Any], prefix: str) -> list[str]:
+    errors = _require_keys(
+        report,
+        ["detector", "subscriptions_detected", "estimated_monthly_cost", "examples"],
+        prefix,
+    )
+    if "examples" in report and not isinstance(report["examples"], list):
+        errors.append(f"{prefix}.examples must be a list")
+    return errors
+
+
+def _validate_package_sections(package: dict[str, Any]) -> list[str]:
+    errors = validate_evidence_package(package)
+    sections = package.get("sections")
+    if not isinstance(sections, dict):
+        return errors
+    validators = {
+        "category_classification": _validate_category_section,
+        "transaction_type_classification": _validate_transaction_type_section,
+        "forecasting": _validate_forecasting_section,
+        "anomaly_detection": _validate_anomaly_section,
+        "subscriptions": _validate_subscriptions_section,
+    }
+    for section_name in EVIDENCE_SECTIONS:
+        section = sections.get(section_name)
+        if not isinstance(section, dict):
+            errors.append(f"evidence_package.sections.{section_name} must be an object")
+            continue
+        errors.extend(validators[section_name](section, f"evidence_package.sections.{section_name}"))
+    return errors
+
+
 def _print_classification(report: dict[str, Any]) -> list[str]:
     warnings: list[str] = []
     print("Classification")
@@ -41,6 +147,13 @@ def _print_classification(report: dict[str, Any]) -> list[str]:
     print("  Selected experiment:", report.get("selected_experiment", "unknown"))
     if "experiments" in report:
         print("  Experiments:", ", ".join(report["experiments"].keys()))
+    external = report.get("external_data") or {}
+    if external:
+        print(
+            "  External data:",
+            "provided=" + str(external.get("provided", False)),
+            "labelled=" + str(external.get("n_labelled", 0)),
+        )
     print("  Total labelled:", report.get("n_total_labelled", "n/a"))
     print("  Classes:", report.get("n_classes", "n/a"), "| splits:", report.get("n_splits", "n/a"))
 
@@ -69,6 +182,27 @@ def _print_classification(report: dict[str, Any]) -> list[str]:
     else:
         warnings.append("missing confidence curve row for tau=0.55")
 
+    readiness = report.get("label_readiness") or {}
+    if readiness:
+        level = readiness.get("level", "unknown")
+        total = readiness.get("total_labelled", 0)
+        print("  Label readiness:", level, f"({total} confirmed)")
+        print(
+            "  Label targets:",
+            f"minimum={readiness.get('minimum_total')}",
+            f"recommended={readiness.get('recommended_total')}",
+            f"ideal={readiness.get('ideal_total')}",
+        )
+        below_minimum = readiness.get("below_minimum_per_category") or []
+        if below_minimum:
+            print("  Below per-category minimum:", ", ".join(below_minimum))
+        if level in {"insufficient", "minimum"}:
+            warnings.append(
+                "classification labels are below recommended thesis-quality target"
+            )
+    else:
+        warnings.append("missing label readiness summary")
+
     print("  Class counts:")
     for cls, n in sorted(report.get("class_counts", {}).items(), key=lambda x: -x[1]):
         print(f"    {cls:18s} {n}")
@@ -88,6 +222,34 @@ def _print_eda(report: dict[str, Any]) -> None:
         print("  Missing:", ", ".join(f"{k}={v}" for k, v in missing.items()))
 
 
+def _print_transaction_type(report: dict[str, Any]) -> list[str]:
+    warnings: list[str] = []
+    print("\nTransaction type classification")
+    print("  Report type:", report.get("report_type", "transaction_type_classification"))
+    print("  Label source:", report.get("label_source", "n/a"))
+    print("  Runtime policy:", report.get("runtime_policy", "n/a"))
+    if report.get("skipped"):
+        reason = report.get("reason", "unknown")
+        print("  Skipped:", reason)
+        return [f"transaction_type classification skipped: {reason}"]
+    print("  Total labels:", report.get("n_total_labelled", "n/a"))
+    print("  Classes:", report.get("n_classes", "n/a"), "| splits:", report.get("n_splits", "n/a"))
+    models = report.get("models", {})
+    linear = models.get("linear_svc", {}) if isinstance(models, dict) else {}
+    dummy = models.get("dummy_most_frequent", {}) if isinstance(models, dict) else {}
+    print("  linear_svc macro-F1:", _fmt(linear.get("macro_f1")))
+    print("  linear_svc weighted-F1:", _fmt(linear.get("weighted_f1")))
+    print("  dummy macro-F1:", _fmt(dummy.get("macro_f1")))
+    linear_macro = linear.get("macro_f1")
+    dummy_macro = dummy.get("macro_f1")
+    if isinstance(linear_macro, float) and isinstance(dummy_macro, float):
+        lift = linear_macro - dummy_macro
+        print("  macro-F1 lift vs dummy:", _fmt(lift))
+        if lift <= 0:
+            warnings.append("transaction_type linear_svc is not better than dummy")
+    return warnings
+
+
 def _print_forecasting(report: dict[str, Any]) -> list[str]:
     warnings: list[str] = []
     print("\nForecasting")
@@ -105,6 +267,13 @@ def _print_forecasting(report: dict[str, Any]) -> list[str]:
             f"({row.get('n_months')} months)"
         )
     return warnings
+
+
+def _print_subscriptions(report: dict[str, Any]) -> None:
+    print("\nSubscriptions")
+    print("  Detector:", report.get("detector", "n/a"))
+    print("  Detected:", report.get("subscriptions_detected", 0))
+    print("  Estimated monthly cost:", report.get("estimated_monthly_cost", 0.0))
 
 
 def _print_anomaly(report: dict[str, Any]) -> list[str]:
@@ -155,6 +324,12 @@ def inspect_reports(reports_dir: Path, *, strict: bool) -> int:
         return 1
     warnings.extend(_print_classification(classification))
 
+    transaction_type = _load_json(reports_dir / LATEST_REPORTS["transaction_type"])
+    if transaction_type is not None:
+        warnings.extend(_print_transaction_type(transaction_type))
+    elif strict:
+        errors.append("missing latest_transaction_type_classification.json")
+
     eda = _load_json(reports_dir / LATEST_REPORTS["eda"])
     if eda is not None:
         _print_eda(eda)
@@ -166,6 +341,12 @@ def inspect_reports(reports_dir: Path, *, strict: bool) -> int:
         warnings.extend(_print_forecasting(forecasting))
     elif strict:
         errors.append("missing latest_forecasting.json")
+
+    subscriptions = _load_json(reports_dir / LATEST_REPORTS["subscriptions"])
+    if subscriptions is not None:
+        _print_subscriptions(subscriptions)
+    elif strict:
+        errors.append("missing latest_subscriptions.json")
 
     anomaly = _load_json(reports_dir / LATEST_REPORTS["anomaly"])
     if anomaly is not None:
@@ -182,6 +363,14 @@ def inspect_reports(reports_dir: Path, *, strict: bool) -> int:
 
     summary = reports_dir / "summary.md"
     print("\nSummary markdown:", "present" if summary.exists() else "missing")
+    package = reports_dir / LATEST_REPORTS["evidence_package"]
+    print("Evidence package:", "present" if package.exists() else "missing")
+    evidence_package = _load_json(package)
+    if strict:
+        if evidence_package is None:
+            errors.append("missing latest_evidence_package.json")
+        else:
+            errors.extend(_validate_package_sections(evidence_package))
 
     if warnings:
         print("\nWarnings:")

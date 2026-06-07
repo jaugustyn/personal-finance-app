@@ -88,13 +88,26 @@ def test_build_monthly_series_aggregates_debits() -> None:
     assert s.loc["2026-02-01"] == 100.0  # credit excluded
 
 
-def test_build_monthly_series_fills_missing_months_and_excludes_transfers() -> None:
+def test_build_monthly_series_fills_missing_months_and_excludes_non_candidates() -> None:
     df = pd.DataFrame({
-        "booking_date": ["2026-01-15", "2026-03-20", "2026-03-21"],
-        "amount": [-30, -70, -9999],
-        "direction": ["debit", "debit", "debit"],
-        "category": ["food", "food", "food"],
-        "is_transfer": [False, False, True],
+        "booking_date": [
+            "2026-01-15",
+            "2026-03-20",
+            "2026-03-21",
+            "2026-03-22",
+            "2026-03-23",
+        ],
+        "amount": [-30, -70, -9999, -500, -250],
+        "direction": ["debit", "debit", "debit", "debit", "debit"],
+        "category": ["food", "food", "food", "food", "food"],
+        "is_transfer": [False, "false", True, False, False],
+        "transaction_type": [
+            "purchase",
+            "purchase",
+            "own_transfer",
+            "refund",
+            "debt_payment",
+        ],
     })
     s = build_monthly_series(df, category="food", direction="debit")
     assert s.loc["2026-01-01"] == 30.0

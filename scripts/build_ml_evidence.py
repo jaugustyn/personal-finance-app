@@ -25,6 +25,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from finance.db import SessionLocal  # noqa: E402
 from finance.domain.models import Transaction  # noqa: E402
+from finance.ml.classification.external import load_kaggle_personal_finance  # noqa: E402
 from finance.ml.classification.train import (  # noqa: E402
     _load_from_files,
     _load_synthetic,
@@ -33,7 +34,12 @@ from finance.ml.classification.train import (  # noqa: E402
 from finance.ml.evidence import (  # noqa: E402
     build_anomaly_review,
     build_eda_summary,
+    build_evidence_package,
     build_forecasting_evidence,
+    build_subscription_evidence,
+)
+from finance.ml.transaction_type.train import (  # noqa: E402
+    build_evidence_report as build_transaction_type_evidence_report,
 )
 
 
@@ -60,6 +66,7 @@ def _load_all_from_db(session: Session) -> pd.DataFrame:
             Transaction.direction,
             Transaction.merchant,
             Transaction.title,
+            Transaction.raw_category,
             Transaction.category,
             Transaction.category_source,
             Transaction.category_predicted,
@@ -77,6 +84,7 @@ def _load_all_from_db(session: Session) -> pd.DataFrame:
             "direction",
             "merchant",
             "title",
+            "raw_category",
             "category",
             "category_source",
             "category_predicted",
@@ -174,14 +182,20 @@ def _write_summary_markdown(
     path: Path,
     *,
     ts: str,
+    source: str,
+    schema_version: str,
     classification: dict[str, Any],
+    transaction_type: dict[str, Any],
     forecasting: dict[str, Any],
     anomaly: dict[str, Any],
+    subscriptions: dict[str, Any],
     privacy: dict[str, Any],
 ) -> None:
     linear = classification["models"].get("linear_svc", {})
     dummy = classification["models"].get("dummy_most_frequent", {})
     feature_decision = classification.get("feature_decision", {})
+    label_readiness = classification.get("label_readiness", {})
+    external_data = classification.get("external_data", {})
     linear_macro = linear.get("macro_f1")
     dummy_macro = dummy.get("macro_f1")
     lift = (
@@ -198,12 +212,26 @@ def _write_summary_markdown(
             )
     if not forecast_lines:
         forecast_lines.append("- Not enough monthly data for walk-forward CV.")
+    tx_models = transaction_type.get("models", {})
+    tx_linear = tx_models.get("linear_svc", {}) if isinstance(tx_models, dict) else {}
+    tx_dummy = tx_models.get("dummy_most_frequent", {}) if isinstance(tx_models, dict) else {}
+    tx_linear_macro = tx_linear.get("macro_f1")
+    tx_dummy_macro = tx_dummy.get("macro_f1")
+    tx_lift = (
+        f"{tx_linear_macro - tx_dummy_macro:.3f}"
+        if isinstance(tx_linear_macro, float) and isinstance(tx_dummy_macro, float)
+        else "n/a"
+    )
 
     content = f"""# ML Evidence Summary
 
 Generated: `{ts}`
 
-## Classification
+Source: `{source}`
+
+Evidence package schema: `{schema_version}`
+
+## Category Classification
 
 Selected experiment: `{classification.get('selected_experiment')}`
 
@@ -215,16 +243,55 @@ Feature-set recommendation: `{feature_decision.get('recommended_feature_set', 'b
 
 Reason: {feature_decision.get('reason', 'n/a')}
 
+## Label Readiness
+
+- Level: `{label_readiness.get('level', 'unknown')}`
+- Confirmed labels: `{label_readiness.get('total_labelled', 0)}` \
+  (minimum `{label_readiness.get('minimum_total', 300)}`, recommended \
+  `{label_readiness.get('recommended_total', 800)}`, ideal \
+  `{label_readiness.get('ideal_total', 2000)}`)
+- Per-category minimum: `{label_readiness.get('minimum_per_category', 20)}`
+- Below minimum: `{', '.join(label_readiness.get('below_minimum_per_category', [])) or 'none'}`
+- Date span: `{label_readiness.get('date_span_months')}` months
+
+External data provided: `{external_data.get('provided', False)}`
+
+## Transaction Type Classification
+
+Task: `{transaction_type.get('classification_task', 'multiclass_transaction_type')}`
+
+Label source: `{transaction_type.get('label_source', 'silver_transaction_type')}`
+
+Runtime policy: `{transaction_type.get('runtime_policy', 'evidence_only_rules_remain_source_of_truth')}`
+
+Total silver labels: `{transaction_type.get('n_total_labelled', 0)}`
+
+Classes: `{transaction_type.get('n_classes', 0)}`
+
+LinearSVC macro-F1 lift vs dummy: `{tx_lift}`
+
 ## Forecasting
 
 {chr(10).join(forecast_lines)}
 
-## Anomaly Review
+## Anomaly Detection
 
 - Flagged in private review set: `{anomaly.get('flagged', 0)}`
 - Reviewed rows: `{anomaly.get('reviewed_count', 0)}`
 - precision@20: `{anomaly.get('precision_at_20')}`
 - precision@50: `{anomaly.get('precision_at_50')}`
+
+## Subscriptions
+
+- Detector: `{subscriptions.get('detector', 'cadence_amount_heuristic')}`
+- Detected subscriptions: `{subscriptions.get('subscriptions_detected', 0)}`
+- Estimated monthly cost: `{subscriptions.get('estimated_monthly_cost', 0.0)}`
+
+## LLM / RAG Narrative
+
+Hard financial facts are computed by deterministic tools and SQL-backed
+analytics. The local LLM may route, summarize and phrase recommendations in
+Polish; it is not used as vector-only RAG for counting facts.
 
 ## Privacy Check
 
@@ -246,6 +313,15 @@ def main(argv: list[str] | None = None) -> int:
         help="Optional SQLAlchemy URL for --from-db; credentials are masked in errors.",
     )
     parser.add_argument("--augment", type=Path, default=None)
+    parser.add_argument(
+        "--external-kaggle",
+        type=Path,
+        default=None,
+        help=(
+            "Optional Kaggle Personal_Finance_Dataset.csv. Included only as "
+            "external_only and real_plus_external experiments."
+        ),
+    )
     parser.add_argument("--reports-dir", type=Path, default=Path("data/reports"))
     parser.add_argument("--private-dir", type=Path, default=Path("data/private"))
     parser.add_argument("--anomaly-top-n", type=int, default=20)
@@ -258,6 +334,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     if args.from_db:
+        source_name = "db"
         engine = None
         try:
             if args.database_url:
@@ -275,14 +352,26 @@ def main(argv: list[str] | None = None) -> int:
             if engine is not None:
                 engine.dispose()
     else:
+        source_name = "files"
         df = _load_from_files(list(args.from_files))
 
     synth = _load_synthetic(args.augment) if args.augment else None
+    external = (
+        load_kaggle_personal_finance(args.external_kaggle)
+        if args.external_kaggle
+        else None
+    )
     ts = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
 
-    classification = build_evidence_report(df, augmented_df=synth)
+    classification = build_evidence_report(
+        df,
+        augmented_df=synth,
+        external_df=external,
+    )
     eda = build_eda_summary(df)
     forecasting = build_forecasting_evidence(df)
+    transaction_type = build_transaction_type_evidence_report(df)
+    subscriptions = build_subscription_evidence(df)
 
     review = build_anomaly_review(df, top_n=args.anomaly_top_n)
     anomaly_summary = review.public_summary
@@ -291,7 +380,50 @@ def main(argv: list[str] | None = None) -> int:
         review_for_precision = pd.read_csv(args.review_file)
     anomaly_summary = _apply_precision_review(anomaly_summary, review_for_precision)
 
-    privacy = _privacy_check([classification, eda, forecasting, anomaly_summary], df)
+    evidence_package = build_evidence_package(
+        generated_at=ts,
+        source=source_name,
+        category_classification=classification,
+        transaction_type_classification=transaction_type,
+        forecasting=forecasting,
+        anomaly_detection=anomaly_summary,
+        subscriptions=subscriptions,
+    )
+    privacy = _privacy_check(
+        [
+            classification,
+            transaction_type,
+            eda,
+            forecasting,
+            anomaly_summary,
+            subscriptions,
+            evidence_package,
+        ],
+        df,
+    )
+    evidence_package = build_evidence_package(
+        generated_at=ts,
+        source=source_name,
+        category_classification=classification,
+        transaction_type_classification=transaction_type,
+        forecasting=forecasting,
+        anomaly_detection=anomaly_summary,
+        subscriptions=subscriptions,
+        privacy_check=privacy,
+    )
+    privacy = _privacy_check(
+        [
+            classification,
+            transaction_type,
+            eda,
+            forecasting,
+            anomaly_summary,
+            subscriptions,
+            evidence_package,
+        ],
+        df,
+    )
+    evidence_package["privacy_check"] = privacy
     if not privacy["passed"]:
         raise SystemExit(
             "Public evidence payload may contain raw merchant/title values. "
@@ -300,9 +432,12 @@ def main(argv: list[str] | None = None) -> int:
 
     reports = {
         f"classification_{ts}.json": classification,
+        f"transaction_type_classification_{ts}.json": transaction_type,
         f"eda_{ts}.json": eda,
         f"forecasting_{ts}.json": forecasting,
         f"anomaly_summary_{ts}.json": anomaly_summary,
+        f"subscriptions_{ts}.json": subscriptions,
+        f"evidence_package_{ts}.json": evidence_package,
         "privacy_check_latest.json": privacy,
     }
     written: dict[str, Path] = {}
@@ -312,9 +447,15 @@ def main(argv: list[str] | None = None) -> int:
         written[filename] = out
 
     _copy_latest(written[f"classification_{ts}.json"], "latest_classification.json")
+    _copy_latest(
+        written[f"transaction_type_classification_{ts}.json"],
+        "latest_transaction_type_classification.json",
+    )
     _copy_latest(written[f"eda_{ts}.json"], "latest_eda.json")
     _copy_latest(written[f"forecasting_{ts}.json"], "latest_forecasting.json")
     _copy_latest(written[f"anomaly_summary_{ts}.json"], "latest_anomaly_summary.json")
+    _copy_latest(written[f"subscriptions_{ts}.json"], "latest_subscriptions.json")
+    _copy_latest(written[f"evidence_package_{ts}.json"], "latest_evidence_package.json")
 
     args.private_dir.mkdir(parents=True, exist_ok=True)
     review_path = args.private_dir / f"anomaly_review_{ts}.csv"
@@ -324,9 +465,13 @@ def main(argv: list[str] | None = None) -> int:
     _write_summary_markdown(
         args.reports_dir / "summary.md",
         ts=ts,
+        source=source_name,
+        schema_version=str(evidence_package["schema_version"]),
         classification=classification,
+        transaction_type=transaction_type,
         forecasting=forecasting,
         anomaly=anomaly_summary,
+        subscriptions=subscriptions,
         privacy=privacy,
     )
 

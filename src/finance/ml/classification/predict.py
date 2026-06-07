@@ -14,13 +14,18 @@ import pandas as pd
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
+from finance.analytics.filters import is_expense_category_candidate
+from finance.domain.category_mapping import map_source_category
 from finance.domain.enums import Category, CategorySource, TransactionType
 from finance.domain.models import Transaction
 from finance.llm import client as llm_client
-from finance.ml.classification.confidence import max_prediction_confidence
+from finance.ml.classification.confidence import (
+    max_prediction_confidence,
+    top_prediction_confidences,
+)
 from finance.ml.classification.pipeline import add_feature_v2_columns
 from finance.profile.service import RULE_MODE_AUTO, effect_for_transaction
-from finance.transactions.rules import detect_transaction_type, is_category_suggestion_candidate
+from finance.transactions.rules import explain_transaction_type
 
 LATEST_MODEL_PATH = Path("data/models/classifier_latest.joblib")
 DEFAULT_THRESHOLD = 0.55
@@ -39,6 +44,25 @@ class PredictionResult:
     model_category: str
     threshold: float
     fallback_used: bool
+    top_predictions: list[dict[str, float | str]]
+    recommended_action: str
+
+
+def recommended_action_for_prediction(
+    confidence: float | None,
+    threshold: float,
+    *,
+    category_candidate: bool = True,
+) -> str:
+    if not category_candidate:
+        return "not_category_candidate"
+    if confidence is None:
+        return "review"
+    if confidence >= threshold:
+        return "accept_candidate"
+    if confidence >= max(threshold * 0.5, 0.25):
+        return "review"
+    return "needs_manual_label"
 
 
 def _unwrap_artifact(artifact: Any):
@@ -159,6 +183,17 @@ def predict_transaction(
     )
     model_category = str(pipe.predict(X)[0])
     confidence = max_prediction_confidence(pipe, X)
+    top_predictions = top_prediction_confidences(pipe, X, k=3)
+    category_candidate = is_expense_category_candidate(
+        "debit",
+        False,
+        transaction_type,
+    )
+    recommended_action = recommended_action_for_prediction(
+        confidence,
+        threshold,
+        category_candidate=category_candidate,
+    )
 
     if (
         use_llm_fallback
@@ -174,6 +209,12 @@ def predict_transaction(
                 model_category=model_category,
                 threshold=threshold,
                 fallback_used=True,
+                top_predictions=top_predictions,
+                recommended_action=recommended_action_for_prediction(
+                    confidence,
+                    threshold,
+                    category_candidate=category_candidate,
+                ),
             )
 
     return PredictionResult(
@@ -183,6 +224,8 @@ def predict_transaction(
         model_category=model_category,
         threshold=threshold,
         fallback_used=False,
+        top_predictions=top_predictions,
+        recommended_action=recommended_action,
     )
 
 
@@ -206,24 +249,52 @@ def reclassify_unlabelled(
     updated = 0
     for r in rows:
         personal = effect_for_transaction(session, merchant=r.merchant, title=r.title)
-        tx_type = detect_transaction_type(
+        tx_type_decision = explain_transaction_type(
             r.merchant,
             r.title,
             r.direction,
             raw_category=r.raw_category,
         )
+        tx_type = TransactionType(tx_type_decision.result)
         if personal and personal.transaction_type:
             tx_type = TransactionType(personal.transaction_type)
+        current_type = str(r.transaction_type or "")
         if (
             r.transaction_type is None
-            or str(r.transaction_type) == TransactionType.PURCHASE.value
+            or current_type in {TransactionType.PURCHASE.value, TransactionType.OTHER.value}
+            or (str(r.direction) == "credit" and current_type != TransactionType.SALARY.value)
         ):
-            r.transaction_type = tx_type
+            r.transaction_type = tx_type.value
         if personal and personal.is_transfer is not None:
             r.is_transfer = personal.is_transfer
         elif tx_type == TransactionType.OWN_TRANSFER:
             r.is_transfer = True
-        if personal and personal.category:
+
+        category_candidate = is_expense_category_candidate(
+            r.direction,
+            r.is_transfer,
+            r.transaction_type,
+        )
+        source_category = map_source_category(r.raw_category)
+        if source_category is not None and category_candidate:
+            session.execute(
+                update(Transaction)
+                .where(Transaction.id == r.id)
+                .values(
+                    category=source_category.value,
+                    category_source=CategorySource.BANK.value,
+                    category_predicted=None,
+                    category_confidence=None,
+                    category_predicted_source=None,
+                    transaction_type=str(r.transaction_type),
+                    is_transfer=bool(r.is_transfer),
+                    category_suggestion_rejected=False,
+                )
+            )
+            updated += 1
+            continue
+
+        if personal and personal.category and category_candidate:
             if personal.mode == RULE_MODE_AUTO:
                 session.execute(
                     update(Transaction)
@@ -253,7 +324,7 @@ def reclassify_unlabelled(
                 )
             updated += 1
             continue
-        if not is_category_suggestion_candidate(r.transaction_type):
+        if not category_candidate:
             r.category_predicted = None
             r.category_confidence = None
             r.category_predicted_source = None

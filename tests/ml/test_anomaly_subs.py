@@ -1,6 +1,7 @@
 """Tests for anomaly detector + subscription detector."""
 import numpy as np
 import pandas as pd
+import pytest
 
 from finance.ml.anomaly import detect_anomalies
 from finance.ml.subscriptions import detect_subscriptions
@@ -30,6 +31,8 @@ def test_anomaly_flags_huge_outlier() -> None:
     assert out.loc[5, "anomaly"]
     assert out.loc[5, "severity"] > 0
     assert out.loc[5, "reasons"]
+    assert "z=" not in out.loc[5, "reasons"]
+    assert "z>" not in out.loc[5, "reasons"]
 
 
 def test_anomaly_handles_empty_frame() -> None:
@@ -47,6 +50,125 @@ def test_anomaly_excludes_own_transfers() -> None:
     df.loc[5, "is_transfer"] = True
     res = detect_anomalies(df)
     assert not bool(res.df.loc[5, "anomaly"])
+
+
+def test_anomaly_excludes_non_expense_transaction_types() -> None:
+    df = _normal_txs(40)
+    df["transaction_type"] = "purchase"
+    df.loc[5, "amount"] = -9999.0
+    df.loc[5, "merchant"] = "XTB S.A."
+    df.loc[5, "transaction_type"] = "savings_investment"
+
+    res = detect_anomalies(df)
+
+    assert not bool(res.df.loc[5, "anomaly"])
+
+
+@pytest.mark.parametrize("tx_type", ["salary", "income", "refund", "own_transfer"])
+def test_anomaly_excludes_non_candidate_transaction_types(tx_type: str) -> None:
+    df = _normal_txs(40)
+    df["transaction_type"] = "purchase"
+    df.loc[5, "amount"] = -9999.0
+    df.loc[5, "merchant"] = "NON EXPENSE FLOW"
+    df.loc[5, "transaction_type"] = tx_type
+
+    res = detect_anomalies(df)
+
+    assert not bool(res.df.loc[5, "anomaly"])
+
+
+def test_regular_monthly_large_merchant_is_not_anomaly() -> None:
+    dates = pd.date_range("2025-01-05", periods=8, freq="MS")
+    df = pd.DataFrame(
+        {
+            "booking_date": dates,
+            "amount": [-3200, -3300, -3150, -3350, -3250, -3400, -3300, -3200],
+            "direction": ["debit"] * 8,
+            "merchant": ["Jan Kowalski"] * 8,
+            "category": ["housing"] * 8,
+            "transaction_type": ["purchase"] * 8,
+        }
+    )
+
+    res = detect_anomalies(df)
+
+    assert not res.df["anomaly"].any()
+    assert res.df["is_recurring_merchant"].all()
+
+
+def test_regular_merchant_amount_spike_is_anomaly() -> None:
+    dates = pd.date_range("2025-01-05", periods=8, freq="MS")
+    amounts = [-3000, -3050, -3100, -3000, -3025, -3075, -3050, -7000]
+    df = pd.DataFrame(
+        {
+            "booking_date": dates,
+            "amount": amounts,
+            "direction": ["debit"] * 8,
+            "merchant": ["Jan Kowalski"] * 8,
+            "category": ["housing"] * 8,
+            "transaction_type": ["purchase"] * 8,
+        }
+    )
+
+    res = detect_anomalies(df)
+
+    assert bool(res.df.loc[7, "anomaly"])
+    assert res.df.loc[7, "anomaly_type"] == "merchant_amount_outlier"
+    assert "merchant-amount-outlier" in res.df.loc[7, "reason_codes"]
+
+
+def test_medium_retail_merchant_spikes_do_not_flood_review() -> None:
+    dates = pd.date_range("2025-01-01", periods=10, freq="MS")
+    df = pd.DataFrame(
+        {
+            "booking_date": dates,
+            "amount": [-80, -120, -95, -110, -100, -140, -90, -780, -820, -930],
+            "direction": ["debit"] * 10,
+            "merchant": ["Allegro"] * 10,
+            "category": ["shopping"] * 10,
+            "transaction_type": ["purchase"] * 10,
+        }
+    )
+
+    res = detect_anomalies(df)
+
+    assert not res.df["anomaly"].any()
+
+
+def test_new_large_merchant_gets_review_priority() -> None:
+    df = _normal_txs(40)
+    df["transaction_type"] = "purchase"
+    df.loc[5, "amount"] = -3000.0
+    df.loc[5, "merchant"] = "KRAJOWY INTEGRATOR PŁATNOŚCI S.A."
+
+    res = detect_anomalies(df)
+
+    assert bool(res.df.loc[5, "anomaly"])
+    assert res.df.loc[5, "anomaly_type"] in {"unexpected_large", "suspicious"}
+    assert res.df.loc[5, "priority_score"] >= 0.45
+
+
+def test_large_missing_context_is_data_quality_or_suspicious() -> None:
+    df = _normal_txs(40)
+    df["transaction_type"] = "purchase"
+    df.loc[5, "amount"] = -20000.0
+    df.loc[5, "merchant"] = ""
+    df.loc[5, "category"] = None
+
+    res = detect_anomalies(df)
+
+    assert bool(res.df.loc[5, "anomaly"])
+    assert res.df.loc[5, "anomaly_type"] in {"data_quality", "suspicious"}
+    assert "missing-merchant-large" in res.df.loc[5, "reason_codes"]
+
+
+def test_model_only_is_separate_low_priority_type() -> None:
+    df = _normal_txs(40)
+    res = detect_anomalies(df, contamination=0.2)
+    model_only = res.df[res.df["anomaly_type"] == "model_only"]
+
+    assert not model_only.empty
+    assert (model_only["priority_score"] <= 0.35).all()
 
 
 def test_subscription_detected_for_monthly_payment() -> None:
@@ -120,4 +242,19 @@ def test_subscription_excludes_transfers_and_savings() -> None:
         "category": ["subscriptions"] * 6 + ["savings"] * 6,
         "is_transfer": [True] * 6 + [False] * 6,
     })
+    assert detect_subscriptions(df) == []
+
+
+def test_subscription_excludes_non_candidate_transaction_types() -> None:
+    dates = pd.date_range("2025-09-15", periods=6, freq="30D")
+    df = pd.DataFrame({
+        "booking_date": list(dates) + list(dates),
+        "amount": [-29.99] * 12,
+        "direction": ["debit"] * 12,
+        "merchant": ["Spotify Premium"] * 6 + ["OpenAI"] * 6,
+        "category": ["subscriptions"] * 12,
+        "is_transfer": ["false"] * 12,
+        "transaction_type": ["refund"] * 6 + ["own_transfer"] * 6,
+    })
+
     assert detect_subscriptions(df) == []

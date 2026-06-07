@@ -8,6 +8,7 @@ import pandas as pd
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from finance.analytics.filters import expense_category_candidate_mask
 from finance.domain.models import Transaction
 from finance.ml.forecasting.registry import FORECASTERS
 
@@ -34,10 +35,7 @@ def build_monthly_series(
     """
     d = df.copy()
     d["booking_date"] = pd.to_datetime(d["booking_date"])
-    if direction:
-        d = d[d["direction"] == direction]
-    if "is_transfer" in d.columns:
-        d = d[~d["is_transfer"].fillna(False).astype(bool)]
+    d = d[expense_category_candidate_mask(d, direction=direction)]
     if category is not None:
         d = d[d["category"] == category]
     if d.empty:
@@ -69,11 +67,19 @@ def load_monthly_series(
         Transaction.direction,
         Transaction.category,
         Transaction.is_transfer,
+        Transaction.transaction_type,
     )
     rows = session.execute(stmt).all()
     df = pd.DataFrame(
         rows,
-        columns=["booking_date", "amount", "direction", "category", "is_transfer"],
+        columns=[
+            "booking_date",
+            "amount",
+            "direction",
+            "category",
+            "is_transfer",
+            "transaction_type",
+        ],
     )
     if df.empty:
         return pd.Series(dtype=float, name=category or "all")

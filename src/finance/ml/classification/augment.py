@@ -69,6 +69,16 @@ SEED_EXAMPLES: dict[str, list[str]] = {
         "BP Kraków paliwo",
         "MPK Kraków bilet",
         "Bolt Polska przejazd",
+        "Booking.com rezerwacja hotelu",
+        "Hotel Mercure nocleg",
+        "Auto Serwis Kowalski naprawa",
+        "Wulkanizacja wymiana opon",
+    ],
+    "shopping": [
+        "ALLEGRO.PL zakup",
+        "Amazon Marketplace",
+        "Zalando SE płatność",
+        "Nike Store Krakow",
     ],
     "food": [
         "BIEDRONKA",
@@ -77,10 +87,10 @@ SEED_EXAMPLES: dict[str, list[str]] = {
         "Glovo zamowienie",
     ],
     "other": [
-        "Allegro zakup",
         "ZUS skladka",
         "InPost paczkomat",
         "Poczta Polska oplata",
+        "Urząd Miasta opłata",
     ],
 }
 
@@ -91,7 +101,8 @@ AMOUNT_RANGES: dict[str, tuple[float, float]] = {
     "savings": (100.0, 5000.0),
     "subscriptions": (9.99, 80.0),
     "entertainment": (15.0, 400.0),
-    "transport": (3.40, 350.0),
+    "transport": (3.40, 3500.0),
+    "shopping": (15.0, 1200.0),
     "food": (5.0, 300.0),
     "other": (10.0, 500.0),
 }
