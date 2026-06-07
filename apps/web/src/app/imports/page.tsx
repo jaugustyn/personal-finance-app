@@ -7,6 +7,7 @@ import {
   FileSpreadsheet,
   AlertCircle,
   CheckCircle2,
+  HelpCircle,
   Loader2,
   Trash2,
   History,
@@ -20,6 +21,15 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { PageHeader } from "@/components/page-header";
+import { useConfirm } from "@/components/confirm-dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -28,19 +38,66 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { toast } from "sonner";
 import { useT, type TranslationKey } from "@/lib/i18n";
 
 const LOGICAL_FIELDS = [
-  { key: "date", required: true },
-  { key: "amount", required: true },
-  { key: "currency", required: false },
-  { key: "merchant", required: false },
-  { key: "title", required: false },
-  { key: "category", required: false },
-  { key: "external_id", required: false },
+  { key: "date", required: true, recommended: false, description: "" },
+  { key: "amount", required: true, recommended: false, description: "" },
+  { key: "currency", required: false, recommended: false, description: "" },
+  { key: "merchant", required: false, recommended: true, description: "" },
+  { key: "title", required: false, recommended: true, description: "" },
+  { key: "category", required: false, recommended: false, description: "" },
+  { key: "external_id", required: false, recommended: false, description: "" },
 ] as const;
 
 type FieldKey = (typeof LOGICAL_FIELDS)[number]["key"];
+type FieldSpec = {
+  key: FieldKey;
+  required: boolean;
+  recommended: boolean;
+  description: string;
+};
+
+const LOGICAL_FIELD_KEYS = new Set<string>(LOGICAL_FIELDS.map((field) => field.key));
+
+const fieldSpecsFromPreview = (preview: ImportPreview | null): FieldSpec[] => {
+  if (!preview?.field_specs?.length) return [...LOGICAL_FIELDS];
+  return preview.field_specs
+    .filter((spec) => LOGICAL_FIELD_KEYS.has(spec.key))
+    .map((spec) => ({
+      key: spec.key as FieldKey,
+      required: spec.required,
+      recommended: spec.recommended,
+      description: spec.description,
+    }));
+};
+
+const buildCustomWarnings = (
+  mapping: Record<FieldKey, string>,
+  t: (key: TranslationKey) => string,
+) => {
+  const warnings: string[] = [];
+  if (!mapping.merchant && !mapping.title) {
+    warnings.push(t("imports.warning.merchantOrTitle"));
+  }
+  if (!mapping.currency) {
+    warnings.push(t("imports.warning.currencyDefault"));
+  }
+  if (!mapping.external_id) {
+    warnings.push(t("imports.warning.externalId"));
+  }
+  return Array.from(new Set(warnings));
+};
+
+const fieldHintKey = (key: FieldKey): TranslationKey =>
+  `imports.fieldHint.${key}` as TranslationKey;
 
 export default function ImportsPage() {
   const { t } = useT();
@@ -77,7 +134,9 @@ export default function ImportsPage() {
       }),
     onSuccess: () => {
       qc.invalidateQueries();
+      toast.success(t("toast.imported"));
     },
+    onError: () => toast.error(t("toast.error")),
   });
 
   const onChooseFile = (f: File | null) => {
@@ -106,6 +165,9 @@ export default function ImportsPage() {
   };
 
   const requiredOk = !!mapping.date && !!mapping.amount;
+  const customWarnings = preview
+    ? buildCustomWarnings(mapping, t)
+    : [];
   const canCommit =
     !!file &&
     !uploadMut.isPending &&
@@ -113,11 +175,7 @@ export default function ImportsPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">
-          {t("imports.title")}
-        </h1>
-      </div>
+      <PageHeader title={t("imports.title")} />
 
       <Card>
         <CardContent className="pt-6">
@@ -201,36 +259,77 @@ export default function ImportsPage() {
                     {t("imports.columnMap.help")}
                   </p>
                 </div>
-                <div className="grid gap-3 sm:grid-cols-2">
-                  {LOGICAL_FIELDS.map(({ key, required }) => {
-                    const labelKey: TranslationKey =
-                      `imports.field.${key}` as TranslationKey;
-                    return (
-                      <label key={key} className="flex flex-col gap-1 text-sm">
-                        <span className="font-medium">
-                          {t(labelKey)}
-                          {required && (
-                            <span className="text-destructive"> *</span>
-                          )}
-                        </span>
-                        <select
-                          value={mapping[key] ?? ""}
-                          onChange={(e) =>
-                            setMapping((m) => ({ ...m, [key]: e.target.value }))
-                          }
-                          className="h-9 rounded-md border border-input bg-transparent px-2 text-sm"
-                        >
-                          <option value="">{t("imports.fieldNone")}</option>
-                          {preview.headers.map((h) => (
-                            <option key={h} value={h}>
-                              {h}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                    );
-                  })}
-                </div>
+                <TooltipProvider delayDuration={150}>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    {fieldSpecsFromPreview(preview).map((spec) => {
+                      const { key, required, recommended } = spec;
+                      const labelKey: TranslationKey =
+                        `imports.field.${key}` as TranslationKey;
+                      const hint = t(fieldHintKey(key));
+                      return (
+                        <label key={key} className="flex flex-col gap-1 text-sm">
+                          <span className="flex items-center gap-1.5 font-medium">
+                            <span>
+                              {t(labelKey)}
+                              {required && (
+                                <span
+                                  className="text-destructive"
+                                  aria-label={t("imports.required")}
+                                >
+                                  {" "}
+                                  *
+                                </span>
+                              )}
+                            </span>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <HelpCircle className="h-3.5 w-3.5 cursor-help text-muted-foreground" />
+                              </TooltipTrigger>
+                              <TooltipContent className="max-w-64">
+                                <p>{hint}</p>
+                                {!required && recommended ? (
+                                  <p className="mt-1 text-muted-foreground">
+                                    {t("imports.recommended")}
+                                  </p>
+                                ) : null}
+                              </TooltipContent>
+                            </Tooltip>
+                          </span>
+                          <Select
+                            value={mapping[key] || "none"}
+                            onValueChange={(v) =>
+                              setMapping((m) => ({
+                                ...m,
+                                [key]: v === "none" ? "" : v,
+                              }))
+                            }
+                          >
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="none">
+                                {t("imports.fieldNone")}
+                              </SelectItem>
+                              {preview.headers.map((h) => (
+                                <SelectItem key={h} value={h}>
+                                  {h}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </TooltipProvider>
+                {customWarnings.length > 0 && (
+                  <div className="space-y-1 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-800 dark:text-amber-300">
+                    {customWarnings.map((warning) => (
+                      <p key={warning}>{warning}</p>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
 
@@ -293,7 +392,7 @@ function Dropzone({
       <span className="text-muted-foreground">{label}</span>
       <input
         type="file"
-        accept=".csv,text/csv"
+        accept=".csv,.tsv,.txt,text/csv,text/plain,text/tab-separated-values"
         className="hidden"
         onChange={(e) => onFile(e.target.files?.[0] ?? null)}
       />
@@ -319,6 +418,7 @@ const IMPORTS_QUERY_KEY = ["imports", "history"] as const;
 function ImportsHistory() {
   const { t } = useT();
   const qc = useQueryClient();
+  const confirm = useConfirm();
   const { data: imports = [], isLoading } = useQuery<ImportHistoryRow[]>({
     queryKey: IMPORTS_QUERY_KEY,
     queryFn: () => api.listImports(),
@@ -331,16 +431,19 @@ function ImportsHistory() {
       qc.invalidateQueries({ queryKey: ["transactions"] });
       qc.invalidateQueries({ queryKey: ["overview"] });
       qc.invalidateQueries({ queryKey: ["byCategory"] });
+      toast.success(t("toast.deleted"));
     },
+    onError: () => toast.error(t("toast.error")),
   });
 
-  const onDelete = (row: ImportHistoryRow) => {
-    const ok = window.confirm(
-      t("imports.history.deleteConfirm", {
+  const onDelete = async (row: ImportHistoryRow) => {
+    const ok = await confirm({
+      title: t("imports.history.deleteConfirm", {
         filename: row.filename,
         n: row.inserted,
       }),
-    );
+      destructive: true,
+    });
     if (ok) deleteMut.mutate(row.id);
   };
 
@@ -392,7 +495,7 @@ function ImportsHistory() {
                   <TableCell className="text-right tabular-nums">
                     {row.total_rows}
                   </TableCell>
-                  <TableCell className="text-right tabular-nums text-emerald-600 dark:text-emerald-400">
+                  <TableCell className="text-right tabular-nums text-positive">
                     {row.inserted}
                   </TableCell>
                   <TableCell className="text-right tabular-nums text-muted-foreground">

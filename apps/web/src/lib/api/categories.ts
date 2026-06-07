@@ -3,7 +3,12 @@ import type { CategoryDef } from "./types";
 
 export const categoriesApi = {
   listCategories: () => request<CategoryDef[]>("/categories"),
-  createCategory: (payload: { name: string; color?: string | null; icon?: string | null }) =>
+  createCategory: (payload: {
+    name: string;
+    color?: string | null;
+    icon?: string | null;
+    parent?: string | null;
+  }) =>
     request<CategoryDef>("/categories", {
       method: "POST",
       body: JSON.stringify(payload),

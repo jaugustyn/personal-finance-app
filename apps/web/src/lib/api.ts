@@ -3,6 +3,7 @@
 
 import { assetsApi } from "./api/assets";
 import { categoriesApi } from "./api/categories";
+import { chatApi } from "./api/chat";
 import { importsApi } from "./api/imports";
 import { mlApi } from "./api/ml";
 import { profileApi } from "./api/profile";
@@ -19,4 +20,5 @@ export const api = {
   ...mlApi,
   ...assetsApi,
   ...profileApi,
+  ...chatApi,
 };

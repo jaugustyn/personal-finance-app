@@ -1,11 +1,15 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PageHeader } from "@/components/page-header";
+import { EmptyState } from "@/components/empty-state";
+import { ConfidenceBadge } from "@/components/status-badge";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { Repeat } from "lucide-react";
 import { CardGridSkeleton } from "@/components/ui/skeleton";
@@ -27,14 +31,10 @@ export default function SubscriptionsPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">
-          {t("subscriptions.title")}
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          {t("subscriptions.subtitle")}
-        </p>
-      </div>
+      <PageHeader
+        title={t("subscriptions.title")}
+        description={t("subscriptions.subtitle")}
+      />
 
       <Card>
         <CardHeader>
@@ -73,11 +73,7 @@ export default function SubscriptionsPage() {
       {query.isLoading ? (
         <CardGridSkeleton />
       ) : !query.data || query.data.length === 0 ? (
-        <Card>
-          <CardContent className="flex h-40 items-center justify-center text-sm text-muted-foreground">
-            {t("subscriptions.empty")}
-          </CardContent>
-        </Card>
+        <EmptyState title={t("subscriptions.empty")} icon={Repeat} />
       ) : (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {query.data.map((s, i) => (
@@ -88,9 +84,7 @@ export default function SubscriptionsPage() {
                     <Repeat className="h-4 w-4 text-muted-foreground" />
                     {s.merchant}
                   </div>
-                  <Badge variant="outline">
-                    {(s.confidence * 100).toFixed(0)}%
-                  </Badge>
+                  <ConfidenceBadge value={s.confidence} />
                 </div>
                 <div className="text-2xl font-semibold tabular-nums">
                   {formatCurrency(s.estimated_monthly_cost)}
@@ -108,6 +102,13 @@ export default function SubscriptionsPage() {
                     })}
                   </span>
                 </div>
+                <Button asChild variant="outline" size="sm">
+                  <Link
+                    href={`/transactions?search=${encodeURIComponent(s.merchant)}`}
+                  >
+                    {t("subscriptions.openTransactions")}
+                  </Link>
+                </Button>
               </CardContent>
             </Card>
           ))}

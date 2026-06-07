@@ -29,9 +29,16 @@ export function CashflowChart({ data }: { data: CashflowPoint[] }) {
   );
   return (
     <ResponsiveContainer width="100%" height={300}>
-      <ComposedChart data={formatted} margin={{ top: 10, right: 10, bottom: 0, left: 0 }}>
+      <ComposedChart
+        data={formatted}
+        margin={{ top: 10, right: 10, bottom: 0, left: 0 }}
+      >
         <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-        <XAxis dataKey="label" tick={{ fontSize: 12 }} stroke="hsl(var(--muted-foreground))" />
+        <XAxis
+          dataKey="label"
+          tick={{ fontSize: 12 }}
+          stroke="hsl(var(--muted-foreground))"
+        />
         <YAxis
           tick={{ fontSize: 12 }}
           stroke="hsl(var(--muted-foreground))"
@@ -39,11 +46,24 @@ export function CashflowChart({ data }: { data: CashflowPoint[] }) {
         />
         <Tooltip
           contentStyle={tooltipStyle()}
-          formatter={(value, name) => [formatCurrency(Number(value)), String(name)]}
+          formatter={(value, name) => [
+            formatCurrency(Number(value)),
+            String(name),
+          ]}
         />
         <Legend wrapperStyle={{ fontSize: 12 }} />
-        <Bar dataKey="income" name="Przychody" fill="hsl(var(--chart-2))" radius={[4, 4, 0, 0]} />
-        <Bar dataKey="expenses" name="Wydatki" fill="hsl(var(--chart-1))" radius={[4, 4, 0, 0]} />
+        <Bar
+          dataKey="income"
+          name="Przychody"
+          fill="hsl(var(--chart-positive))"
+          radius={[4, 4, 0, 0]}
+        />
+        <Bar
+          dataKey="expenses"
+          name="Wydatki"
+          fill="hsl(var(--chart-negative))"
+          radius={[4, 4, 0, 0]}
+        />
         <Line
           type="monotone"
           dataKey="net"

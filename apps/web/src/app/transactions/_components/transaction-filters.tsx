@@ -3,7 +3,16 @@
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { api, type Direction } from "@/lib/api";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
+import { CategorySelect } from "@/components/category-select";
+import { api, type CategoryState, type Direction } from "@/lib/api";
 import { tTransactionType, useT } from "@/lib/i18n";
 import { Download } from "lucide-react";
 import { TRANSACTION_TYPE_OPTIONS } from "../_lib/constants";
@@ -15,6 +24,7 @@ interface TransactionFiltersProps {
   direction: Direction;
   transactionType: string;
   minConfidence: string;
+  reviewState: CategoryState;
   includeTransfers: boolean;
   suggestionCount: number;
   acceptPending: boolean;
@@ -23,6 +33,7 @@ interface TransactionFiltersProps {
   onDirectionChange: (value: Direction) => void;
   onTransactionTypeChange: (value: string) => void;
   onMinConfidenceChange: (value: string) => void;
+  onReviewStateChange: (value: CategoryState) => void;
   onIncludeTransfersChange: (value: boolean) => void;
   onAcceptSuggestions: () => void;
 }
@@ -34,6 +45,7 @@ export function TransactionFilters({
   direction,
   transactionType,
   minConfidence,
+  reviewState,
   includeTransfers,
   suggestionCount,
   acceptPending,
@@ -42,11 +54,15 @@ export function TransactionFilters({
   onDirectionChange,
   onTransactionTypeChange,
   onMinConfidenceChange,
+  onReviewStateChange,
   onIncludeTransfersChange,
   onAcceptSuggestions,
 }: TransactionFiltersProps) {
   const { t } = useT();
   const confidenceFilter = minConfidence ? Number(minConfidence) : undefined;
+  const searchFilter = search.trim() || undefined;
+  const directionFilter = direction === "all" ? undefined : direction;
+  const categoryFilter = category || undefined;
 
   return (
     <Card>
@@ -58,59 +74,115 @@ export function TransactionFilters({
             onChange={(e) => onSearchChange(e.target.value)}
             className="max-w-xs"
           />
-          <Input
-            placeholder={t("transactions.filterCategory")}
+          {reviewMode && (
+            <Select
+              value={reviewState}
+              onValueChange={(v) => onReviewStateChange(v as CategoryState)}
+            >
+              <SelectTrigger
+                className="w-auto min-w-40"
+                aria-label={t("transactions.reviewQueue")}
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="needs_review">
+                  {t("transactions.reviewQueue.needsReview")}
+                </SelectItem>
+                <SelectItem value="rejected">
+                  {t("transactions.reviewQueue.rejected")}
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          )}
+          <CategorySelect
             value={category}
-            onChange={(e) => onCategoryChange(e.target.value)}
-            className="max-w-xs"
+            onChange={onCategoryChange}
+            allLabel={t("transactions.filterCategoryAll")}
+            ariaLabel={t("transactions.filterCategory")}
           />
-          <select
+          <Select
             value={direction}
-            onChange={(e) => onDirectionChange(e.target.value as Direction)}
-            className="h-9 rounded-md border border-input bg-transparent px-3 text-sm"
-            aria-label={t("transactions.filterDirection")}
+            onValueChange={(v) => onDirectionChange(v as Direction)}
           >
-            <option value="all">{t("transactions.filterDirection.all")}</option>
-            <option value="debit">{t("transactions.filterDirection.debit")}</option>
-            <option value="credit">{t("transactions.filterDirection.credit")}</option>
-          </select>
-          <select
-            value={transactionType}
-            onChange={(e) => onTransactionTypeChange(e.target.value)}
-            className="h-9 rounded-md border border-input bg-transparent px-3 text-sm"
-            aria-label={t("transactions.filterType")}
+            <SelectTrigger
+              className="w-auto min-w-36"
+              aria-label={t("transactions.filterDirection")}
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">
+                {t("transactions.filterDirection.all")}
+              </SelectItem>
+              <SelectItem value="debit">
+                {t("transactions.filterDirection.debit")}
+              </SelectItem>
+              <SelectItem value="credit">
+                {t("transactions.filterDirection.credit")}
+              </SelectItem>
+            </SelectContent>
+          </Select>
+          <Select
+            value={transactionType || "all"}
+            onValueChange={(v) => onTransactionTypeChange(v === "all" ? "" : v)}
           >
-            <option value="">{t("transactions.filterType.all")}</option>
-            {TRANSACTION_TYPE_OPTIONS.map((type) => (
-              <option key={type} value={type}>
-                {tTransactionType(t, type)}
-              </option>
-            ))}
-          </select>
-          <select
-            value={minConfidence}
-            onChange={(e) => onMinConfidenceChange(e.target.value)}
-            className="h-9 rounded-md border border-input bg-transparent px-3 text-sm"
-            aria-label={t("transactions.filterConfidence")}
+            <SelectTrigger
+              className="w-auto min-w-36"
+              aria-label={t("transactions.filterType")}
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">
+                {t("transactions.filterType.all")}
+              </SelectItem>
+              {TRANSACTION_TYPE_OPTIONS.map((type) => (
+                <SelectItem key={type} value={type}>
+                  {tTransactionType(t, type)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select
+            value={minConfidence || "all"}
+            onValueChange={(v) => onMinConfidenceChange(v === "all" ? "" : v)}
           >
-            <option value="">{t("transactions.filterConfidence.all")}</option>
-            <option value="0.55">{t("transactions.filterConfidence.55")}</option>
-            <option value="0.75">{t("transactions.filterConfidence.75")}</option>
-            <option value="0.9">{t("transactions.filterConfidence.90")}</option>
-          </select>
+            <SelectTrigger
+              className="w-auto min-w-36"
+              aria-label={t("transactions.filterConfidence")}
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">
+                {t("transactions.filterConfidence.all")}
+              </SelectItem>
+              <SelectItem value="0.55">
+                {t("transactions.filterConfidence.55")}
+              </SelectItem>
+              <SelectItem value="0.75">
+                {t("transactions.filterConfidence.75")}
+              </SelectItem>
+              <SelectItem value="0.9">
+                {t("transactions.filterConfidence.90")}
+              </SelectItem>
+            </SelectContent>
+          </Select>
           <label className="flex items-center gap-2 text-sm text-muted-foreground">
-            <input
-              type="checkbox"
+            <Checkbox
               checked={includeTransfers}
-              onChange={(e) => onIncludeTransfersChange(e.target.checked)}
-              className="h-4 w-4"
+              onCheckedChange={(c) => onIncludeTransfersChange(c === true)}
             />
             {t("transactions.includeTransfers")}
           </label>
           <a
             href={api.exportTransactionsUrl({
+              search: searchFilter,
+              direction: directionFilter,
+              category: categoryFilter,
               include_transfers: includeTransfers,
-              category_state: reviewMode ? "needs_review" : "all",
+              category_state: reviewMode ? reviewState : "all",
               min_confidence: confidenceFilter,
               transaction_type: transactionType || undefined,
               review_priority: reviewMode,

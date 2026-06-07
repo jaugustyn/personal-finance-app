@@ -71,22 +71,24 @@ export function GroupsView() {
             {t("transactions.groups.empty")}
           </p>
         ) : (
-          <Table>
+          <Table className="min-w-[760px] table-fixed">
             <TableHeader>
               <TableRow>
                 <TableHead>{t("transactions.column.merchant")}</TableHead>
-                <TableHead className="text-right">
+                <TableHead className="w-36 text-right">
                   {t("transactions.column.amount")}
                 </TableHead>
-                <TableHead className="text-center">#</TableHead>
-                <TableHead>{t("transactions.column.category")}</TableHead>
-                <TableHead className="w-24" />
+                <TableHead className="w-16 text-center">#</TableHead>
+                <TableHead className="w-64">
+                  {t("transactions.column.category")}
+                </TableHead>
+                <TableHead className="w-28" />
               </TableRow>
             </TableHeader>
             <TableBody>
               {(query.data ?? []).map((g) => {
-                const debit = Number(g.total_debit) || 0;
-                const credit = Number(g.total_credit) || 0;
+                const debit = Math.abs(Number(g.total_debit) || 0);
+                const credit = Math.abs(Number(g.total_credit) || 0);
                 const net = credit - debit;
                 const picked =
                   g.merchant in pickers
@@ -95,7 +97,7 @@ export function GroupsView() {
                 return (
                   <TableRow key={g.merchant}>
                     <TableCell className="font-medium">
-                      <div>{g.merchant}</div>
+                      <div className="truncate">{g.merchant}</div>
                       {g.sample_titles.length > 0 && (
                         <div className="line-clamp-1 text-xs text-muted-foreground">
                           {g.sample_titles.slice(0, 2).join(" · ")}
@@ -114,16 +116,21 @@ export function GroupsView() {
                     <TableCell className="text-center text-muted-foreground">
                       {g.count}
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="w-64">
                       <CategoryCombobox
                         value={picked}
-                        onChange={(v) =>
-                          setPickers((p) => ({ ...p, [g.merchant]: v }))
+                        onChange={(sel) =>
+                          setPickers((p) => ({
+                            ...p,
+                            [g.merchant]: sel.category,
+                          }))
                         }
+                        groupsOnly
                         size="md"
+                        className="w-60"
                       />
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="w-28">
                       <Button
                         size="sm"
                         disabled={apply.isPending || !picked}

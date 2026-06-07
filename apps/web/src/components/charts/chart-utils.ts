@@ -7,6 +7,7 @@ export const PIE_COLORS = [
   "hsl(220 70% 65%)",
   "hsl(160 60% 60%)",
   "hsl(30 80% 70%)",
+  "hsl(245 75% 68%)",
 ];
 
 export function tooltipStyle() {

@@ -1,5 +1,5 @@
 import { request } from "./client";
-import type { CategoryState, MerchantGroup, Transaction } from "./types";
+import type { CategoryState, MerchantGroup, ReviewSummary, Transaction } from "./types";
 
 export const transactionsApi = {
   transactions: (
@@ -11,6 +11,9 @@ export const transactionsApi = {
       include_transfers?: boolean;
       import_id?: number;
       merchant?: string;
+      search?: string;
+      direction?: "debit" | "credit";
+      category?: string;
       category_state?: CategoryState;
       has_suggestion?: boolean;
       min_confidence?: number;
@@ -27,6 +30,9 @@ export const transactionsApi = {
     if (params.include_transfers === false) q.set("include_transfers", "false");
     if (params.import_id !== undefined) q.set("import_id", String(params.import_id));
     if (params.merchant) q.set("merchant", params.merchant);
+    if (params.search) q.set("search", params.search);
+    if (params.direction) q.set("direction", params.direction);
+    if (params.category) q.set("category", params.category);
     if (params.category_state && params.category_state !== "all") {
       q.set("category_state", params.category_state);
     }
@@ -51,6 +57,9 @@ export const transactionsApi = {
       include_transfers?: boolean;
       import_id?: number;
       merchant?: string;
+      search?: string;
+      direction?: "debit" | "credit";
+      category?: string;
       category_state?: CategoryState;
       has_suggestion?: boolean;
       min_confidence?: number;
@@ -65,6 +74,9 @@ export const transactionsApi = {
     if (params.include_transfers === false) q.set("include_transfers", "false");
     if (params.import_id !== undefined) q.set("import_id", String(params.import_id));
     if (params.merchant) q.set("merchant", params.merchant);
+    if (params.search) q.set("search", params.search);
+    if (params.direction) q.set("direction", params.direction);
+    if (params.category) q.set("category", params.category);
     if (params.category_state && params.category_state !== "all") {
       q.set("category_state", params.category_state);
     }
@@ -82,13 +94,34 @@ export const transactionsApi = {
     const qs = q.toString();
     return `/api/proxy/transactions/export.csv${qs ? `?${qs}` : ""}`;
   },
-  patchCategory: (id: number, category: string | null, remember_rule = false) =>
+  patchCategory: (
+    id: number,
+    category: string | null,
+    options: { subcategory?: string | null; remember_rule?: boolean } = {},
+  ) =>
     request<Transaction>(`/transactions/${id}/category`, {
       method: "PATCH",
-      body: JSON.stringify({ category, remember_rule }),
+      body: JSON.stringify({
+        category,
+        subcategory: options.subcategory ?? null,
+        remember_rule: options.remember_rule ?? false,
+      }),
+    }),
+  patchType: (id: number, transaction_type: string) =>
+    request<Transaction>(`/transactions/${id}/type`, {
+      method: "PATCH",
+      body: JSON.stringify({ transaction_type }),
     }),
   deleteTransaction: (id: number) =>
     request<void>(`/transactions/${id}`, { method: "DELETE" }),
+  patchAnnotations: (
+    id: number,
+    payload: { notes?: string | null; tags?: string[] },
+  ) =>
+    request<Transaction>(`/transactions/${id}/annotations`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }),
   bulkCategorize: (payload: {
     ids?: number[];
     merchant?: string;
@@ -109,6 +142,11 @@ export const transactionsApi = {
       method: "POST",
       body: JSON.stringify(payload),
     }),
+  restoreSuggestions: (payload: { ids?: number[] }) =>
+    request<{ affected: number }>("/transactions/bulk/restore-suggestions", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
   bulkDelete: (ids: number[]) =>
     request<{ affected: number }>("/transactions/bulk/delete", {
       method: "POST",
@@ -126,4 +164,5 @@ export const transactionsApi = {
     const qs = q.toString();
     return request<MerchantGroup[]>(`/transactions/groups${qs ? `?${qs}` : ""}`);
   },
+  reviewSummary: () => request<ReviewSummary>("/transactions/review-summary"),
 };

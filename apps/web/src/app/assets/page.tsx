@@ -2,11 +2,22 @@
 
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { api, type Asset, type AssetInput } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { PageHeader } from "@/components/page-header";
+import { Money } from "@/components/money";
+import { useConfirm } from "@/components/confirm-dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -16,14 +27,27 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { KpiCard } from "@/components/kpi-card";
-import { PortfolioHistoryChart, SankeyFlow } from "@/components/charts";
+import { PortfolioHistoryChart } from "@/components/charts";
 import { formatCurrency, formatDate, formatPercent } from "@/lib/utils";
 import { Loader2, RefreshCw, Trash2, Plus } from "lucide-react";
 import { useT } from "@/lib/i18n";
 
+/** Currencies offered when adding a position (kept simple, no live FX list). */
+const CURRENCIES = [
+  "PLN",
+  "USD",
+  "EUR",
+  "GBP",
+  "CHF",
+  "JPY",
+  "CAD",
+  "AUD",
+] as const;
+
 export default function AssetsPage() {
   const { t } = useT();
   const qc = useQueryClient();
+  const confirm = useConfirm();
   const assets = useQuery({
     queryKey: ["assets"],
     queryFn: () => api.assets(),
@@ -36,10 +60,6 @@ export default function AssetsPage() {
     queryKey: ["assetHistory"],
     queryFn: () => api.assetHistory(180),
   });
-  const sankey = useQuery({
-    queryKey: ["sankey", 3],
-    queryFn: () => api.sankey(3, 8, 4),
-  });
 
   const refresh = useMutation({
     mutationFn: () => api.refreshAssets(),
@@ -47,7 +67,9 @@ export default function AssetsPage() {
       qc.invalidateQueries({ queryKey: ["assets"] });
       qc.invalidateQueries({ queryKey: ["portfolioSummary"] });
       qc.invalidateQueries({ queryKey: ["assetHistory"] });
+      toast.success(t("toast.refreshed"));
     },
+    onError: () => toast.error(t("toast.error")),
   });
 
   const create = useMutation({
@@ -63,7 +85,9 @@ export default function AssetsPage() {
         quantity: "0",
         cost_basis: "0",
       });
+      toast.success(t("toast.saved"));
     },
+    onError: () => toast.error(t("toast.error")),
   });
 
   const remove = useMutation({
@@ -71,7 +95,9 @@ export default function AssetsPage() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["assets"] });
       qc.invalidateQueries({ queryKey: ["portfolioSummary"] });
+      toast.success(t("toast.deleted"));
     },
+    onError: () => toast.error(t("toast.error")),
   });
 
   const [form, setForm] = useState({
@@ -87,27 +113,24 @@ export default function AssetsPage() {
   const totalValue = s ? Number(s.total_value_pln) : 0;
   const totalCost = s ? Number(s.total_cost_pln) : 0;
   const pnl = s ? Number(s.pnl_pln) : 0;
+  const isCash = form.asset_class === "cash";
 
   return (
     <div className="space-y-6">
-      <div className="flex items-end justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">
-            {t("assets.title")}
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            {t("assets.subtitle")}
-          </p>
-        </div>
-        <Button onClick={() => refresh.mutate()} disabled={refresh.isPending}>
-          {refresh.isPending ? (
-            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-          ) : (
-            <RefreshCw className="mr-2 h-4 w-4" />
-          )}
-          {t("assets.refresh")}
-        </Button>
-      </div>
+      <PageHeader
+        title={t("assets.title")}
+        description={t("assets.subtitle")}
+        actions={
+          <Button onClick={() => refresh.mutate()} disabled={refresh.isPending}>
+            {refresh.isPending ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <RefreshCw className="mr-2 h-4 w-4" />
+            )}
+            {t("assets.refresh")}
+          </Button>
+        }
+      />
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <KpiCard
@@ -168,6 +191,20 @@ export default function AssetsPage() {
               className="space-y-3"
               onSubmit={(e) => {
                 e.preventDefault();
+                if (isCash) {
+                  const qty = Number(form.quantity) || 0;
+                  if (qty <= 0) return;
+                  const ccy = form.currency.toUpperCase();
+                  create.mutate({
+                    symbol: ccy,
+                    name: t("assets.class.cash"),
+                    asset_class: "cash",
+                    currency: ccy,
+                    quantity: qty,
+                    cost_basis: qty,
+                  });
+                  return;
+                }
                 if (!form.symbol.trim()) return;
                 create.mutate({
                   symbol: form.symbol.trim().toUpperCase(),
@@ -179,62 +216,90 @@ export default function AssetsPage() {
                 });
               }}
             >
-              <div className="space-y-1">
-                <label className="text-xs text-muted-foreground">
-                  {t("assets.field.symbol")}
-                </label>
-                <Input
-                  value={form.symbol}
-                  onChange={(e) => setForm({ ...form, symbol: e.target.value })}
-                  placeholder="AAPL"
-                />
-              </div>
-              <div className="space-y-1">
-                <label className="text-xs text-muted-foreground">
-                  {t("assets.field.name")}
-                </label>
-                <Input
-                  value={form.name}
-                  onChange={(e) => setForm({ ...form, name: e.target.value })}
-                  placeholder="Apple Inc."
-                />
-              </div>
+              {!isCash && (
+                <div className="space-y-1">
+                  <label className="text-xs text-muted-foreground">
+                    {t("assets.field.symbol")}
+                  </label>
+                  <Input
+                    value={form.symbol}
+                    onChange={(e) =>
+                      setForm({ ...form, symbol: e.target.value })
+                    }
+                    placeholder="AAPL"
+                  />
+                </div>
+              )}
+              {!isCash && (
+                <div className="space-y-1">
+                  <label className="text-xs text-muted-foreground">
+                    {t("assets.field.name")}
+                  </label>
+                  <Input
+                    value={form.name}
+                    onChange={(e) => setForm({ ...form, name: e.target.value })}
+                    placeholder="Apple Inc."
+                  />
+                </div>
+              )}
               <div className="grid grid-cols-2 gap-2">
                 <div className="space-y-1">
                   <label className="text-xs text-muted-foreground">
                     {t("assets.field.class")}
                   </label>
-                  <select
+                  <Select
                     value={form.asset_class}
-                    onChange={(e) =>
-                      setForm({ ...form, asset_class: e.target.value })
-                    }
-                    className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
+                    onValueChange={(v) => setForm({ ...form, asset_class: v })}
                   >
-                    <option value="equity">{t("assets.class.equity")}</option>
-                    <option value="etf">{t("assets.class.etf")}</option>
-                    <option value="crypto">{t("assets.class.crypto")}</option>
-                    <option value="bond">{t("assets.class.bond")}</option>
-                    <option value="cash">{t("assets.class.cash")}</option>
-                  </select>
+                    <SelectTrigger className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="equity">
+                        {t("assets.class.equity")}
+                      </SelectItem>
+                      <SelectItem value="etf">
+                        {t("assets.class.etf")}
+                      </SelectItem>
+                      <SelectItem value="crypto">
+                        {t("assets.class.crypto")}
+                      </SelectItem>
+                      <SelectItem value="bond">
+                        {t("assets.class.bond")}
+                      </SelectItem>
+                      <SelectItem value="cash">
+                        {t("assets.class.cash")}
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div className="space-y-1">
                   <label className="text-xs text-muted-foreground">
                     {t("assets.field.currency")}
                   </label>
-                  <Input
+                  <Select
                     value={form.currency}
-                    onChange={(e) =>
-                      setForm({ ...form, currency: e.target.value })
-                    }
-                    maxLength={3}
-                  />
+                    onValueChange={(v) => setForm({ ...form, currency: v })}
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {CURRENCIES.map((ccy) => (
+                        <SelectItem key={ccy} value={ccy}>
+                          {ccy}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-2">
                 <div className="space-y-1">
                   <label className="text-xs text-muted-foreground">
-                    {t("assets.field.quantity")}
+                    {isCash
+                      ? t("assets.field.amount")
+                      : t("assets.field.quantity")}
                   </label>
                   <Input
                     type="number"
@@ -245,19 +310,21 @@ export default function AssetsPage() {
                     }
                   />
                 </div>
-                <div className="space-y-1">
-                  <label className="text-xs text-muted-foreground">
-                    {t("assets.field.cost")}
-                  </label>
-                  <Input
-                    type="number"
-                    step="0.01"
-                    value={form.cost_basis}
-                    onChange={(e) =>
-                      setForm({ ...form, cost_basis: e.target.value })
-                    }
-                  />
-                </div>
+                {!isCash && (
+                  <div className="space-y-1">
+                    <label className="text-xs text-muted-foreground">
+                      {t("assets.field.cost")}
+                    </label>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      value={form.cost_basis}
+                      onChange={(e) =>
+                        setForm({ ...form, cost_basis: e.target.value })
+                      }
+                    />
+                  </div>
+                )}
               </div>
               <Button
                 type="submit"
@@ -344,22 +411,21 @@ export default function AssetsPage() {
                       <TableCell className="text-right tabular-nums">
                         {value != null ? formatCurrency(value) : "—"}
                       </TableCell>
-                      <TableCell
-                        className={`text-right tabular-nums ${apnl != null ? (apnl >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400") : ""}`}
-                      >
-                        {apnl != null ? formatCurrency(apnl) : "—"}
+                      <TableCell className="text-right">
+                        {apnl != null ? <Money amount={apnl} signed /> : "—"}
                       </TableCell>
                       <TableCell className="text-right">
                         <Button
                           size="icon"
                           variant="ghost"
-                          onClick={() => {
-                            if (
-                              confirm(
-                                t("assets.deleteConfirm", { symbol: a.symbol }),
-                              )
-                            )
-                              remove.mutate(a.id);
+                          onClick={async () => {
+                            const ok = await confirm({
+                              title: t("assets.deleteConfirm", {
+                                symbol: a.symbol,
+                              }),
+                              destructive: true,
+                            });
+                            if (ok) remove.mutate(a.id);
                           }}
                         >
                           <Trash2 className="h-4 w-4" />
@@ -371,21 +437,6 @@ export default function AssetsPage() {
               </TableBody>
             </Table>
           )}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base text-foreground">
-            {t("assets.sankeyTitle")}
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {sankey.isLoading ? (
-            <ChartSkeleton />
-          ) : sankey.data ? (
-            <SankeyFlow data={sankey.data} />
-          ) : null}
         </CardContent>
       </Card>
     </div>

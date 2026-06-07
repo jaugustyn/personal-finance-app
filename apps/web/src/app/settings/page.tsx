@@ -1,14 +1,23 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { Loader2, Plus, Trash2 } from "lucide-react";
-import { api, type CategoryDef, type PersonalRule, type UserProfile } from "@/lib/api";
-import { useCategories } from "@/hooks/use-categories";
+import { api, type PersonalRule, type UserProfile } from "@/lib/api";
 import { useT, tCategory, tTransactionType } from "@/lib/i18n";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PageHeader } from "@/components/page-header";
+import { CategorySelect } from "@/components/category-select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -25,17 +34,29 @@ const TRANSACTION_TYPES = [
   "own_transfer",
   "person_transfer",
   "salary",
+  "income",
   "refund",
   "cash_withdrawal",
+  "debt_payment",
   "bank_fee",
   "savings_investment",
   "other",
 ] as const;
 
+const CURRENCY_OPTIONS = [
+  "PLN",
+  "EUR",
+  "USD",
+  "GBP",
+  "CHF",
+  "NOK",
+  "SEK",
+  "CZK",
+] as const;
+
 export default function SettingsPage() {
   const { t } = useT();
   const qc = useQueryClient();
-  const { data: categories = [] } = useCategories();
   const profileQuery = useQuery<UserProfile>({
     queryKey: PROFILE_KEY,
     queryFn: () => api.profile(),
@@ -46,23 +67,13 @@ export default function SettingsPage() {
   });
 
   const [pattern, setPattern] = useState("");
-  const [patternTarget, setPatternTarget] = useState<"merchant" | "title" | "both">(
-    "merchant",
-  );
+  const [patternTarget, setPatternTarget] = useState<
+    "merchant" | "title" | "both"
+  >("merchant");
   const [ruleCategory, setRuleCategory] = useState("");
   const [ruleType, setRuleType] = useState("");
-  const [ruleTransfer, setRuleTransfer] = useState(false);
   const [ruleMode, setRuleMode] = useState<"suggest_only" | "auto_apply">(
     "suggest_only",
-  );
-
-  const sortedCategories = useMemo(
-    () =>
-      [...categories].sort((a, b) => {
-        if (a.is_system !== b.is_system) return a.is_system ? -1 : 1;
-        return a.name.localeCompare(b.name);
-      }),
-    [categories],
   );
 
   const createRule = useMutation({
@@ -72,7 +83,7 @@ export default function SettingsPage() {
         pattern_target: patternTarget,
         category: ruleCategory || null,
         transaction_type: ruleType || null,
-        is_transfer: ruleTransfer || null,
+        is_transfer: null,
         mode: ruleMode,
         confidence: ruleMode === "auto_apply" ? 1.0 : 0.95,
       }),
@@ -81,9 +92,10 @@ export default function SettingsPage() {
       setPattern("");
       setRuleCategory("");
       setRuleType("");
-      setRuleTransfer(false);
       setRuleMode("suggest_only");
+      toast.success(t("toast.ruleAdded"));
     },
+    onError: () => toast.error(t("toast.error")),
   });
 
   const patchRule = useMutation({
@@ -94,19 +106,19 @@ export default function SettingsPage() {
 
   const deleteRule = useMutation({
     mutationFn: (id: number) => api.deletePersonalRule(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: RULES_KEY }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: RULES_KEY });
+      toast.success(t("toast.deleted"));
+    },
+    onError: () => toast.error(t("toast.error")),
   });
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">
-          {t("settings.title")}
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          {t("settings.subtitle")}
-        </p>
-      </div>
+      <PageHeader
+        title={t("settings.title")}
+        description={t("settings.subtitle")}
+      />
 
       <Card>
         <CardHeader>
@@ -121,10 +133,7 @@ export default function SettingsPage() {
           ) : profileQuery.isError ? (
             <p className="text-sm text-destructive">{t("common.error")}</p>
           ) : profileQuery.data ? (
-            <ProfileForm
-              profile={profileQuery.data}
-              categories={sortedCategories}
-            />
+            <ProfileForm profile={profileQuery.data} />
           ) : (
             <p className="text-sm text-muted-foreground">{t("common.empty")}</p>
           )}
@@ -136,57 +145,75 @@ export default function SettingsPage() {
           <CardTitle className="text-base">{t("settings.rules")}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
+          <p className="text-xs text-muted-foreground">
+            {t("settings.rulesHelp")}
+          </p>
           <div className="grid gap-2 md:grid-cols-[1.5fr_1fr_1fr_1fr_1fr_auto]">
             <Input
               value={pattern}
               onChange={(event) => setPattern(event.target.value)}
               placeholder={t("settings.rulePattern")}
             />
-            <select
+            <Select
               value={patternTarget}
-              onChange={(event) =>
-                setPatternTarget(event.target.value as "merchant" | "title" | "both")
+              onValueChange={(v) =>
+                setPatternTarget(v as "merchant" | "title" | "both")
               }
-              className="h-9 rounded-md border border-input bg-transparent px-2 text-sm"
             >
-              <option value="merchant">{t("settings.targetMerchant")}</option>
-              <option value="title">{t("settings.targetTitle")}</option>
-              <option value="both">{t("settings.targetBoth")}</option>
-            </select>
-            <select
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="merchant">
+                  {t("settings.targetMerchant")}
+                </SelectItem>
+                <SelectItem value="title">
+                  {t("settings.targetTitle")}
+                </SelectItem>
+                <SelectItem value="both">{t("settings.targetBoth")}</SelectItem>
+              </SelectContent>
+            </Select>
+            <CategorySelect
               value={ruleCategory}
-              onChange={(event) => setRuleCategory(event.target.value)}
-              className="h-9 rounded-md border border-input bg-transparent px-2 text-sm"
+              onChange={setRuleCategory}
+              allLabel={t("settings.noCategory")}
+              ariaLabel={t("transactions.column.category")}
+              className="w-full"
+            />
+            <Select
+              value={ruleType || "none"}
+              onValueChange={(v) => setRuleType(v === "none" ? "" : v)}
             >
-              <option value="">{t("settings.noCategory")}</option>
-              {sortedCategories.map((category) => (
-                <option key={category.id} value={category.name}>
-                  {category.is_system ? tCategory(t, category.name) : category.name}
-                </option>
-              ))}
-            </select>
-            <select
-              value={ruleType}
-              onChange={(event) => setRuleType(event.target.value)}
-              className="h-9 rounded-md border border-input bg-transparent px-2 text-sm"
-            >
-              <option value="">{t("settings.noType")}</option>
-              {TRANSACTION_TYPES.map((type) => (
-                <option key={type} value={type}>
-                  {tTransactionType(t, type)}
-                </option>
-              ))}
-            </select>
-            <select
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">{t("settings.noType")}</SelectItem>
+                {TRANSACTION_TYPES.map((type) => (
+                  <SelectItem key={type} value={type}>
+                    {tTransactionType(t, type)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select
               value={ruleMode}
-              onChange={(event) =>
-                setRuleMode(event.target.value as "suggest_only" | "auto_apply")
+              onValueChange={(v) =>
+                setRuleMode(v as "suggest_only" | "auto_apply")
               }
-              className="h-9 rounded-md border border-input bg-transparent px-2 text-sm"
             >
-              <option value="suggest_only">{t("settings.modeSuggest")}</option>
-              <option value="auto_apply">{t("settings.modeAuto")}</option>
-            </select>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="suggest_only">
+                  {t("settings.modeSuggest")}
+                </SelectItem>
+                <SelectItem value="auto_apply">
+                  {t("settings.modeAuto")}
+                </SelectItem>
+              </SelectContent>
+            </Select>
             <Button
               disabled={!pattern.trim() || createRule.isPending}
               onClick={() => createRule.mutate()}
@@ -195,16 +222,6 @@ export default function SettingsPage() {
               {t("common.add")}
             </Button>
           </div>
-          <label className="flex items-center gap-2 text-sm text-muted-foreground">
-            <input
-              type="checkbox"
-              checked={ruleTransfer}
-              onChange={(event) => setRuleTransfer(event.target.checked)}
-              className="h-4 w-4"
-            />
-            {t("settings.markTransfer")}
-          </label>
-
           <Table>
             <TableHeader>
               <TableRow>
@@ -226,7 +243,9 @@ export default function SettingsPage() {
                     </div>
                   </TableCell>
                   <TableCell>
-                    {rule.category ? tCategory(t, rule.category) : t("common.unknown")}
+                    {rule.category
+                      ? tCategory(t, rule.category)
+                      : t("common.unknown")}
                   </TableCell>
                   <TableCell>
                     {rule.transaction_type
@@ -240,14 +259,20 @@ export default function SettingsPage() {
                         patchRule.mutate({
                           id: rule.id,
                           patch: {
-                            mode: event.target.value as "suggest_only" | "auto_apply",
+                            mode: event.target.value as
+                              | "suggest_only"
+                              | "auto_apply",
                           },
                         })
                       }
                       className="h-8 rounded-md border border-input bg-transparent px-2 text-xs"
                     >
-                      <option value="suggest_only">{t("settings.modeSuggest")}</option>
-                      <option value="auto_apply">{t("settings.modeAuto")}</option>
+                      <option value="suggest_only">
+                        {t("settings.modeSuggest")}
+                      </option>
+                      <option value="auto_apply">
+                        {t("settings.modeAuto")}
+                      </option>
                     </select>
                   </TableCell>
                   <TableCell>
@@ -283,25 +308,19 @@ export default function SettingsPage() {
   );
 }
 
-function ProfileForm({
-  profile,
-  categories,
-}: {
-  profile: UserProfile;
-  categories: CategoryDef[];
-}) {
+function ProfileForm({ profile }: { profile: UserProfile }) {
   const { t } = useT();
   const qc = useQueryClient();
   const [baseCurrency, setBaseCurrency] = useState(profile.base_currency);
   const [salaryDay, setSalaryDay] = useState(
     profile.salary_day ? String(profile.salary_day) : "",
   );
-  const [monthlyGoal, setMonthlyGoal] = useState(
+  const [monthlyGoal] = useState(
     profile.monthly_savings_goal !== null
       ? String(profile.monthly_savings_goal)
       : "",
   );
-  const [limits, setLimits] = useState<Record<string, string>>(
+  const [limits] = useState<Record<string, string>>(
     Object.fromEntries(
       Object.entries(profile.category_limits ?? {}).map(([key, value]) => [
         key,
@@ -322,7 +341,11 @@ function ProfileForm({
             .map(([key, value]) => [key, Number(value)]),
         ),
       }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: PROFILE_KEY }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: PROFILE_KEY });
+      toast.success(t("toast.saved"));
+    },
+    onError: () => toast.error(t("toast.error")),
   });
 
   return (
@@ -330,11 +353,21 @@ function ProfileForm({
       <div className="grid gap-3 md:grid-cols-3">
         <label className="space-y-1 text-sm">
           <span>{t("settings.baseCurrency")}</span>
-          <Input
-            value={baseCurrency}
-            onChange={(event) => setBaseCurrency(event.target.value)}
-            maxLength={3}
-          />
+          <Select value={baseCurrency} onValueChange={setBaseCurrency}>
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {CURRENCY_OPTIONS.map((code) => (
+                <SelectItem key={code} value={code}>
+                  {code}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <span className="block text-xs text-muted-foreground">
+            {t("settings.baseCurrencyHelp")}
+          </span>
         </label>
         <label className="space-y-1 text-sm">
           <span>{t("settings.salaryDay")}</span>
@@ -344,7 +377,11 @@ function ProfileForm({
             max={31}
             value={salaryDay}
             onChange={(event) => setSalaryDay(event.target.value)}
+            placeholder={t("settings.salaryDayPlaceholder")}
           />
+          <span className="block text-xs text-muted-foreground">
+            {t("settings.salaryDayHelp")}
+          </span>
         </label>
         <label className="space-y-1 text-sm">
           <span>{t("settings.monthlyGoal")}</span>
@@ -352,36 +389,25 @@ function ProfileForm({
             type="number"
             min={0}
             value={monthlyGoal}
-            onChange={(event) => setMonthlyGoal(event.target.value)}
+            readOnly
+            disabled
+            className="cursor-not-allowed opacity-70"
           />
+          <span className="block text-xs text-muted-foreground">
+            {t("settings.monthlyGoalReadonly")}
+          </span>
         </label>
       </div>
-      <div className="grid gap-3 md:grid-cols-4">
-        {categories
-          .filter((category) => category.is_system)
-          .map((category) => (
-            <label key={category.id} className="space-y-1 text-sm">
-              <span>{tCategory(t, category.name)}</span>
-              <Input
-                type="number"
-                min={0}
-                value={limits[category.name] ?? ""}
-                onChange={(event) =>
-                  setLimits((prev) => ({
-                    ...prev,
-                    [category.name]: event.target.value,
-                  }))
-                }
-                placeholder="0"
-              />
-            </label>
-          ))}
-      </div>
-      <Button onClick={() => saveProfile.mutate()} disabled={saveProfile.isPending}>
-        {saveProfile.isPending && (
-          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+      <Button
+        className="min-w-[120px]"
+        onClick={() => saveProfile.mutate()}
+        disabled={saveProfile.isPending}
+      >
+        {saveProfile.isPending ? (
+          <Loader2 className="h-4 w-4 animate-spin" />
+        ) : (
+          t("common.save")
         )}
-        {t("common.save")}
       </Button>
     </>
   );

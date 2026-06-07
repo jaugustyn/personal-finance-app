@@ -1,9 +1,18 @@
 @import "tailwindcss";
+@import "tw-animate-css";
 
 @custom-variant dark (&:where(.dark, .dark *));
 
+/*
+ * Design tokens.
+ * - Neutral palette (slate) lives on :root / .dark.
+ * - Finance semantics (positive/negative/warning/info) are stable across themes.
+ * - The brand accent (--primary / --ring / accent tints) is swappable at runtime
+ *   via [data-accent="..."] set by the AccentProvider. Default is emerald.
+ */
+
 :root {
-  --background: 0 0% 100%;
+  --background: 210 40% 99%;
   --foreground: 222 47% 11%;
 
   --card: 0 0% 100%;
@@ -11,9 +20,6 @@
 
   --popover: 0 0% 100%;
   --popover-foreground: 222 47% 11%;
-
-  --primary: 222 47% 11%;
-  --primary-foreground: 210 40% 98%;
 
   --secondary: 210 40% 96%;
   --secondary-foreground: 222 47% 11%;
@@ -25,55 +31,151 @@
   --accent-foreground: 222 47% 11%;
 
   --destructive: 0 72% 51%;
-  --destructive-foreground: 210 40% 98%;
+  --destructive-foreground: 0 0% 100%;
 
   --border: 214 32% 91%;
   --input: 214 32% 91%;
-  --ring: 222 47% 11%;
 
-  --chart-1: 0 72% 51%;
-  --chart-2: 142 71% 45%;
-  --chart-3: 47 95% 53%;
-  --chart-4: 221 83% 53%;
-  --chart-5: 280 65% 60%;
+  /* Finance semantics — consistent meaning across accents and themes. */
+  --positive: 152 60% 36%;
+  --positive-foreground: 0 0% 100%;
+  --negative: 0 72% 48%;
+  --negative-foreground: 0 0% 100%;
+  --warning: 32 95% 44%;
+  --warning-foreground: 0 0% 100%;
+  --info: 221 83% 53%;
+  --info-foreground: 0 0% 100%;
 
-  --radius: 0.5rem;
+  /* Chart palette — accent-led, then a balanced categorical set. */
+  --chart-1: 160 84% 32%;
+  --chart-2: 221 83% 53%;
+  --chart-3: 32 95% 44%;
+  --chart-4: 280 65% 55%;
+  --chart-5: 199 89% 42%;
+  --chart-6: 340 75% 52%;
+  --chart-positive: 152 60% 36%;
+  --chart-negative: 0 72% 48%;
+
+  --sidebar: 210 40% 98%;
+  --sidebar-foreground: 222 47% 11%;
+
+  --radius: 0.65rem;
+
+  /* Default accent: emerald (light). */
+  --primary: 160 84% 30%;
+  --primary-foreground: 0 0% 100%;
+  --ring: 160 84% 30%;
+  --accent-soft: 160 70% 95%;
+  --accent-soft-foreground: 161 84% 24%;
 }
 
 .dark {
-  --background: 222 47% 6%;
+  --background: 222 47% 5%;
   --foreground: 210 40% 98%;
 
-  --card: 222 47% 9%;
+  --card: 222 40% 8%;
   --card-foreground: 210 40% 98%;
 
-  --popover: 222 47% 9%;
+  --popover: 222 40% 8%;
   --popover-foreground: 210 40% 98%;
 
-  --primary: 210 40% 98%;
-  --primary-foreground: 222 47% 11%;
-
-  --secondary: 217 33% 17%;
+  --secondary: 217 33% 15%;
   --secondary-foreground: 210 40% 98%;
 
-  --muted: 217 33% 17%;
+  --muted: 217 33% 15%;
   --muted-foreground: 215 20% 65%;
 
-  --accent: 217 33% 17%;
+  --accent: 217 33% 16%;
   --accent-foreground: 210 40% 98%;
 
   --destructive: 0 63% 50%;
-  --destructive-foreground: 210 40% 98%;
+  --destructive-foreground: 0 0% 100%;
 
-  --border: 217 33% 20%;
+  --border: 217 33% 18%;
   --input: 217 33% 20%;
-  --ring: 212 27% 84%;
 
-  --chart-1: 0 70% 60%;
-  --chart-2: 142 65% 55%;
-  --chart-3: 47 90% 60%;
-  --chart-4: 221 80% 65%;
-  --chart-5: 280 65% 70%;
+  --positive: 152 56% 45%;
+  --positive-foreground: 222 47% 6%;
+  --negative: 0 72% 60%;
+  --negative-foreground: 0 0% 100%;
+  --warning: 38 92% 55%;
+  --warning-foreground: 222 47% 6%;
+  --info: 213 90% 65%;
+  --info-foreground: 222 47% 6%;
+
+  --chart-1: 158 64% 47%;
+  --chart-2: 213 90% 65%;
+  --chart-3: 38 92% 55%;
+  --chart-4: 280 70% 70%;
+  --chart-5: 199 89% 58%;
+  --chart-6: 340 80% 66%;
+  --chart-positive: 152 56% 45%;
+  --chart-negative: 0 72% 62%;
+
+  --sidebar: 222 44% 7%;
+  --sidebar-foreground: 210 40% 98%;
+}
+
+/* ── Accent themes ────────────────────────────── */
+[data-accent="emerald"] {
+  --primary: 160 84% 30%;
+  --ring: 160 84% 30%;
+  --accent-soft: 160 70% 95%;
+  --accent-soft-foreground: 161 84% 24%;
+  --chart-1: 160 84% 32%;
+}
+[data-accent="teal"] {
+  --primary: 174 80% 30%;
+  --ring: 174 80% 30%;
+  --accent-soft: 174 65% 94%;
+  --accent-soft-foreground: 175 84% 22%;
+  --chart-1: 174 80% 34%;
+}
+[data-accent="blue"] {
+  --primary: 221 83% 53%;
+  --ring: 221 83% 53%;
+  --accent-soft: 214 95% 95%;
+  --accent-soft-foreground: 221 83% 42%;
+  --chart-1: 221 83% 53%;
+}
+[data-accent="violet"] {
+  --primary: 262 83% 58%;
+  --ring: 262 83% 58%;
+  --accent-soft: 262 90% 96%;
+  --accent-soft-foreground: 262 70% 48%;
+  --chart-1: 262 83% 58%;
+}
+.dark[data-accent="emerald"] {
+  --primary: 158 64% 47%;
+  --primary-foreground: 222 47% 6%;
+  --ring: 158 64% 47%;
+  --accent-soft: 158 50% 16%;
+  --accent-soft-foreground: 152 60% 70%;
+  --chart-1: 158 64% 47%;
+}
+.dark[data-accent="teal"] {
+  --primary: 172 66% 48%;
+  --primary-foreground: 222 47% 6%;
+  --ring: 172 66% 48%;
+  --accent-soft: 175 55% 15%;
+  --accent-soft-foreground: 172 60% 70%;
+  --chart-1: 172 66% 50%;
+}
+.dark[data-accent="blue"] {
+  --primary: 213 90% 62%;
+  --primary-foreground: 222 47% 6%;
+  --ring: 213 90% 62%;
+  --accent-soft: 217 50% 18%;
+  --accent-soft-foreground: 213 90% 78%;
+  --chart-1: 213 90% 62%;
+}
+.dark[data-accent="violet"] {
+  --primary: 263 85% 70%;
+  --primary-foreground: 222 47% 6%;
+  --ring: 263 85% 70%;
+  --accent-soft: 263 45% 22%;
+  --accent-soft-foreground: 263 85% 84%;
+  --chart-1: 263 85% 70%;
 }
 
 @theme inline {
@@ -91,8 +193,18 @@
   --color-muted-foreground: hsl(var(--muted-foreground));
   --color-accent: hsl(var(--accent));
   --color-accent-foreground: hsl(var(--accent-foreground));
+  --color-accent-soft: hsl(var(--accent-soft));
+  --color-accent-soft-foreground: hsl(var(--accent-soft-foreground));
   --color-destructive: hsl(var(--destructive));
   --color-destructive-foreground: hsl(var(--destructive-foreground));
+  --color-positive: hsl(var(--positive));
+  --color-positive-foreground: hsl(var(--positive-foreground));
+  --color-negative: hsl(var(--negative));
+  --color-negative-foreground: hsl(var(--negative-foreground));
+  --color-warning: hsl(var(--warning));
+  --color-warning-foreground: hsl(var(--warning-foreground));
+  --color-info: hsl(var(--info));
+  --color-info-foreground: hsl(var(--info-foreground));
   --color-border: hsl(var(--border));
   --color-input: hsl(var(--input));
   --color-ring: hsl(var(--ring));
@@ -101,9 +213,15 @@
   --color-chart-3: hsl(var(--chart-3));
   --color-chart-4: hsl(var(--chart-4));
   --color-chart-5: hsl(var(--chart-5));
+  --color-chart-6: hsl(var(--chart-6));
+  --color-chart-positive: hsl(var(--chart-positive));
+  --color-chart-negative: hsl(var(--chart-negative));
+  --color-sidebar: hsl(var(--sidebar));
+  --color-sidebar-foreground: hsl(var(--sidebar-foreground));
   --radius-lg: var(--radius);
   --radius-md: calc(var(--radius) - 2px);
   --radius-sm: calc(var(--radius) - 4px);
+  --radius-xl: calc(var(--radius) + 4px);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
@@ -120,5 +238,14 @@
   body {
     font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
     font-feature-settings: "rlig" 1, "calt" 1;
+  }
+  :focus-visible {
+    outline: none;
+  }
+}
+
+@layer utilities {
+  .tabular-nums {
+    font-variant-numeric: tabular-nums;
   }
 }

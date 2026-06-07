@@ -1,20 +1,81 @@
 import { request } from "./client";
-import type { Anomaly, Direction, ForecastResponse, Subscription } from "./types";
+import type {
+  Anomaly,
+  Direction,
+  ForecastResponse,
+  MlComparison,
+  MlDashboard,
+  MlFeedbackInput,
+  MlFeedbackResponse,
+  MlReclassifyResponse,
+  MlRetrainResponse,
+  Subscription,
+} from "./types";
 
 export const mlApi = {
+  mlDashboard: () => request<MlDashboard>("/ml/dashboard"),
+  mlComparison: () => request<MlComparison>("/ml/comparison"),
+  recordMlFeedback: (payload: MlFeedbackInput) =>
+    request<MlFeedbackResponse>("/ml/feedback", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  reclassifyTransactions: () =>
+    request<MlReclassifyResponse>("/ml/reclassify", { method: "POST" }),
+  retrainClassifier: (
+    params: { estimator?: string; feature_set?: string } = {},
+  ) => {
+    const q = new URLSearchParams();
+    if (params.estimator) q.set("estimator", params.estimator);
+    if (params.feature_set) q.set("feature_set", params.feature_set);
+    const qs = q.toString();
+    return request<MlRetrainResponse>(
+      `/ml/retrain${qs ? `?${qs}` : ""}`,
+      { method: "POST" },
+    );
+  },
   forecast: (category: string | null, horizon = 3) => {
     const q = new URLSearchParams({ horizon: String(horizon) });
     if (category) q.set("category", category);
     return request<ForecastResponse>(`/forecast?${q.toString()}`);
   },
-  anomalies: (params: { direction?: Direction; contamination?: number; limit?: number } = {}) => {
+  anomalies: (
+    params: {
+      direction?: Direction;
+      contamination?: number;
+      limit?: number;
+      mode?: "review" | "suspicious" | "all";
+      include_model_only?: boolean;
+    } = {},
+  ) => {
     const q = new URLSearchParams();
     if (params.direction) q.set("direction", params.direction === "all" ? "both" : params.direction);
     if (params.contamination) q.set("contamination", String(params.contamination));
     if (params.limit) q.set("limit", String(params.limit));
+    if (params.mode) q.set("mode", params.mode);
+    if (params.include_model_only) q.set("include_model_only", "true");
     const qs = q.toString();
     return request<Anomaly[]>(`/anomalies${qs ? `?${qs}` : ""}`);
   },
+  recordAnomalyFeedback: (
+    transactionId: number,
+    action: "relevant" | "not_relevant" | "ignore_merchant",
+  ) =>
+    request<{ id: number | null; status: string }>(
+      `/anomalies/${transactionId}/feedback`,
+      {
+        method: "POST",
+        body: JSON.stringify({ action }),
+      },
+    ),
   subscriptions: (minConfidence = 0.0) =>
     request<Subscription[]>(`/subscriptions?min_confidence=${minConfidence}`),
+  recordSubscriptionFeedback: (
+    merchant: string,
+    action: "confirm" | "hide",
+  ) =>
+    request<{ id: number | null; status: string }>("/subscriptions/feedback", {
+      method: "POST",
+      body: JSON.stringify({ merchant, action }),
+    }),
 };

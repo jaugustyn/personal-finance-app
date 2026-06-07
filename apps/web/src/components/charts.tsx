@@ -3,7 +3,10 @@
 export {
   CashflowChart,
   CategoryDonut,
+  CategoryMoMChart,
+  CategoryTrendChart,
   ForecastChart,
+  FrequentMerchantsBar,
   NetWorthChart,
   PortfolioHistoryChart,
   SankeyFlow,
