@@ -13,7 +13,7 @@ Dwa rdzeniowe wymagania funkcjonalne:
    stabilnej kwocie i kadencji 7/30/90/365 dni, mimo zmieniającego się
    merchant string.
 
-Dataset użytkownika: 12–36 mies. historii, ~3–6k transakcji, 8 kategorii
+Dataset użytkownika: 12–36 mies. historii, ~3–6k transakcji, 9 kategorii
 wydatków plus osobna flaga `is_transfer`.
 Każda kategoria ma 50–800 obserwacji.
 

@@ -33,7 +33,7 @@ Jeżeli BasicAuth jest włączony, użyć użytkownika i hasła z `.env`.
 4. Wejść w `/transactions` → `Do przypisania`.
 5. Sprawdzić:
    - typy transakcji (`purchase`, `own_transfer`, `person_transfer`, `salary`,
-     `refund`, `cash_withdrawal`, `bank_fee`, `savings_investment`),
+     `income`, `refund`, `cash_withdrawal`, `bank_fee`, `savings_investment`),
    - `is_transfer` dla przelewów własnych,
    - sugestie ML i confidence,
    - accept/reject sugestii.
@@ -94,14 +94,28 @@ Do pracy i prezentacji cytować tylko:
 
 ## 5. Scenariusz demo
 
-1. Dashboard: KPI, cashflow, kategorie, top merchantów.
+Przed pokazem sprawdzić, czy baza demo ma wystarczająco dużo sygnału:
+
+- kilka miesięcy transakcji, najlepiej 6+ miesięcy dla podstawowego forecastu,
+- kilkadziesiąt potwierdzonych kategorii wydatkowych,
+- kilka różnych typów transakcji widocznych w tabeli (`purchase`, transfery,
+  przychody, opłaty itd.),
+- co najmniej jedną wykrytą subskrypcję,
+- kilka anomalii oraz zapisany feedback `Trafne` / `Nietrafne` /
+  `Ignoruj odbiorcę`,
+- prognozę prezentować przede wszystkim dla `Wszystkie kategorie`; pojedyncze
+  kategorie pokazywać tylko wtedy, gdy mają regularną historię.
+
+1. Pulpit: KPI, cashflow, kategorie, top merchantów.
 2. Import: preview, mapping, wynik importu i deduplikacja.
-3. Transakcje: tryb `Do przypisania`, accept/reject sugestii, ręczna kategoria.
-4. ML: retrain, reclassify, confidence threshold.
-5. Forecast: miesięczna prognoza wydatków.
-6. Anomalie: severity i powody flagowania.
-7. Subskrypcje: koszt miesięczny i confidence.
-8. Asystent: pytanie po polsku, np. `Co mogę ograniczyć w kwietniu 2026?`.
+3. Transakcje: typ transakcji, tryb `Do przypisania`, accept/reject sugestii,
+   ręczna kategoria.
+4. Jakość danych: pokazać kolejki pracy nad danymi treningowymi.
+5. Modele ML: raport eksperymentów, retrain, reclassify, confidence threshold.
+6. Forecast: miesięczna prognoza wydatków i komunikat o długości historii.
+7. Anomalie: typ, priorytet, powody flagowania i feedback.
+8. Subskrypcje: koszt miesięczny i confidence.
+9. Asystent: pytanie po polsku, np. `Co mogę ograniczyć w kwietniu 2026?`.
 
 ## 6. Kryteria gotowości
 

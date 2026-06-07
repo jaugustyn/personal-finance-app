@@ -1,6 +1,6 @@
 # Funkcje Aplikacji, Status i Roadmapa
 
-Stan na: **2026-05-29**. Ten dokument jest produktową mapą projektu: co już
+Stan na: **2026-06-05**. Ten dokument jest produktową mapą projektu: co już
 mamy w aplikacji, jaki jest status poszczególnych modułów i co warto zaplanować
 dalej. Główne `README.md` pozostaje dokumentem startowym do uruchomienia
 projektu i opisem architektury.
@@ -10,7 +10,7 @@ projektu i opisem architektury.
 Projekt to self-hostowany system analizy finansów osobistych:
 
 - ścieżka produkcyjnego demo: **Next.js dashboard -> FastAPI -> PostgreSQL**,
-- ścieżka lab/admin: **Streamlit + scripts + notebooks**,
+- ścieżka badawcza/evidence: **scripts + moduły ML + lokalne notebooki bez prywatnych outputów**,
 - ścieżka AI/ML: **klasyfikacja, prognozowanie, anomalie, subskrypcje i lokalny
   asystent LLM**,
 - model prywatności: realne eksporty bankowe, artefakty modeli i prywatne
@@ -38,18 +38,18 @@ zbudowanych na realnych danych lokalnych.
 | Import danych | Import Revolut | Gotowe | Obsługa statementów PLN/USD i generycznego mapowania kolumn. |
 | Import danych | Generyczny import CSV/XLSX | Gotowe | Preview nagłówków, ręczne mapowanie kolumn i fallback parsera. |
 | Import danych | Deduplikacja | Gotowe | Deterministyczne hashe importu ograniczają duplikaty przy ponownym imporcie. |
-| Import danych | Reguły `transaction_type` | Gotowe | Wykrywa zakup, przelew własny, przelew do osoby, pensję, zwrot, bankomat, opłatę bankową i oszczędności/inwestycje. |
+| Import danych | Reguły `transaction_type` | Gotowe | Wykrywa zakup, przelew własny, przelew do osoby, pensję, inny przychód, zwrot, bankomat, opłatę bankową i oszczędności/inwestycje. |
 | Import danych | Reguły personalne przed ML | W trakcie | Reguły merchant/title mogą sugerować lub automatycznie ustawiać kategorię, typ i transfer. Wymaga strojenia po realnym imporcie. |
 | Transakcje | Tabela transakcji | Gotowe | Filtrowanie, paginacja, inline edit kategorii i bulk categorization. |
 | Transakcje | Tryb "Do przypisania" | Gotowe | Priorytetyzuje brak kategorii, brak sugestii i niskie confidence. |
 | Transakcje | Akceptacja/odrzucanie sugestii ML | Gotowe | Akceptacja zamienia sugestię w etykietę manualną; odrzucenie usuwa błędną sugestię z kolejki. |
-| Kategorie | 8 głównych kategorii wydatkowych | Gotowe | `food`, `transport`, `subscriptions`, `health`, `entertainment`, `housing`, `savings`, `other`. |
-| Kategorie | `transaction_type` oddzielony od kategorii | Gotowe | Przelewy, pensje, zwroty, gotówka, opłaty i inwestycje nie zanieczyszczają kategorii wydatkowych. |
-| Kategorie | Katalog kategorii custom | Gotowe | Dostępny w API/UI, ale taksonomia ML pod pracę magisterską zostaje oparta o 8 kategorii systemowych. |
+| Kategorie | 9 głównych kategorii wydatkowych | Gotowe | `food`, `transport`, `subscriptions`, `health`, `entertainment`, `housing`, `savings`, `shopping`, `other`. |
+| Kategorie | `transaction_type` oddzielony od kategorii | Gotowe | Przelewy, pensje, inne przychody, zwroty, gotówka, opłaty i inwestycje nie zanieczyszczają kategorii wydatkowych. |
+| Kategorie | Katalog kategorii custom | Gotowe | Dostępny w API/UI, ale taksonomia ML pod pracę magisterską zostaje oparta o 9 kategorii systemowych. |
 | Profil | Lokalny profil użytkownika | Gotowe | Waluta bazowa, dzień pensji, miesięczny cel oszczędnościowy i limity kategorii. |
 | Profil | Reguły merchant/title | Gotowe | CRUD w ustawieniach i API. Domyślnie działają jako sugestia, zaufane reguły mogą mieć `auto_apply`. |
-| Dashboard | Główny dashboard KPI | Gotowe | Przychody, wydatki, cashflow netto, stopa oszczędności i ostatnie transakcje. |
-| Dashboard | Wykresy cashflow, kategorii, net worth i merchantów | Gotowe | Semantyka transferów i potwierdzonych kategorii jest spójna ze statystykami backendu. |
+| Pulpit | Główny dashboard KPI | Gotowe | Przychody, wydatki, cashflow netto, stopa oszczędności i ostatnie transakcje. |
+| Pulpit | Wykresy cashflow, kategorii, net worth i merchantów | Gotowe | Semantyka transferów i potwierdzonych kategorii jest spójna ze statystykami backendu. |
 | Import UI | Upload i preview importu | Gotowe | Strona Next.js do preview, mapowania i historii importów. |
 | Assets | Opcjonalny portfel inwestycyjny | Gotowe | Funkcja poboczna z yfinance, snapshotami i widokami portfolio. Nie jest rdzeniem ML pracy. |
 | Stats API | Overview/cashflow/by-category/net worth/top merchants | Gotowe | Domyślnie potwierdzone kategorie; predykcje tylko na jawnym parametrze diagnostycznym. |
@@ -57,13 +57,13 @@ zbudowanych na realnych danych lokalnych.
 | Bezpieczeństwo | Hardening importu/eksportu CSV | Gotowe | Limity pliku, MIME/extension checks i zabezpieczenie przed formula injection. |
 | Obserwowalność | Logi i health checks | Gotowe | structlog, request ID, `/health`, `/health/live`, `/health/ready`. |
 | Obserwowalność | Prometheus/Grafana | Odłożone | Usunięte z aktualnego zakresu jako nadmiarowe dla single-user self-hosted demo. |
-| Open Banking | GoCardless/Nordigen PoC | Odłożone | Zachowane jako proof of concept, nie jako główna ścieżka ingestu. |
 
 ## Komponenty AI/ML
 
 | Komponent | Co robi | Status | Uwagi jakościowe |
 |---|---|---|---|
-| Klasyfikacja transakcji | Sugeruje jedną z 8 kategorii wydatkowych. | W trakcie | Baseline TF-IDF + LinearSVC, porównanie z Logistic Regression/RF/Dummy, opcja calibrated LinearSVC i eksperyment feature-v2. Jakość zależy od potwierdzonych etykiet. |
+| Klasyfikacja transakcji | Sugeruje jedną z 9 kategorii wydatkowych. | W trakcie | Baseline TF-IDF + LinearSVC, porównanie z Logistic Regression/RF/Dummy, opcja calibrated LinearSVC i eksperyment feature-v2. Jakość zależy od potwierdzonych etykiet. |
+| Klasyfikacja `transaction_type` | Raportuje wieloklasowy eksperyment typu transakcji. | Gotowe | Evidence-only model na silver labels z `Transaction.transaction_type`; porównuje Dummy/LogReg/LinearSVC i nie zastępuje reguł runtime. |
 | Diagnostyka confidence | Zwraca kategorię, confidence, źródło, kategorię modelu, próg i informację o fallbacku. | Gotowe | Runtime i evidence używają tej samej interpretacji confidence. |
 | Opcjonalny LLM fallback | Używa lokalnej Ollamy tylko przy niskim confidence i tylko dla pojedynczej klasyfikacji, gdy użytkownik to włączy. | Gotowe | Nie jest używany w masowym reclassify, żeby nie generować wolnych i niestabilnych wywołań. |
 | Kolejka sugestii ML | Wypełnia `category_predicted` dla nieoznaczonych transakcji podobnych do wydatków. | Gotowe | Sugestia nie jest ground truth, dopóki użytkownik jej nie zaakceptuje. |
@@ -73,14 +73,19 @@ zbudowanych na realnych danych lokalnych.
 | Detekcja anomalii | Flagi nietypowych wydatków. | Gotowe | Hybrid IsolationForest + robust z-score + reguły. Wymaga prywatnego review precision@20/50 na świeżych danych. |
 | Detekcja subskrypcji | Wykrywa powtarzalne obciążenia. | Gotowe | Interpretowalny detector kadencji oparty o normalizację merchanta, stabilność kwoty i cykliczność. |
 | Asystent LLM | Polski asystent do pytań i rekomendacji. | Gotowe | Najpierw heuristic routing i deterministic tools; LLM tylko opisuje wyniki i nie wymyśla liczb. |
-| ML evidence package | Buduje raporty classification, EDA, forecasting i anomaly summary. | W trakcie | Brakuje świeżych `latest_*` po czystym imporcie i ręcznym review. |
+| ML evidence package | Buduje raporty classification, transaction type, EDA, forecasting, anomaly summary, subscriptions i wspólny evidence package. | W trakcie | Kod raportów jest gotowy; nadal trzeba wygenerować świeże `latest_*` po czystym imporcie i ręcznym review. |
 
 ## Aktualne Luki
 
 - Największą luką dowodową są świeże raporty clean-start:
-  `latest_classification.json`, `latest_eda.json`,
-  `latest_forecasting.json`, `latest_anomaly_summary.json` i `summary.md`
+  `latest_classification.json`, `latest_transaction_type_classification.json`,
+  `latest_eda.json`, `latest_forecasting.json`,
+  `latest_anomaly_summary.json`, `latest_subscriptions.json`,
+  `latest_evidence_package.json` i `summary.md`
   po nowym imporcie realnych danych oraz ręcznym review kategorii.
+- `transaction_type` w evidence jest silver-label eksperymentem. Daje
+  spełnienie wymogu wieloklasowej analizy typu transakcji, ale nie jest jeszcze
+  niezależnym modelem produkcyjnym.
 - Jakość klasyfikacji zależy od liczby i balansu potwierdzonych etykiet.
   Nie trenować na `category_predicted`; ground truth to tylko zaakceptowane lub
   ręcznie ustawione `category`.
@@ -91,7 +96,8 @@ zbudowanych na realnych danych lokalnych.
 - Subskrypcje skorzystają na feedbacku użytkownika: potwierdzone, ignorowane i
   stałe merchanty.
 - Asystenta LLM warto rozwijać przez deterministic tools, nie przez proszenie
-  modelu o liczenie faktów z promptu.
+  modelu o liczenie faktów z promptu. RAG w projekcie należy opisywać jako
+  hybrydę: function calling / heuristic routing + lokalny LLM do opisu wyników.
 
 ## Planowane Funkcje
 
@@ -99,10 +105,10 @@ zbudowanych na realnych danych lokalnych.
 
 - Dodać lokalny workflow przygotowania datasetów zewnętrznych w `scripts/`:
   HuggingFace/Kaggle/Plaid-like data -> znormalizowane transakcje -> mapowanie
-  do 8 kategorii.
+  do 9 kategorii.
 - Porównać warianty `real_only`, `external_only`, `mixed` i
   `mixed + calibration`.
-- Dodać jawnie opisaną tabelę mapowania obcych kategorii do naszych 8 klas.
+- Dodać jawnie opisaną tabelę mapowania obcych kategorii do naszych 9 klas.
 - Trzymać raw pliki zewnętrzne w `data/external/` albo poza repo.
 - Podjąć decyzję, czy feature-v2 ma zostać domyślnym modelem runtime.
 
@@ -199,7 +205,7 @@ obecnego demo, tylko backlogiem pomysłów z rynku aplikacji personal finance.
 
 5. **Tags, notes i split transactions**
    Kategorie są za mało elastyczne do wszystkich analiz. Tagi i notatki dają
-   drugą oś opisu bez rozbudowy 8 klas ML. Split transakcji przyda się dla
+   drugą oś opisu bez rozbudowy klas ML. Split transakcji przyda się dla
    zakupów mieszanych, np. market + chemia + prezent.
 
 6. **Reguły automatyzacji z diagnostyką**
@@ -263,7 +269,7 @@ bankowe w oryginalnym języku, zamiast opisów tłumaczonych sztucznie.
 - Multi-user SaaS, OAuth, billing i izolacja tenantów.
 - Fine-tuned transformer classifier bez porównania z TF-IDF baseline.
 - LLM jako źródło prawdy dla sum finansowych.
-- Pełna produkcyjna integracja PSD2/Open Banking.
+- Automatyczna integracja bankowa online.
 - Stos Prometheus/Grafana.
 - Commitowanie realnych eksportów bankowych, prywatnych review anomalii albo
   lokalnych artefaktów modeli.

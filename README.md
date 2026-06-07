@@ -1,48 +1,42 @@
 # Personal Finance Analysis System
 
-Self-hosted system for analyzing and optimizing personal expenses using ML and local LLMs.
+Self-hosted system for analyzing and optimizing personal expenses using
+FastAPI, Next.js, classical ML and a local LLM.
 
 ## Status
 
-Current focus: Phase 12 — personalization and AI/ML quality improvements.
+Current focus: Phase 12 - personalization and AI/ML quality improvements.
 
-- Phase 1 ✅ ingestion (Pekao + Revolut), API, UI, Docker, CI
-- Phase 2 ✅ ML categorisation (TF-IDF + linear SVC, macro-F1 = 0.82 with LLM augmentation), Nordigen PoC
-- Phase 3 ✅ monthly forecasting, IsolationForest anomalies, subscription detector
-- Phase 4 ✅ hybrid LLM assistant (heuristic PL router + Ollama tool-calling fallback)
-- Phase 5 ✅ HTTP Basic auth, structlog, APScheduler, enriched health, 10-min setup
-- Phase 6 ✅ Next.js 16 + shadcn/ui dashboard (KPI, cash flow, net worth, imports, categories, assets, transactions table with inline/bulk edit, forecast/anomalies/subscriptions pages)
-- Phase 7 ✅ ML evidence package, code-quality refactors (services, LLM tools, frontend modules), confidence calibration reports
-- Phase 8 ✅ ML/AI backend hardening (classifier diagnostics, optional LLM fallback, anomaly/forecast/subscription regressions)
-- Phase 9 ✅ category review workflow (transaction-type filters, ML suggestion queue, accept/reject suggestions, deterministic savings recommendations)
-- Phase 10 ✅ clean-start validation docs, real-data evidence flow and defence demo runbook
-- Phase 11 ✅ backend/AI/ML consistency refactor for stats, transfer filtering and classifier confidence
-- Phase 12 ⏳ local profile, personal rules and experimental feature-v2 ML comparison
+- Phase 1: ingestion (Pekao + Revolut), API, web UI, Docker, CI
+- Phase 2: ML categorisation with TF-IDF + linear models and LLM augmentation
+- Phase 3: monthly forecasting, IsolationForest anomalies, subscription detector
+- Phase 4: hybrid LLM assistant with deterministic tools and Ollama fallback
+- Phase 5: BasicAuth, structured logging, scheduler, health checks
+- Phase 6: Next.js dashboard for imports, transactions, categories, stats, ML views
+- Phase 7+: evidence package, review workflow, transaction type evidence, demo polish
 
-## From zero to running in 10 minutes
+## From Zero To Running
 
-Prerequisites: **Docker Desktop** and (optional) **Ollama** running on the host
+Prerequisites: **Docker Desktop** and optionally **Ollama** running on the host
 for the chat assistant.
 
 ```powershell
-git clone <repo> finance && cd finance
-copy .env.example .env             # Edit .env if you want auth or scheduler
-docker compose -f docker/docker-compose.yml up -d --build
+git clone <repo> finance
+cd finance
+copy .env.example .env
+docker compose --env-file .env -p personal-finance-app -f docker/docker-compose.yml up -d --build --force-recreate
 ```
 
 Then open:
 
-- **Web** (Next.js production dashboard) → <http://localhost:3000>
-- API   → <http://localhost:8000/docs>
-- UI    (Streamlit lab: asystent + ML/admin) → <http://localhost:8501>
-- Health → <http://localhost:8000/health>
+- Web dashboard: <http://localhost:3000>
+- API docs: <http://localhost:8000/docs>
+- Health: <http://localhost:8000/health>
 
-Import a CSV from the Next.js `/imports` page (or the Streamlit lab `Home`
-page), wait a few seconds for classification, then use the Next.js dashboard
-for analytics. Streamlit remains a lab/admin surface for the assistant and ML
-developer workflows.
+Import a CSV/XLSX file from the Next.js `/imports` page, wait for parsing and
+classification, then use the web dashboard for review and analytics.
 
-### Optional: enable BasicAuth
+### Optional: BasicAuth
 
 Set both in `.env`:
 
@@ -51,24 +45,25 @@ AUTH_USERNAME=admin
 AUTH_PASSWORD=change-me
 ```
 
-`/health` stays public; all other endpoints require credentials. The Streamlit
-UI auto-attaches the same credentials when these env vars are set.
+`/health` stays public; all other protected endpoints require credentials. The
+Next.js proxy attaches server-side credentials when `API_USERNAME` /
+`API_PASSWORD` are configured.
 
-### Optional: enable scheduled retraining
+### Optional: Scheduled Retraining
 
 ```ini
 SCHEDULER_ENABLED=true
 RETRAIN_CRON_HOUR=3
 RETRAIN_CRON_MINUTE=0
-RETRAIN_ESTIMATOR=linear_svc
+RETRAIN_ESTIMATOR=linear_svc_calibrated
 ```
 
 The API container then runs an in-process APScheduler that retrains the
 classifier daily at the configured UTC time.
 
-### Optional: enable LLM assistant (Ollama)
+### Optional: LLM Assistant
 
-Install Ollama on the host (<https://ollama.ai>) and pull a model:
+Install Ollama on the host and pull a model:
 
 ```powershell
 ollama pull llama3.1:8b-instruct-q4_K_M
@@ -76,90 +71,85 @@ ollama pull llama3.1:8b-instruct-q4_K_M
 
 The API connects to `host.docker.internal:11434` by default.
 
-## API endpoints
+## API Endpoints
 
 Public:
 
-- `GET  /health` — service status (db + ollama checks)
+- `GET /health` - service status
 
-Protected (BasicAuth when enabled):
+Protected when BasicAuth is enabled:
 
-- `POST /imports/preview` — preview CSV/XLSX headers and auto-detected mapping
-- `POST /imports` — upload CSV/XLSX (Pekao/Revolut/auto/generic)
-- `GET  /imports` / `DELETE /imports/{id}` — import history and cleanup
-- `GET  /transactions` — list with filters (`category_state`, `has_suggestion`, `min_confidence`, `transaction_type`)
-- `PATCH /transactions/{id}/category` — manual category override (active learning)
-- `POST /transactions/bulk/categorize` — bulk category / own-transfer updates
-- `POST /transactions/bulk/accept-suggestions` / `reject-suggestions` — promote or dismiss ML category suggestions
-- `GET  /categories` — system + user-defined category catalog
-- `GET/PATCH /profile` — local user profile: base currency, salary day, savings goal, category limits
-- `GET/POST/PATCH/DELETE /profile/rules` — personal merchant/title rules applied before ML suggestions
-- `POST /ml/classify` — predict single transaction category with confidence diagnostics and optional LLM fallback
-- `POST /ml/reclassify` — bulk-fill `category_predicted` + confidence for unlabelled expense-like rows
-- `POST /ml/retrain` — refit classifier in background
-- `GET  /forecast?category=&horizon=` — monthly debit forecast (auto-selects best model)
-- `GET  /anomalies?direction=&contamination=` — flagged transactions with severity score
-- `GET  /subscriptions?min_confidence=` — recurring debits with confidence + cost
-- `POST /chat` — hybrid LLM assistant
-- `GET  /stats/overview?months=&include_transfers=` — aggregated KPI (income/expenses/net/savings rate)
-- `GET  /stats/cashflow?months=&include_transfers=` — monthly cashflow series
-- `GET  /stats/by-category?months=&include_predictions=&include_transfers=` — expenses breakdown; confirmed categories by default
-- `GET  /stats/networth?months=&include_transfers=` — cumulative balance series
-- `GET  /stats/top-merchants?months=&limit=&include_transfers=` — top expense merchants
-- `GET/POST/PATCH/DELETE /assets` — optional investment portfolio + yfinance snapshots
+- `POST /imports/preview` - preview CSV/XLSX headers and auto-detected mapping
+- `POST /imports` - upload CSV/XLSX (Pekao, Revolut, auto or generic)
+- `GET /imports` / `DELETE /imports/{id}` - import history and cleanup
+- `GET /transactions` - list transactions with filters
+- `PATCH /transactions/{id}/category` - manual category override
+- `POST /transactions/bulk/categorize` - bulk category/type updates
+- `POST /transactions/bulk/accept-suggestions` / `reject-suggestions`
+- `GET /categories` - system and custom category catalog
+- `GET/PATCH /profile` - local user profile
+- `GET/POST/PATCH/DELETE /profile/rules` - personal merchant/title rules
+- `POST /ml/classify` - predict one transaction category
+- `POST /ml/reclassify` - fill ML category suggestions for unlabelled rows
+- `POST /ml/retrain` - refit classifier in background
+- `GET /forecast?category=&horizon=` - monthly debit forecast
+- `GET /anomalies?direction=&contamination=` - flagged transactions
+- `GET /subscriptions?min_confidence=` - recurring debits
+- `POST /chat` - hybrid LLM assistant
+- `GET /stats/*` - overview, cashflow, by-category, net worth, top merchants
+- `GET/POST/PATCH/DELETE /assets` - optional investment portfolio
 
-## Web dashboard (Next.js)
+## Web Dashboard
 
-Production-grade UI at <http://localhost:3000>. Built with Next.js 16 (App Router) +
-TypeScript + Tailwind v4 + shadcn/ui-style components + TanStack Query + Recharts.
+Main UI at <http://localhost:3000>. Built with Next.js 16, React 19,
+TypeScript, Tailwind v4, TanStack Query and Recharts.
 
 Pages:
 
-- `/` — KPI cards, cash flow (12m), category donut, cumulative balance, top merchants, recent transactions
-- `/transactions` — filterable + paginated table, "to assign" review mode, transaction type badges and ML suggestion accept/reject actions
-- `/imports` — CSV/XLSX import preview, generic column mapping, import history
-- `/categories` — system/custom category management
-- `/settings` — local profile and personal merchant/title rules used before ML
-- `/assets` — optional portfolio tracking, yfinance refresh, history and Sankey flow
-- `/forecast` — interactive forecast for any category
-- `/anomalies` — top flagged transactions sorted by severity
-- `/subscriptions` — recurring expense cards with monthly total
+- `/` - KPI cards, cashflow, categories, net worth, merchants, recent rows
+- `/transactions` - filters, pagination, category/type edits, ML suggestions
+- `/imports` - CSV/XLSX import preview, mapping and history
+- `/categories` - system and custom category management
+- `/settings` - local profile and personal rules
+- `/assets` - optional investment portfolio
+- `/forecast` - category/global spending forecast
+- `/anomalies` - anomaly review and feedback
+- `/subscriptions` - recurring payment detection
+- `/ml` - ML quality, retraining and evidence-oriented diagnostics
+- `/review` - data quality center for training labels and suggestions
+- `/assistant` - local LLM assistant backed by deterministic tools
 
-Auth is handled server-side: a Next route handler at `/api/proxy/*` forwards
-requests to FastAPI and injects `Authorization: Basic` when `API_USERNAME` /
-`API_PASSWORD` env vars are set. Browser never sees credentials.
+Auth is handled server-side: `/api/proxy/*` performs HTTP calls to FastAPI and
+injects BasicAuth when credentials are configured. Browser code does not see
+backend credentials.
 
-## Streamlit lab (asystent + admin)
+## Development
 
-Streamlit is intentionally kept as a lab surface, not the production frontend.
-It is useful during the defence to show ML/admin workflows and the Polish chat
-assistant at <http://localhost:8501>:
-
-- `Home` — imported transactions, predictions, manual reclassify, retrain button
-- `📈 Prognoza` — historical monthly spend + N-month forecast
-- `🚨 Anomalie` — top flagged rows sorted by severity
-- `🔁 Subskrypcje` — detected subscriptions with cost estimate + confidence
-- `💬 Asystent` — chat (PL) with deterministic heuristics + optional LLM polishing
-
-## Quick start (dev, without Docker)
-
-Requires Python 3.11+ and [uv](https://docs.astral.sh/uv/) (or use `pip` with the same `pyproject.toml`).
+Requires Python 3.11+ and [uv](https://docs.astral.sh/uv/).
 
 ```powershell
 uv venv
 .venv\Scripts\Activate.ps1
-uv pip install -e ".[dev,ui,augment]"
+uv pip install -e ".[dev,augment]"
 ```
 
-Dependency extras are split by role: base install is the API/runtime demo,
-`ui` adds Streamlit lab dependencies, `augment` adds the Ollama Python client
-for synthetic data generation, `poc` adds GoCardless/Nordigen helpers, and
-`experiments` keeps heavy research-only packages out of the normal runtime.
+Dependency extras are split by role:
+
+- base install: API/runtime demo
+- `augment`: Ollama Python client for synthetic training data generation
+- `experiments`: heavier research packages
+- `dev`: tests, linting, optional local notebooks and developer tools
 
 Run tests:
 
 ```powershell
 pytest
+```
+
+Run API locally:
+
+```powershell
+.\.venv\Scripts\python.exe -m uvicorn apps.api.main:app --reload --port 8000
 ```
 
 Build aggregate ML evidence reports from local/private data:
@@ -168,164 +158,157 @@ Build aggregate ML evidence reports from local/private data:
 .\.venv\Scripts\python.exe scripts\build_ml_evidence.py --from-db
 ```
 
-See `docs/ml-evidence.md` for the reporting/privacy rules. The script writes
-aggregate JSON to `data/reports/` and private anomaly review CSVs to
-`data/private/`; both locations are gitignored. Stable aliases
-`latest_*.json` and `summary.md` are generated for easy citation. See
-`docs/demo-runbook.md` for the clean-start validation and defence demo flow.
-See `docs/features/README.md` for the current feature/status/roadmap map.
-If local env credentials differ from the app defaults, pass
-`--database-url postgresql+psycopg://...`; credentials are masked in errors.
-
-Run API (requires running Postgres — see Docker section):
-
-```powershell
-.\.venv\Scripts\python.exe -m uvicorn apps.api.main:app --reload --port 8000
-```
-
-> Use the venv's Python directly. The PowerShell `Activate.ps1` may fail on paths with diacritics
-> (e.g. `Magisterka Projekt`). Calling `.\.venv\Scripts\python.exe -m uvicorn ...` works regardless.
-
-Run UI:
-
-```powershell
-.\.venv\Scripts\python.exe -m streamlit run apps/ui/Home.py
-```
+Reports are written to `data/reports/`; private anomaly review files go to
+`data/private/`. These paths are gitignored. See `docs/ml-evidence.md`,
+`docs/model-card.md` and `docs/demo-runbook.md`.
 
 ## Docker
 
+Run all Compose commands from the repository root. Use the same project name
+every time so Docker reuses the same images, containers and Postgres volume.
+
 ```powershell
-docker compose -f docker/docker-compose.yml up -d
+docker compose --env-file .env -p personal-finance-app -f docker/docker-compose.yml up -d --build --force-recreate
+docker compose --env-file .env -p personal-finance-app -f docker/docker-compose.yml logs -f api web
+docker compose --env-file .env -p personal-finance-app -f docker/docker-compose.yml down
 ```
 
 Services:
 
-- `postgres` — application database (port 5432)
-- `api` — FastAPI backend (port 8000)
-- `ui` — Streamlit dashboard (port 8501)
-- `web` — Next.js dashboard (port 3000)
+- `postgres` - application database, port 5432
+- `api` - FastAPI backend, port 8000
+- `web` - Next.js dashboard, port 3000
 
-Ollama runs on the **host** (not in Compose) to spare CPU/VRAM.
+Ollama runs on the host, not in Compose.
 
-## Web dev (without Docker)
+Check that the persistent database volume exists:
+
+```powershell
+docker volume ls | findstr postgres-data
+```
+
+Expected volume name: `personal-finance-app_postgres-data`.
+
+Avoid these commands during normal work:
+
+```powershell
+docker compose --env-file .env -p personal-finance-app -f docker/docker-compose.yml down -v
+docker volume rm personal-finance-app_postgres-data
+docker system prune --volumes
+```
+
+They remove the Postgres volume and imported/reviewed data. Use `down -v` only
+for an intentional clean demo reset.
+
+## Web Dev
 
 ```powershell
 cd apps/web
 npm install
-# optional: set API_URL=http://localhost:8000 in .env.local
 npm run dev
 ```
 
-Open <http://localhost:3000>. Requires the API running (locally or in Docker).
+Optional `.env.local`:
 
-## Project layout
-
+```ini
+API_URL=http://localhost:8000
+API_USERNAME=admin
+API_PASSWORD=change-me
 ```
+
+## Project Layout
+
+```text
 apps/api/         FastAPI backend
-apps/ui/          Streamlit lab (assistant + ML/admin workflows)
-apps/web/         Next.js dashboard (production frontend)
-src/finance/      Core package (importable from both apps)
-  ingestion/      Bank CSV parsers
+apps/web/         Next.js dashboard
+src/finance/      Core package
+  ingestion/      Bank CSV/XLSX parsers
   domain/         SQLAlchemy models, enums, DTOs
-  db/             Session, migrations
-  ml/             Classification, forecasting, anomalies, subscriptions
-  llm/            Ollama client, Polish router, tool functions
+  db/             Session and migrations
+  ml/             Classification, transaction type evidence, forecasting,
+                  anomalies and subscriptions
+  llm/            Ollama client, Polish router and deterministic tools
 tests/            Pytest tests
-docker/           Dockerfiles + compose
-data/             Runtime/private artifacts (gitignored)
-notebooks/        EDA + evaluation notebooks (research/lab)
-scripts/          Smoke/debug helpers
+docker/           Dockerfiles and compose
+data/             Runtime/private artifacts, gitignored
+notebooks/        Optional local notebooks; `.ipynb` files are ignored by default
+scripts/          Evidence, smoke and debug helpers
 ```
 
 Repository boundaries:
 
-- **Production demo path:** `apps/web` → `/api/proxy/*` → `apps/api` → `src/finance` → Postgres.
-- **Lab/research path:** `apps/ui`, `notebooks/`, `scripts/`, `src/finance/ingestion/nordigen.py`.
-- **Runtime artifacts:** `data/models/`, `data/reports/`, `coverage.xml`, caches and frontend build files are generated locally and ignored.
-- **Private data:** real bank exports should live in `data/raw/`, `data/private/`, or outside the repo. `data/synthetic/` is for generated examples.
-
-## Configuration
-
-Copy `.env.example` to `.env` and adjust values. The API reads config from env vars
-via `pydantic-settings`.
-
-Selected variables:
-
-| Var | Default | Purpose |
-| --- | --- | --- |
-| `DATABASE_URL` | `postgresql+psycopg://finance:finance@localhost:5432/finance` | Application database |
-| `AUTH_USERNAME` / `AUTH_PASSWORD` | empty | Enable HTTP Basic auth on protected endpoints |
-| `CORS_ALLOW_ORIGINS` | `http://localhost:3000` | Comma-separated origins allowed by FastAPI CORS |
-| `RATE_LIMIT_PER_MINUTE` | `120` | Per-IP rate limit (`0` disables) |
-| `SCHEDULER_ENABLED` | `false` | Run APScheduler for daily retraining |
-| `OLLAMA_BASE_URL` | `http://localhost:11434` | LLM endpoint for chat polishing |
+- Production demo path: `apps/web` -> `/api/proxy/*` -> `apps/api` ->
+  `src/finance` -> Postgres.
+- Research/evidence path: `scripts/`, `src/finance/ml/` and optional local
+  notebooks.
+- Runtime artifacts: `data/models/`, `data/reports/`, coverage files, caches
+  and frontend build files are generated locally and ignored.
+- Private data: real bank exports should live in `data/raw/`, `data/private/`
+  or outside the repo.
 
 ## Architecture
 
-```
-                                 ┌────────────────────┐
-   CSV (Pekao/Revolut)  ───►     │  ingestion         │
-   GoCardless PoC     ───►     │  (parsers, dedup)  │
-                                 └─────────┬──────────┘
-                                           ▼
-                          ┌──────────────────────────────┐
-                          │  Postgres (transactions,     │
-                          │  categories, assets, …)      │
-                          └─────┬────────────────┬───────┘
-                                ▼                ▼
-              ┌──────────────────────┐    ┌──────────────────┐
-              │  ML pipelines        │    │  FastAPI         │
-              │  • TF-IDF + LinSVC   │◄──►│  routers + auth  │
-              │  • forecasting       │    │  + rate limit    │
-              │  • anomalies         │    │  + CORS          │
-              │  • subscriptions     │    └────────┬─────────┘
-              │  • LLM router        │             ▼
-              └──────────┬───────────┘    ┌──────────────────┐
-                         │                │  Next.js (web)   │
-                         ▼                │  + Streamlit (ui)│
-                  Ollama (host)           └──────────────────┘
+```text
+CSV/XLSX exports
+      |
+      v
+src/finance/ingestion
+      |
+      v
+Postgres <---- FastAPI <---- Next.js dashboard
+      |            |
+      |            +---- chat/router/tools ---- Ollama on host
+      |
+      +---- ML pipelines
+             - category classification: TF-IDF + linear models
+             - transaction type classification: evidence-only silver labels
+             - forecasting: naive/mean/SES/ARIMA
+             - anomaly detection: IsolationForest + robust z-score + rules
+             - subscriptions: cadence detector
 ```
 
 Layers:
 
-- **Ingestion** — `src/finance/ingestion/` parses bank CSVs into a canonical `Transaction` shape with deterministic dedup hashes.
-- **Domain** — `src/finance/domain/models.py` is the single SQLAlchemy 2.0 source of truth used by API, ML and tests. The canonical taxonomy is 8 expense categories plus a separate `transaction_type` layer (`purchase`, own/person transfer, salary, refund, fees, savings/investment) and `is_transfer` for own-account transfers.
-- **ML** — `src/finance/ml/` (classification, forecasting, anomaly, subscriptions). Pure libraries — orchestrated from the API, Streamlit lab or notebooks.
-- **API** — `apps/api/` exposes thin FastAPI routers, applies BasicAuth/CORS/rate-limit middleware, and proxies the same domain to the web frontend.
-- **Frontends** — `apps/web` (Next.js dashboard, production) and `apps/ui` (Streamlit lab/admin/notebook-style assistant).
+- Ingestion parses bank exports into canonical transaction rows.
+- Domain models are the shared source of truth for API, ML and tests.
+- ML code is library-style and is orchestrated by API endpoints, scripts or
+  local notebooks.
+- API exposes thin FastAPI routers and middleware.
+- Web is the main user-facing interface.
 
-## ML metrics & reproducibility
+## ML Metrics And Reproducibility
 
-Reported on the labelled subset of the synthetic + real CSV corpus
-(`data/processed/labelled.parquet`):
+The project keeps separate reports for:
 
-| Task | Model | Metric | Value |
-| --- | --- | --- | --- |
-| Categorisation (8 expense classes + `transaction_type`) | TF-IDF + LinearSVC + LLM augmentation | macro-F1 | **0.82** |
-| Categorisation (baseline, no augmentation) | TF-IDF + LinearSVC | macro-F1 | 0.74 |
-| Monthly debit forecast (auto-select) | Naive / Mean / SES / ARIMA | MAPE (12m holdout) | 8–14% |
-| Anomaly detection | IsolationForest + robust z-score + heuristic rules | precision@20 | ≥ 0.85 (hand-evaluated) |
-| Subscription recurrence | rule-based pattern matcher | precision / recall | 0.91 / 0.88 |
+- category classification - supervised 9-class expense category model
+- transaction type classification - supervised evidence experiment on silver labels
+- forecasting - walk-forward comparison of naive, mean, SES and ARIMA
+- anomaly detection - IsolationForest, robust z-score and rule summaries
+- subscriptions - recurring payment detector
 
-Reproduce locally (after seeding the DB and running classification on imports):
+The aggregate evidence package is produced by:
 
 ```powershell
-.\.venv\Scripts\python.exe -m finance.ml.classification.train --estimator linear_svc --report
-.\.venv\Scripts\python.exe -m finance.ml.forecasting.evaluate --category groceries --horizon 6
-jupyter lab notebooks/01_eda.ipynb        # EDA + confusion matrix
+.\.venv\Scripts\python.exe scripts\build_ml_evidence.py --from-db
 ```
 
-Data:
+Data policy:
 
-- Real transactions: 2 banks (Pekao XLSX, Revolut CSV), ~3 years, anonymised on import.
-- Augmented training set: deterministic synthetic samples generated by `finance.ml.classification.augment` (LLM-assisted, reviewed) — boosts macro-F1 by ~8 pp on minority classes.
-- Labelling: bootstrapped from a small hand-labelled seed (~150 rows) and grown via active learning (`PATCH /transactions/{id}/category`).
+- real bank exports remain local/private,
+- public reports contain aggregates and aliases, not raw merchant/title text,
+- runtime classifier uses category labels confirmed by the user,
+- `transaction_type` evidence currently uses silver labels from import rules.
 
-## Quality gates
+## Quality Gates
 
-CI (`.github/workflows/ci.yml`) runs on every push / PR:
+Typical checks:
 
-- `ruff check .`
-- `mypy src/finance apps` (non-blocking)
-- `pytest` (150+ tests, ~75%+ coverage, >=60% coverage gate)
-- frontend: `tsc --noEmit` + `eslint src` (apps/web)
+```powershell
+ruff check .
+mypy src/finance apps
+pytest
+cd apps/web
+npm run typecheck
+```
+
+CI runs linting, tests, frontend checks and dependency audits.

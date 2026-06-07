@@ -6,7 +6,6 @@ This is a self-hosted personal finance analysis system using:
 
 - FastAPI backend in `apps/api`
 - Next.js production dashboard in `apps/web`
-- Streamlit lab/admin UI in `apps/ui`
 - core Python package in `src/finance`
 - Postgres database
 - ML pipelines for classification, forecasting, anomalies and subscriptions
@@ -20,7 +19,6 @@ Respect these boundaries:
 
 - `apps/api/` should contain thin FastAPI routers and API orchestration.
 - `apps/web/` should contain production frontend code.
-- `apps/ui/` is a lab/admin surface, not the main frontend.
 - `src/finance/ingestion/` handles bank import/parsing.
 - `src/finance/domain/` owns SQLAlchemy models, enums and DTOs.
 - `src/finance/ml/` contains classification, forecasting, anomaly and subscription logic.
@@ -113,12 +111,6 @@ Run API locally:
 
 ```powershell
 .\.venv\Scripts\python.exe -m uvicorn apps.api.main:app --reload --port 8000
-```
-
-Run Streamlit lab:
-
-```powershell
-.\.venv\Scripts\python.exe -m streamlit run apps/ui/Home.py
 ```
 
 Docker:

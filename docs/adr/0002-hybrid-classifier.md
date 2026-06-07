@@ -6,9 +6,9 @@
 
 ## Kontekst
 
-Klasyfikacja transakcji bankowych do 8 kategorii systemowych
+Klasyfikacja transakcji bankowych do 9 kategorii systemowych
 (`food`, `transport`, `housing`, `health`, `savings`, `subscriptions`,
-`entertainment`, `other`)
+`entertainment`, `shopping`, `other`)
 to klasyczny problem klasyfikacji wielo­klasowej na krótkim tekście (merchant +
 title) z dużą nierównowagą klas i silnym ogonem rzadkich wzorców (np. apteki,
 abonamenty z nowymi merchantami). Dwie skrajne strategie:
