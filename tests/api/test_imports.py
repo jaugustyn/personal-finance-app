@@ -83,7 +83,7 @@ def test_upload_parse_error_returns_422(client, monkeypatch) -> None:
 
 def test_upload_not_implemented_returns_501(client, monkeypatch) -> None:
     def boom(session, *, source, filename, stream, parser=None):
-        raise NotImplementedError("nordigen not wired")
+        raise NotImplementedError("parser not wired")
 
     from apps.api.routers import imports as imports_router
 
@@ -91,7 +91,7 @@ def test_upload_not_implemented_returns_501(client, monkeypatch) -> None:
     r = client.post(
         "/imports",
         files={"file": ("x.csv", io.BytesIO(b"x"), "text/csv")},
-        data={"source": "nordigen"},
+        data={"source": "pekao"},
     )
     assert r.status_code == 501
 
@@ -128,6 +128,9 @@ def test_preview_returns_headers_and_detection(client) -> None:
     assert body["detected_mapping"]["date"] == "Date"
     assert body["detected_mapping"]["amount"] == "Amount"
     assert body["detected_mapping"]["currency"] == "Currency"
+    assert body["field_specs"][0]["key"] == "date"
+    assert body["field_specs"][0]["required"] is True
+    assert body["supported_extensions"] == [".csv", ".tsv", ".txt"]
     assert len(body["sample_rows"]) == 2
 
 
@@ -184,6 +187,19 @@ def test_upload_generic_with_explicit_column_map(client, _patch_ingest) -> None:
     assert parser is not None and parser.column_map == cmap
 
 
+def test_upload_generic_without_map_uses_detected_mapping(client, _patch_ingest) -> None:
+    r = client.post(
+        "/imports",
+        files={"file": ("x.csv", io.BytesIO(_GENERIC_EN), "text/csv")},
+        data={"source": "generic"},
+    )
+    assert r.status_code == 200
+    parser = _patch_ingest[0]["parser"]
+    assert parser is not None
+    assert parser.column_map["date"] == "Date"
+    assert parser.column_map["amount"] == "Amount"
+
+
 def test_upload_generic_invalid_column_map_422(client, _patch_ingest) -> None:
     r = client.post(
         "/imports",
@@ -191,3 +207,24 @@ def test_upload_generic_invalid_column_map_422(client, _patch_ingest) -> None:
         data={"source": "generic", "column_map": "{not-json"},
     )
     assert r.status_code == 422
+
+
+def test_upload_generic_missing_required_mapping_422(client, _patch_ingest) -> None:
+    r = client.post(
+        "/imports",
+        files={"file": ("x.csv", io.BytesIO(_GENERIC_EN), "text/csv")},
+        data={"source": "generic", "column_map": json.dumps({"date": "Date"})},
+    )
+    assert r.status_code == 422
+    assert "amount" in r.json()["detail"]
+
+
+def test_upload_generic_unknown_mapped_column_422(client, _patch_ingest) -> None:
+    cmap = {"date": "Date", "amount": "Amount", "merchant": "Does not exist"}
+    r = client.post(
+        "/imports",
+        files={"file": ("x.csv", io.BytesIO(_GENERIC_EN), "text/csv")},
+        data={"source": "generic", "column_map": json.dumps(cmap)},
+    )
+    assert r.status_code == 422
+    assert "Does not exist" in r.json()["detail"]

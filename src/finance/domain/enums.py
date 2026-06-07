@@ -3,7 +3,7 @@ from enum import StrEnum
 
 
 class Category(StrEnum):
-    """Unified expense categories (8 classes per thesis brief)."""
+    """Unified expense categories used as the ML target."""
 
     FOOD = "food"
     TRANSPORT = "transport"
@@ -12,6 +12,7 @@ class Category(StrEnum):
     ENTERTAINMENT = "entertainment"
     HOUSING = "housing"
     SAVINGS = "savings"
+    SHOPPING = "shopping"
     OTHER = "other"
 
 
@@ -22,8 +23,10 @@ class TransactionType(StrEnum):
     OWN_TRANSFER = "own_transfer"
     PERSON_TRANSFER = "person_transfer"
     SALARY = "salary"
+    INCOME = "income"
     REFUND = "refund"
     CASH_WITHDRAWAL = "cash_withdrawal"
+    DEBT_PAYMENT = "debt_payment"
     BANK_FEE = "bank_fee"
     SAVINGS_INVESTMENT = "savings_investment"
     OTHER = "other"
@@ -48,5 +51,4 @@ class BankSource(StrEnum):
     REVOLUT = "revolut"
     MBANK = "mbank"
     ING = "ing"
-    NORDIGEN = "nordigen"
     UNKNOWN = "unknown"

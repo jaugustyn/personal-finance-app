@@ -30,7 +30,7 @@ services:
       SCHEDULER_ENABLED: ${SCHEDULER_ENABLED:-false}
       RETRAIN_CRON_HOUR: ${RETRAIN_CRON_HOUR:-3}
       RETRAIN_CRON_MINUTE: ${RETRAIN_CRON_MINUTE:-0}
-      RETRAIN_ESTIMATOR: ${RETRAIN_ESTIMATOR:-linear_svc}
+      RETRAIN_ESTIMATOR: ${RETRAIN_ESTIMATOR:-linear_svc_calibrated}
       APP_ENV: ${APP_ENV:-dev}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       CORS_ALLOW_ORIGINS: ${CORS_ALLOW_ORIGINS:-http://localhost:3000}
@@ -49,19 +49,6 @@ services:
       sh -c "alembic upgrade head &&
              uvicorn apps.api.main:app --host 0.0.0.0 --port 8000"
 
-  ui:
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile.ui
-    environment:
-      API_BASE_URL: http://api:8000
-      AUTH_USERNAME: ${AUTH_USERNAME:-}
-      AUTH_PASSWORD: ${AUTH_PASSWORD:-}
-    depends_on:
-      - api
-    ports:
-      - "8501:8501"
-
   web:
     build:
       context: ..
@@ -70,7 +57,6 @@ services:
       API_URL: http://api:8000
       API_USERNAME: ${AUTH_USERNAME:-}
       API_PASSWORD: ${AUTH_PASSWORD:-}
-      NEXT_PUBLIC_LEGACY_UI_URL: ${LEGACY_UI_URL:-http://localhost:8501}
     depends_on:
       - api
     ports:
