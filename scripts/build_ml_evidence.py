@@ -222,6 +222,10 @@ def _write_summary_markdown(
         if isinstance(tx_linear_macro, float) and isinstance(tx_dummy_macro, float)
         else "n/a"
     )
+    tx_runtime_policy = transaction_type.get(
+        "runtime_policy",
+        "evidence_only_rules_remain_source_of_truth",
+    )
 
     content = f"""# ML Evidence Summary
 
@@ -262,7 +266,7 @@ Task: `{transaction_type.get('classification_task', 'multiclass_transaction_type
 
 Label source: `{transaction_type.get('label_source', 'silver_transaction_type')}`
 
-Runtime policy: `{transaction_type.get('runtime_policy', 'evidence_only_rules_remain_source_of_truth')}`
+Runtime policy: `{tx_runtime_policy}`
 
 Total silver labels: `{transaction_type.get('n_total_labelled', 0)}`
 
@@ -388,28 +392,6 @@ def main(argv: list[str] | None = None) -> int:
         forecasting=forecasting,
         anomaly_detection=anomaly_summary,
         subscriptions=subscriptions,
-    )
-    privacy = _privacy_check(
-        [
-            classification,
-            transaction_type,
-            eda,
-            forecasting,
-            anomaly_summary,
-            subscriptions,
-            evidence_package,
-        ],
-        df,
-    )
-    evidence_package = build_evidence_package(
-        generated_at=ts,
-        source=source_name,
-        category_classification=classification,
-        transaction_type_classification=transaction_type,
-        forecasting=forecasting,
-        anomaly_detection=anomaly_summary,
-        subscriptions=subscriptions,
-        privacy_check=privacy,
     )
     privacy = _privacy_check(
         [
