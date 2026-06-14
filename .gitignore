@@ -39,9 +39,6 @@ data/reports/
 *.csv
 !tests/**/*.csv
 
-# Streamlit
-.streamlit/secrets.toml
-
 # Notebooks
 .ipynb_checkpoints/
 notebooks/*.ipynb
