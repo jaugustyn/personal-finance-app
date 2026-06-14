@@ -6,5 +6,12 @@ Hybrid approach (per plan):
   - Severity = combination of model score + rule hits.
 """
 from .detector import AnomalyResult, detect_anomalies
+from .service import AnomalyReviewRow, list_anomaly_rows, record_anomaly_feedback
 
-__all__ = ["AnomalyResult", "detect_anomalies"]
+__all__ = [
+    "AnomalyResult",
+    "AnomalyReviewRow",
+    "detect_anomalies",
+    "list_anomaly_rows",
+    "record_anomaly_feedback",
+]

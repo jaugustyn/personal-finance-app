@@ -11,10 +11,9 @@ from sqlalchemy.orm import Session
 from finance.analytics.filters import debit_spending_filters, non_transfer_filters
 from finance.domain.models import Transaction
 from finance.llm.periods import parse_period
-from finance.llm.tool_data import load_transactions_df
 from finance.llm.tool_schemas import SavingsRecommendationsArgs
-from finance.ml.anomaly.detector import detect_anomalies
-from finance.ml.subscriptions.detector import detect_subscriptions
+from finance.ml.anomaly.service import list_anomaly_rows
+from finance.ml.subscriptions.service import list_subscription_rows
 from finance.profile.service import get_or_create_profile
 
 
@@ -138,36 +137,28 @@ def recommend_savings(session: Session, args: dict[str, Any]) -> dict[str, Any]:
     ]
     limit_alerts.sort(key=lambda row: row["over_by"], reverse=True)
 
-    df = load_transactions_df(session)
     subscriptions_summary = {"count": 0, "estimated_monthly_cost": 0.0}
     anomaly_summary = {"count": 0, "max_severity": 0.0}
-    if not df.empty:
-        subs = detect_subscriptions(df)
-        subscriptions_summary = {
-            "count": len(subs),
-            "estimated_monthly_cost": float(
-                sum(_safe_float(sub.estimated_monthly_cost) for sub in subs)
-            ),
-        }
-        period_df = df[(df["booking_date"] >= start) & (df["booking_date"] <= end)]
-        if not period_df.empty:
-            scored = detect_anomalies(period_df, direction="debit").df
-            anomaly_type = scored.get("anomaly_type")
-            non_model_only = (
-                anomaly_type.fillna("").ne("model_only")
-                if anomaly_type is not None
-                else True
-            )
-            flagged = scored[
-                scored["anomaly"]
-                & non_model_only
-            ]
-            anomaly_summary = {
-                "count": int(len(flagged)),
-                "max_severity": _safe_float(
-                    flagged["severity"].max() if not flagged.empty else 0.0
-                ),
-            }
+    subs = list_subscription_rows(session)
+    subscriptions_summary = {
+        "count": len(subs),
+        "estimated_monthly_cost": float(
+            sum(_safe_float(sub.estimated_monthly_cost) for sub in subs)
+        ),
+    }
+    anomalies = list_anomaly_rows(
+        session,
+        date_from=start,
+        date_to=end,
+        direction="debit",
+        limit=100,
+        mode="review",
+        include_model_only=False,
+    )
+    anomaly_summary = {
+        "count": len(anomalies),
+        "max_severity": max((_safe_float(row.severity) for row in anomalies), default=0.0),
+    }
 
     return {
         "period": {"start": start.isoformat(), "end": end.isoformat()},

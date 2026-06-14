@@ -220,6 +220,25 @@ def test_list_subscriptions_picks_whitelisted(session):
     assert any(s["merchant"].lower() == "spotify" for s in res["subscriptions"])
 
 
+def test_list_subscriptions_honors_hidden_feedback(session):
+    from finance.ml.subscriptions.service import record_subscription_feedback
+
+    for i in range(4):
+        _add_tx(
+            session,
+            booking_date=date(2026, i + 1, 5),
+            amount=Decimal("-19.99"),
+            merchant="Spotify",
+            dedup_hash=f"hidden-spotify-{i}",
+        )
+    session.commit()
+
+    record_subscription_feedback(session, merchant="Spotify", action="hide")
+
+    res = list_subscriptions(session, {"min_confidence": 0.0})
+    assert all(s["merchant"].lower() != "spotify" for s in res["subscriptions"])
+
+
 def test_list_anomalies_empty_db(session):
     res = list_anomalies(session, {"period": "2026-04"})
     assert res["anomalies"] == []
@@ -242,7 +261,10 @@ def test_list_anomalies_returns_reason_list(session, monkeypatch):
                     "id": 1,
                     "booking_date": date(2026, 4, 10),
                     "amount": -500.0,
+                    "direction": "debit",
                     "merchant": "Odd merchant",
+                    "title": "",
+                    "category": "food",
                     "anomaly": True,
                     "severity": 0.9,
                     "reasons": "nietypowo wysoka kwota, nowy odbiorca",
@@ -252,13 +274,61 @@ def test_list_anomalies_returns_reason_list(session, monkeypatch):
 
     from finance.llm import insight_tools
 
-    monkeypatch.setattr(insight_tools, "detect_anomalies", lambda *_args, **_kwargs: _Result())
+    monkeypatch.setattr(
+        insight_tools.anomaly_service,
+        "detect_anomalies",
+        lambda *_args, **_kwargs: _Result(),
+    )
 
     res = list_anomalies(session, {"period": "2026-04"})
     assert res["anomalies"][0]["reasons"] == [
         "nietypowo wysoka kwota",
         "nowy odbiorca",
     ]
+
+
+def test_list_anomalies_honors_ignore_feedback(session, monkeypatch):
+    from finance.llm import insight_tools
+    from finance.ml.anomaly.service import record_anomaly_feedback
+
+    _add_tx(
+        session,
+        id=1,
+        booking_date=date(2026, 4, 10),
+        amount=Decimal("-500"),
+        merchant="Odd merchant",
+        dedup_hash="ignored-anomaly",
+    )
+    session.commit()
+
+    class _Result:
+        df = pd.DataFrame(
+            [
+                {
+                    "id": 1,
+                    "booking_date": date(2026, 4, 10),
+                    "amount": -500.0,
+                    "direction": "debit",
+                    "merchant": "Odd merchant",
+                    "title": "",
+                    "category": "food",
+                    "anomaly": True,
+                    "severity": 0.9,
+                    "reasons": "nietypowo wysoka kwota",
+                }
+            ]
+        )
+
+    monkeypatch.setattr(
+        insight_tools.anomaly_service,
+        "detect_anomalies",
+        lambda *_args, **_kwargs: _Result(),
+    )
+
+    record_anomaly_feedback(session, transaction_id=1, action="ignore_merchant")
+
+    res = list_anomalies(session, {"period": "2026-04"})
+    assert res["anomalies"] == []
 
 
 def test_recommend_savings_uses_deterministic_facts(session, monkeypatch):
@@ -290,11 +360,8 @@ def test_recommend_savings_uses_deterministic_facts(session, monkeypatch):
 
     from finance.llm import recommendation_tools
 
-    class _Result:
-        df = pd.DataFrame([{"anomaly": False, "severity": 0.0}])
-
-    monkeypatch.setattr(recommendation_tools, "detect_subscriptions", lambda _df: [])
-    monkeypatch.setattr(recommendation_tools, "detect_anomalies", lambda *_args, **_kwargs: _Result())
+    monkeypatch.setattr(recommendation_tools, "list_subscription_rows", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(recommendation_tools, "list_anomaly_rows", lambda *_args, **_kwargs: [])
 
     res = recommend_savings(session, {"period": "2026-04", "limit": 3})
 
@@ -331,11 +398,8 @@ def test_recommend_savings_uses_profile_goals_and_limits(session, monkeypatch):
 
     from finance.llm import recommendation_tools
 
-    class _Result:
-        df = pd.DataFrame([{"anomaly": False, "severity": 0.0}])
-
-    monkeypatch.setattr(recommendation_tools, "detect_subscriptions", lambda _df: [])
-    monkeypatch.setattr(recommendation_tools, "detect_anomalies", lambda *_args, **_kwargs: _Result())
+    monkeypatch.setattr(recommendation_tools, "list_subscription_rows", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(recommendation_tools, "list_anomaly_rows", lambda *_args, **_kwargs: [])
 
     res = recommend_savings(session, {"period": "2026-04", "limit": 3})
 

@@ -7,11 +7,10 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from finance.llm.periods import parse_period
-from finance.llm.tool_data import load_transactions_df
 from finance.llm.tool_schemas import ForecastArgs, ListAnomaliesArgs, ListSubscriptionsArgs
-from finance.ml.anomaly.detector import detect_anomalies
+from finance.ml.anomaly import service as anomaly_service
 from finance.ml.forecasting.pipeline import forecast_best, load_monthly_series
-from finance.ml.subscriptions.detector import detect_subscriptions
+from finance.ml.subscriptions import service as subscription_service
 
 
 def _safe_float(value: object, *, default: float | None = 0.0) -> float | None:
@@ -22,20 +21,12 @@ def _safe_float(value: object, *, default: float | None = 0.0) -> float | None:
     return out if math.isfinite(out) else default
 
 
-def _split_reasons(value: object) -> list[str]:
-    if value is None:
-        return []
-    if isinstance(value, list):
-        return [str(item).strip() for item in value if str(item).strip()]
-    return [part.strip() for part in str(value).split(",") if part.strip()]
-
-
 def list_subscriptions(session: Session, args: dict[str, Any]) -> dict[str, Any]:
     parsed = ListSubscriptionsArgs(**args)
-    df = load_transactions_df(session)
-    if df.empty:
-        return {"subscriptions": []}
-    subs = detect_subscriptions(df)
+    subs = subscription_service.list_subscription_rows(
+        session,
+        min_confidence=parsed.min_confidence,
+    )
     out: list[dict[str, Any]] = [
         {
             "merchant": sub.merchant,
@@ -46,7 +37,6 @@ def list_subscriptions(session: Session, args: dict[str, Any]) -> dict[str, Any]
             "estimated_monthly_cost": _safe_float(sub.estimated_monthly_cost),
         }
         for sub in subs
-        if sub.confidence >= parsed.min_confidence
     ]
     monthly_cost = sum(
         float(sub.get("estimated_monthly_cost") or 0.0)
@@ -58,50 +48,28 @@ def list_subscriptions(session: Session, args: dict[str, Any]) -> dict[str, Any]
 def list_anomalies(session: Session, args: dict[str, Any]) -> dict[str, Any]:
     parsed = ListAnomaliesArgs(**args)
     start, end = parse_period(parsed.period)
-    df = load_transactions_df(session)
-    if df.empty:
-        return {"anomalies": []}
-    df = df[(df["booking_date"] >= start) & (df["booking_date"] <= end)]
-    if df.empty:
-        return {"anomalies": []}
-    result = detect_anomalies(df, direction="debit")
-    scored = result.df.copy()
-    if "severity" not in scored.columns:
-        scored["severity"] = 0.0
-    if "priority_score" not in scored.columns:
-        scored["priority_score"] = scored["severity"]
-    anomaly_type = scored.get("anomaly_type")
-    non_model_only = (
-        anomaly_type.fillna("").ne("model_only")
-        if anomaly_type is not None
-        else True
-    )
-    flagged = (
-        scored[
-            scored["anomaly"]
-            & non_model_only
-        ]
-        .sort_values(["priority_score", "severity"], ascending=False)
-        .head(parsed.limit)
+    rows = anomaly_service.list_anomaly_rows(
+        session,
+        date_from=start,
+        date_to=end,
+        direction="debit",
+        limit=parsed.limit,
+        mode="review",
+        include_model_only=False,
     )
     out = []
-    for _, row in flagged.iterrows():
-        booking_date = row["booking_date"]
-        booking_iso = (
-            booking_date.isoformat()
-            if hasattr(booking_date, "isoformat")
-            else str(booking_date)
-        )
+    for row in rows:
         out.append(
             {
-                "id": int(row["id"]),
-                "booking_date": booking_iso,
-                "merchant": row.get("merchant") or "",
-                "amount": _safe_float(row["amount"]),
-                "severity": _safe_float(row["severity"]),
-                "priority_score": _safe_float(row.get("priority_score", 0.0)),
-                "anomaly_type": row.get("anomaly_type") or "",
-                "reasons": _split_reasons(row.get("reasons")),
+                "id": row.id,
+                "booking_date": row.booking_date.isoformat(),
+                "merchant": row.merchant,
+                "amount": _safe_float(row.amount),
+                "severity": _safe_float(row.severity),
+                "priority_score": _safe_float(row.priority_score),
+                "anomaly_type": row.anomaly_type,
+                "reasons": row.reasons,
+                "feedback_status": row.feedback_status,
             }
         )
     return {
