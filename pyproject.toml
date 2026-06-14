@@ -2,7 +2,9 @@
 name = "finance"
 version = "0.1.0"
 description = "Self-hosted personal finance analysis system with ML and local LLM"
+readme = "README.md"
 requires-python = ">=3.11"
+license = { file = "LICENSE" }
 dependencies = [
     # web / api
     "fastapi>=0.115",

@@ -1,9 +1,17 @@
 # Used by Docker build context to keep image small.
 .git
+.env
+.env.*
 .venv
 venv
 __pycache__
 *.pyc
+*.csv
+*.xlsx
+*.xls
+*.joblib
+*.sqlite
+*.db
 .pytest_cache
 .mypy_cache
 .ruff_cache
@@ -14,15 +22,16 @@ data/raw
 data/processed
 data/private
 data/synthetic
+data/external
 data/models
 data/reports
 notebooks
 .vscode
 .idea
 postgres-data
+ollama-data
+chroma-data
 apps/web/node_modules
 apps/web/.next
 apps/web/out
 apps/web/tsconfig.tsbuildinfo
-apps/web/.env
-apps/web/.env.local

@@ -11,9 +11,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
-COPY pyproject.toml ./
+COPY pyproject.toml README.md LICENSE ./
 COPY src ./src
-COPY apps ./apps
+COPY apps/__init__.py ./apps/__init__.py
+COPY apps/api ./apps/api
 COPY alembic ./alembic
 COPY alembic.ini ./alembic.ini
 
