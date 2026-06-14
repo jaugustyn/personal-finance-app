@@ -1,190 +1,188 @@
-# Notatki Do Prezentacji Projektu
+# Project Presentation Notes
 
-Ten plik jest skrótem do opowiedzenia aplikacji podczas prezentacji. Celem nie
-jest czytanie go słowo w słowo, tylko szybkie przypomnienie: co pokazać, co
-powiedzieć technicznie i gdzie w projekcie występuje ML/AI.
+This file is a short guide for presenting the application. It is not meant to
+be read word-for-word. Use it as a reminder of what to show, what to say
+technically and where ML/AI appears in the project.
 
-## 1. Idea Projektu
+## 1. Project Idea
 
-Aplikacja jest self-hostowanym systemem do zarządzania finansami osobistymi.
-Łączy import danych bankowych, reguły deterministyczne, modele ML i lokalnego
-asystenta językowego. Ważne założenie: twarde liczby są liczone przez backend,
-a LLM może je tylko opisać po polsku.
+The app is a self-hosted personal finance management system. It combines bank
+data import, deterministic rules, ML models and a local language assistant. The
+main principle: hard numeric facts are computed by the backend, while the LLM
+can only summarize or phrase them in Polish.
 
-Najważniejsze elementy:
+Main elements:
 
-- import i deduplikacja transakcji z plików bankowych,
-- typowanie transakcji, np. zakup, przelew własny, pensja, opłata bankowa,
-- klasyfikacja kategorii wydatkowych,
-- centrum pracy nad jakością etykiet treningowych,
-- prognozowanie wydatków,
-- wykrywanie anomalii,
-- wykrywanie subskrypcji,
-- lokalny asystent finansowy oparty o routing i narzędzia deterministyczne.
+- bank transaction import and deduplication,
+- transaction type detection, for example purchase, own transfer, salary or
+  bank fee,
+- expense category classification,
+- training-label quality workflow,
+- expense forecasting,
+- anomaly detection,
+- subscription detection,
+- local financial assistant based on routing and deterministic tools.
 
-## 2. Pulpit
+## 2. Dashboard
 
-Co pokazuje:
+What it shows:
 
-- KPI: przychody, wydatki, saldo netto, średnia miesięczna,
-- cash flow w czasie,
-- top wydatki pogrupowane po odbiorcy,
-- najczęstsze wydatki,
-- trend wydatków wg kategorii,
-- zmianę miesiąc do miesiąca,
-- skumulowane saldo,
-- ostatnie transakcje.
+- KPIs: income, expenses, net balance, monthly average,
+- cash flow over time,
+- top expenses grouped by merchant,
+- most frequent expenses,
+- category spending trend,
+- month-over-month changes,
+- cumulative balance,
+- recent transactions.
 
-Co powiedzieć:
+What to say:
 
-- Pulpit jest widokiem syntetycznym, nie miejscem do trenowania modeli.
-- Zakres danych można przełączyć między ostatnimi 12 miesiącami i wszystkimi
-  danymi.
-- Top wydatki są agregowane po znormalizowanej nazwie odbiorcy. To ogranicza
-  problem wariantów typu `LIDL 1234`, `Lidl sp. z o.o.` itd.
-- Pulpit domyślnie wyklucza przelewy własne, żeby nie zaburzały wydatków.
+- The dashboard is a summary view, not a model-training surface.
+- The data range can be switched between the last 12 months and all data.
+- Top expenses are aggregated by normalized merchant name. This reduces noise
+  from variants such as `LIDL 1234` and `Lidl sp. z o.o.`.
+- The dashboard excludes own transfers by default so they do not distort
+  expense analysis.
 
-## 3. Transakcje
+## 3. Transactions
 
-Co pokazuje:
+What it shows:
 
-- pełną listę transakcji,
-- kierunek, kwotę, odbiorcę, tytuł, kategorię i typ transakcji,
-- sugestie ML z confidence,
-- notatki i tagi,
-- operacje masowe.
+- the full transaction list,
+- direction, amount, merchant, title, category and transaction type,
+- ML suggestions with confidence,
+- notes and tags,
+- bulk operations.
 
-Co powiedzieć:
+What to say:
 
-- `transaction_type` opisuje semantykę przepływu pieniędzy, np. zakup,
-  przelew własny, pensja, zwrot.
-- `category` opisuje budżetową kategorię wydatku, np. jedzenie, transport,
-  zdrowie.
-- Typ transakcji i kategoria to dwie różne warstwy. Przykład: pensja ma typ
-  `salary`, ale nie powinna dostać kategorii wydatkowej.
-- Sugestie ML nie są automatycznie traktowane jako prawda. Użytkownik może je
-  zaakceptować albo odrzucić.
-- Zaakceptowane i ręcznie nadane kategorie stają się danymi treningowymi.
+- `transaction_type` describes money-flow semantics, for example purchase, own
+  transfer, salary or refund.
+- `category` describes the budget category of an expense, for example food,
+  transport or health.
+- Transaction type and category are separate layers. Example: salary has type
+  `salary`, but it should not receive an expense category.
+- ML suggestions are not automatically treated as truth. The user can accept or
+  reject them.
+- Accepted and manually assigned categories become training data.
 
-## 4. Import Danych
+## 4. Data Import
 
-Co pokazuje:
+What it shows:
 
-- import pliku bankowego,
-- mapowanie kolumn,
-- walidację wymaganych pól,
-- historię importów,
-- deduplikację transakcji.
+- bank file import,
+- column mapping,
+- required-field validation,
+- import history,
+- transaction deduplication.
 
-Co powiedzieć:
+What to say:
 
-- Parsery bankowe zamieniają różne formaty eksportu na wspólny model
-  transakcji.
-- Deduplikacja bazuje na stabilnym hashu z pól transakcji, więc ponowny import
-  tego samego pliku nie powinien dublować rekordów.
-- Już podczas importu działają reguły typowania transakcji i reguły personalne.
-- Runtime importu nadal używa reguł deterministycznych do `transaction_type`,
-  a model typu transakcji jest traktowany jako evidence/eksperyment ML.
+- Bank parsers convert different export formats into one transaction model.
+- Deduplication is based on a stable hash from transaction fields, so importing
+  the same file twice should not duplicate records.
+- Transaction-type rules and personal rules run during import.
+- Runtime import still uses deterministic rules for `transaction_type`; the
+  transaction-type ML model is evidence-only.
 
-## 5. Kategorie
+## 5. Categories
 
-Co pokazuje:
+What it shows:
 
-- listę kategorii głównych,
-- kolory kategorii używane na wykresach,
-- dodawanie własnych kategorii.
+- main category list,
+- colors used on charts,
+- adding custom categories.
 
-Co powiedzieć:
+What to say:
 
-- Kategorie główne są docelową etykietą modelu klasyfikacji wydatków.
-- Podkategorie mogą doprecyzowywać opis wydatku, ale główny model ML operuje
-  na kategoriach głównych.
-- Kolory kategorii są częścią prezentacji danych, nie częścią modelu.
+- Main categories are the target labels for the expense classifier.
+- Subcategories can add detail, but the main ML model works on main categories.
+- Category colors affect data presentation, not the model.
 
-## 6. Jakość Danych
+## 6. Data Quality
 
-Co pokazuje:
+What it shows:
 
-- transakcje bez kategorii,
-- transakcje bez sugestii,
-- sugestie o niskim confidence,
-- rzadkie klasy,
-- powtarzalnych odbiorców bez reguły,
-- panel `Co zrobić teraz`.
+- transactions without a category,
+- transactions without suggestions,
+- low-confidence suggestions,
+- rare classes,
+- repeated merchants without a rule,
+- the "what to do now" panel.
 
-Co powiedzieć:
+What to say:
 
-- To jest centrum pracy nad danymi treningowymi.
-- Model klasyfikacji jest tak dobry, jak dane potwierdzone przez użytkownika.
-- Rzadkie klasy są problemem w klasyfikacji wieloklasowej, bo model ma mało
-  przykładów i łatwo je myli.
-- Celem przed retrainingiem jest zwiększenie liczby potwierdzonych etykiet,
-  szczególnie w słabszych klasach.
+- This is the workspace for improving training labels.
+- The classifier is only as good as the user-confirmed labels.
+- Rare classes are a real multiclass-classification issue: the model has fewer
+  examples and can confuse them more easily.
+- Before retraining, the goal is to increase the number of confirmed labels,
+  especially in weak classes.
 
-## 7. Modele ML
+## 7. ML Models
 
-Co pokazuje:
+What it shows:
 
-- status aktywnego modelu,
-- liczbę etykiet,
-- klasy znane modelowi,
+- active model status,
+- label count,
+- classes known by the model,
 - Macro-F1,
-- porównanie eksperymentów treningowych,
+- training experiment comparison,
 - feedback loop,
-- najczęstsze pomyłki,
-- przyciski `Przetrenuj model` i `Przelicz sugestie`.
+- most common mistakes,
+- `Przetrenuj model` and `Przelicz sugestie` actions.
 
-Co powiedzieć:
+What to say:
 
-- To nie jest ręczny przełącznik modeli.
-- Aktywny model zmienia się po retrainingu i zapisaniu nowego artefaktu.
-- `Przetrenuj model` buduje nowy artefakt na potwierdzonych danych.
-- `Przelicz sugestie` używa aktualnego modelu do ponownego wyliczenia sugestii
-  dla transakcji.
-- Macro-F1 jest ważne, bo przy nierównych klasach pokazuje jakość także dla
-  rzadkich kategorii, a nie tylko dla dominujących.
-- Porównanie z baseline'em typu dummy jest potrzebne, żeby pokazać, że model
-  uczy się czegoś więcej niż najczęstszej klasy.
+- This is not a manual model switcher.
+- The active model changes after retraining and saving a new artifact.
+- `Przetrenuj model` builds a new artifact from confirmed labels.
+- `Przelicz sugestie` uses the current model to recompute suggestions for
+  transactions.
+- Macro-F1 matters because class imbalance can hide poor quality on rare
+  categories when looking only at weighted metrics.
+- The dummy baseline is needed to prove that the model learns more than the
+  most frequent class.
 
-## 8. ML: Klasyfikacja Kategorii
+## 8. ML: Expense Category Classification
 
-Cel:
+Goal:
 
-- przypisanie transakcji wydatkowej do jednej z kategorii budżetowych.
+- assign an expense transaction to one budget category.
 
-Dane wejściowe:
+Input data:
 
-- odbiorca,
-- tytuł/opis,
-- kwota,
-- kierunek transakcji,
-- cechy kontekstowe, np. typ transakcji i źródło.
+- merchant,
+- title/description,
+- amount,
+- transaction direction,
+- context features such as transaction type and source.
 
-Podejście:
+Approach:
 
-- klasyfikacja nadzorowana wieloklasowa,
-- cechy tekstowe oparte o TF-IDF,
-- proste cechy numeryczne i kategoryczne,
-- porównanie modeli i baseline'ów,
-- raportowanie Macro-F1, Weighted-F1, per-class metrics i confusion matrix.
+- supervised multiclass classification,
+- TF-IDF text features,
+- simple numeric and categorical features,
+- comparison against baselines,
+- reporting Macro-F1, Weighted-F1, per-class metrics and confusion matrix.
 
-Jak to obronić:
+How to defend it:
 
-- TF-IDF jest sensownym wyborem w tym projekcie, bo nazwy odbiorców i tytuły
-  przelewów są krótkimi tekstami z powtarzalnymi wzorcami.
-- Nie trzeba od razu używać embeddingów, jeżeli prostszy model daje czytelny
-  i mierzalny baseline.
-- Model nie powinien trenować się na własnych niepotwierdzonych predykcjach.
-  Do treningu używane są kategorie potwierdzone ręcznie lub zaakceptowane przez
-  użytkownika.
+- TF-IDF is a reasonable choice because merchant names and transfer titles are
+  short texts with repeated patterns.
+- Embeddings are not mandatory when a simpler model provides a measurable and
+  explainable baseline.
+- The model should not train on its own unconfirmed predictions. Training uses
+  manually assigned or user-accepted categories.
 
-## 9. ML: Klasyfikacja Typu Transakcji
+## 9. ML: Transaction Type Classification
 
-Cel:
+Goal:
 
-- osobna analiza wieloklasowa dla `transaction_type`.
+- separate supervised multiclass analysis for `transaction_type`.
 
-Klasy:
+Classes:
 
 - `purchase`,
 - `own_transfer`,
@@ -198,253 +196,254 @@ Klasy:
 - `savings_investment`,
 - `other`.
 
-Dane wejściowe:
+Input data:
 
-- odbiorca,
-- tytuł,
-- surowa kategoria z banku,
-- kwota bezwzględna,
-- kierunek,
-- źródło danych.
+- merchant,
+- title,
+- raw bank category,
+- absolute amount,
+- direction,
+- data source.
 
-Ważne ograniczenie:
+Important limitation:
 
-- w v1 to jest eksperyment evidence-only,
-- etykiety pochodzą z obecnego `Transaction.transaction_type`,
-- są to silver labels, bo wynikają z reguł i danych runtime,
-- model nie zastępuje jeszcze `detect_transaction_type` w imporcie.
+- in v1 this is evidence-only,
+- labels come from the current `Transaction.transaction_type`,
+- they are silver labels because they come from rules/runtime data,
+- the model does not replace `detect_transaction_type` during import.
 
-Jak to obronić:
+How to defend it:
 
-- spełnia wymaganie wieloklasowej analizy ML dla typu transakcji,
-- ale nie ryzykuje popsucia działania produkcyjnego importu,
-- pozwala porównać model ML z regułami i zebrać metryki do raportu.
+- it satisfies the supervised multiclass ML requirement for transaction type,
+- it does not risk breaking production import behavior,
+- it allows model-vs-rule comparison and gives metrics for the evidence report.
 
-## 10. Prognoza
+## 10. Forecast
 
-Co pokazuje:
+What it shows:
 
-- prognozę wydatków na kolejne miesiące,
-- wybór kategorii lub wszystkie kategorie,
-- horyzont prognozy,
-- model i długość historii.
+- expense forecast for the next months,
+- category selection or all categories,
+- forecast horizon,
+- selected model and history length.
 
-Co powiedzieć:
+What to say:
 
-- Forecasting działa na miesięcznych szeregach wydatków.
-- Dla małej ilości historii prognoza jest poglądowa.
-- Najsensowniej prezentować prognozę dla wszystkich kategorii, bo ma więcej
-  danych i jest stabilniejsza.
-- Dla pojedynczych kategorii prognoza ma sens dopiero, gdy dana kategoria ma
-  regularną historię.
+- Forecasting works on monthly expense time series.
+- With short history, the forecast is illustrative.
+- The most stable demo is the forecast for all categories because it has more
+  data.
+- Forecasting individual categories makes sense only when a category has
+  regular history.
 
-Modele:
+Models:
 
-- proste baseline'y czasowe,
-- m.in. mean/naive oraz metody typu SES/ARIMA w evidence.
+- simple time-series baselines,
+- mean/naive and SES/ARIMA in the evidence reports.
 
-Jak to obronić:
+How to defend it:
 
-- Celem nie jest idealny model produkcyjny, tylko poprawny eksperyment
-  time-series z baseline'ami.
-- Przy finansach osobistych dane są krótkie i zaszumione, więc prosty model
-  często jest bardziej wiarygodny niż zbyt skomplikowany.
+- The goal is not a perfect production forecaster, but a correct time-series
+  experiment with baselines.
+- Personal finance data is short and noisy, so a simple model is often more
+  trustworthy than an overcomplicated one.
 
-## 11. Podsumowanie Okresu
+## 11. Period Summary
 
-Co pokazuje:
+What it shows:
 
-- porównanie bieżącego tygodnia lub miesiąca z analogicznym poprzednim okresem,
-- przychód, wydatki i saldo netto,
-- największe zmiany kategorii,
-- największych sprzedawców,
-- przekroczenia limitów,
-- postęp celu oszczędnościowego.
+- comparison of the current week or month against the previous period,
+- income, expenses and net balance,
+- biggest category changes,
+- top merchants,
+- budget limit breaches,
+- savings-goal progress.
 
-Co powiedzieć:
+What to say:
 
-- To jest część deterministyczna, nie LLM.
-- Tydzień oznacza bieżący tydzień kalendarzowy od poniedziałku do dziś.
-- Miesiąc oznacza bieżący miesiąc od 1. dnia do dziś, porównany z pełnym
-  poprzednim miesiącem.
-- Jeżeli w bieżącym miesiącu nie ma danych, wartości bieżące są zerowe, a
-  zmiana pokazuje różnicę względem poprzedniego okresu.
+- This is deterministic, not LLM-driven.
+- Week means the current calendar week from Monday to today.
+- Month means the current month from day 1 to today, compared with the previous
+  month.
+- If the current month has no data, current values are zero and the delta shows
+  the difference against the previous period.
 
-## 12. Anomalie
+## 12. Anomalies
 
-Co pokazuje:
+What it shows:
 
-- transakcje wymagające sprawdzenia,
-- typ anomalii,
-- priorytet,
-- powody flagowania,
-- feedback: trafne, nietrafne, ignoruj odbiorcę.
+- transactions requiring review,
+- anomaly type,
+- priority,
+- reasons for flagging,
+- feedback: relevant, not relevant, ignore merchant.
 
-Podejście ML:
+ML approach:
 
-- element nienadzorowany: IsolationForest,
-- uzupełniony regułami biznesowymi,
-- przykłady reguł: bardzo duża kwota, nietypowa kwota dla odbiorcy, brak
-  kategorii lub odbiorcy przy dużej transakcji.
+- unsupervised component: IsolationForest,
+- strengthened with deterministic business rules,
+- example rules: very large amount, unusual amount for a merchant, missing
+  category or merchant on a large transaction.
 
-Co powiedzieć:
+What to say:
 
-- IsolationForest pomaga znaleźć nietypowe punkty bez ręcznych etykiet.
-- Same modele nienadzorowane potrafią generować szum, dlatego wynik jest
-  wzmacniany regułami i feedbackiem użytkownika.
-- Feedback nie usuwa transakcji. On informuje system, czy podobne przypadki
-  mają mieć wyższy lub niższy priorytet.
+- IsolationForest helps find unusual points without manual anomaly labels.
+- Unsupervised models can produce noise, so the output is combined with rules
+  and user feedback.
+- Feedback does not delete a transaction. It tells the system whether similar
+  cases should have higher or lower priority.
 
-Nietypowy wzorzec (model) oznacza anomalię wskazaną głównie przez model IsolationForest.
+"Unusual pattern (model)" means that the anomaly was mainly indicated by
+IsolationForest. The transaction may not violate a simple rule such as "very
+large amount" or "missing category", but its feature combination looks unusual
+relative to the rest of the data.
 
-Czyli transakcja niekoniecznie łamie prostą regułę typu „bardzo duża kwota” albo „brak kategorii”, ale jej kombinacja cech wygląda nietypowo względem reszty danych, np. kwota, kategoria, odbiorca, częstotliwość albo kontekst transakcji.
+## 13. Subscriptions
 
-W skrócie: model uznał ją za odstającą, ale bez mocnego prostego wyjaśnienia regułowego.
+What it shows:
 
-## 13. Subskrypcje
-
-Co pokazuje:
-
-- powtarzalne płatności,
-- szacowany koszt miesięczny,
-- ostatnie wystąpienie,
+- recurring payments,
+- estimated monthly cost,
+- last occurrence,
 - confidence.
 
-Podejście:
+Approach:
 
-- detekcja kadencji transakcji,
-- analiza powtarzalnego odbiorcy i podobnych kwot,
-- wykluczanie przelewów własnych i typów, które nie są wydatkami.
+- cadence detection,
+- repeated merchant analysis,
+- amount-stability check,
+- exclusion of own transfers and non-expense transaction types.
 
-Co powiedzieć:
+What to say:
 
-- To nie jest klasyfikator tekstowy, tylko detektor wzorców czasowych.
-- Dla finansów osobistych subskrypcje są dobrym przykładem rekomendacji
-  oszczędnościowej, bo są cykliczne i łatwe do przejrzenia.
+- This is not a text classifier. It is a temporal-pattern detector.
+- Subscriptions are a practical savings-recommendation target because they are
+  recurring and easy to review.
 
-## 14. Portfel
+## 14. Assets
 
-Co pokazuje:
+What it shows:
 
-- portfel inwestycyjny,
-- pozycje, ilość, cena, wartość w PLN,
-- P/L,
-- historię wartości,
-- przepływ przychody -> kategorie -> sprzedawcy.
+- investment portfolio,
+- positions, quantity, price and PLN value,
+- profit/loss,
+- value history,
+- flow from income to categories to merchants.
 
-Co powiedzieć:
+What to say:
 
-- To jest rozszerzenie aplikacji poza same transakcje bankowe.
-- Ceny mogą pochodzić z zewnętrznego źródła, np. yfinance.
-- W demo nie trzeba skupiać się na tym jako na głównej części ML.
+- This extends the app beyond bank transactions.
+- Prices can come from an external source, for example yfinance.
+- It does not need to be the main ML part of the demo.
 
-## 15. Asystent
+## 15. Assistant
 
-Co pokazuje:
+What it shows:
 
-- pytania po polsku o finanse,
-- odpowiedzi oparte na narzędziach backendowych,
-- przykłady: wydatki w miesiącu, top kategorie, subskrypcje, rekomendacje.
+- Polish questions about finances,
+- answers backed by backend tools,
+- examples: monthly spending, top categories, subscriptions and recommendations.
 
-Najważniejszy punkt:
+Key point:
 
-- To nie jest czysty vector RAG do liczenia faktów.
-- Projekt używa podejścia hybrydowego:
-  - routing intencji,
-  - deterministyczne narzędzia do liczenia danych,
-  - lokalny LLM do opisania wyniku językiem naturalnym.
+- This is not pure vector RAG for numeric facts.
+- The project uses a hybrid approach:
+  - intent routing,
+  - deterministic tools for data aggregation,
+  - a local LLM to phrase the result in natural language.
 
-Jak to obronić:
+How to defend it:
 
-- Pytanie typu `Na co najwięcej wydałem w styczniu 2026?` wymaga zapytania do
-  danych, nie wyszukiwania podobnych dokumentów w wektorach.
-- Dlatego twarde fakty liczy backend, a LLM nie powinien ich wymyślać.
-- To jest bardziej bezpieczne i łatwiejsze do testowania niż czysty RAG.
+- A question like `Na co najwiecej wydalem w styczniu 2026?` requires querying
+  structured data, not searching similar documents in a vector database.
+- The backend computes hard facts, and the LLM should not invent them.
+- This is safer and easier to test than pure RAG for numeric aggregation.
 
-## 16. Ustawienia
+## 16. Settings
 
-Co pokazuje:
+What it shows:
 
-- profil lokalny,
-- walutę,
-- dzień wypłaty,
-- reguły personalne.
+- local profile,
+- currency,
+- payday,
+- personal rules.
 
-Co powiedzieć:
+What to say:
 
-- Reguły personalne działają przed ML.
-- Mogą sugerować kategorię lub typ transakcji albo automatycznie je stosować.
-- Przykład: jeżeli odbiorca zawiera konkretną nazwę, można automatycznie
-  traktować transakcję jako przelew własny albo przypisać kategorię.
-- To jest świadome połączenie reguł i ML: proste, pewne przypadki obsługują
-  reguły, a niepewne trafiają do modelu i review.
+- Personal rules run before ML.
+- They can suggest or automatically apply a category or transaction type.
+- Example: if the merchant contains a specific name, the transaction can be
+  treated as an own transfer or assigned to a category.
+- This is a deliberate combination of rules and ML: certain cases are handled
+  deterministically, uncertain cases go to the model and review.
 
-## 17. Evidence Package I Raporty
+## 17. Evidence Package And Reports
 
-Co powiedzieć:
+What to say:
 
-- Projekt generuje pakiet evidence do oceny ML/AI.
-- Główny raport zbiorczy to `evidence_package`.
-- Raport rozdziela:
-  - klasyfikację kategorii,
-  - klasyfikację typu transakcji,
+- The project generates an evidence package for ML/AI evaluation.
+- The main combined report is `evidence_package`.
+- The report separates:
+  - category classification,
+  - transaction type classification,
   - forecasting,
   - anomaly detection,
   - subscriptions,
   - privacy check.
 
-Ważne:
+Important:
 
-- Raporty publiczne nie powinny zawierać surowych nazw odbiorców ani tytułów.
-- Do prezentacji najlepiej cytować `summary.md` i metryki zbiorcze, a nie
-  prywatne eksporty bankowe.
+- Public reports must not contain raw merchant names or transfer titles.
+- For demos and documentation, cite `summary.md` and aggregate metrics instead
+  of private bank exports.
 
-## 18. Co Podkreślić Przy Obronach ML
+## 18. Main ML Defence Points
 
-Najmocniejsze punkty:
+Strongest points:
 
-- Są dwa zadania supervised multiclass:
-  - kategoria wydatku,
-  - typ transakcji jako evidence-only na silver labels.
-- Jest forecasting na miesięcznych szeregach.
-- Jest unsupervised anomaly detection z IsolationForest.
-- Jest detekcja subskrypcji jako analiza kadencji.
-- Jest lokalny asystent LLM, ale z deterministycznymi narzędziami do faktów.
-- Jest feedback loop: użytkownik akceptuje, odrzuca i ręcznie poprawia dane.
-- Są metryki i baseline'y, a nie tylko demo UI.
+- There are two supervised multiclass tasks:
+  - expense category,
+  - transaction type as evidence-only silver-label modelling.
+- Forecasting works on monthly time series.
+- Unsupervised anomaly detection uses IsolationForest.
+- Subscription detection is cadence analysis.
+- The local LLM assistant uses deterministic tools for facts.
+- The feedback loop lets the user accept, reject and correct labels.
+- There are metrics and baselines, not only UI screens.
 
-Ograniczenia, które warto powiedzieć wprost:
+Limitations worth stating explicitly:
 
-- Jakość modeli zależy od liczby potwierdzonych etykiet.
-- `transaction_type` ML jest eksperymentem evidence-only, nie produkcyjnym
-  zamiennikiem reguł.
-- Forecast dla krótkiej historii jest poglądowy.
-- Anomalie nienadzorowane wymagają feedbacku, bo nietypowe nie zawsze znaczy
-  błędne lub podejrzane.
-- Dane finansowe są prywatne, dlatego raporty powinny być agregowane i
-  anonimizowane.
+- Model quality depends on the number of confirmed labels.
+- `transaction_type` ML is evidence-only, not a production replacement for
+  rules.
+- Forecasts with short history are illustrative.
+- Unsupervised anomalies need feedback because unusual does not always mean
+  wrong or suspicious.
+- Financial data is private, so public reports should be aggregated and
+  anonymized.
 
-## 19. Proponowana Kolejność Demo
+## 19. Suggested Demo Order
 
-1. Pulpit: pokaż przełącznik `12 miesięcy` / `Wszystkie dane`.
-2. Import: pokaż mapowanie kolumn i deduplikację.
-3. Transakcje: pokaż typ transakcji, kategorię, sugestię ML i accept/reject.
-4. Jakość danych: pokaż, jak poprawiać dane treningowe.
-5. Modele ML: pokaż status modelu, Macro-F1, retraining i reclassify.
-6. Prognoza: pokaż forecast dla wszystkich kategorii.
-7. Anomalie: pokaż typ anomalii i feedback.
-8. Subskrypcje: pokaż cykliczne płatności.
-9. Podsumowanie okresu: pokaż porównanie bieżącego okresu z poprzednim.
-10. Asystent: zadaj pytanie po polsku o konkretne dane.
+1. Dashboard: show the `12 months` / `all data` switch.
+2. Import: show column mapping and deduplication.
+3. Transactions: show transaction type, category, ML suggestion and
+   accept/reject.
+4. Data Quality: show how training data is improved.
+5. ML Models: show model status, Macro-F1, retraining and reclassification.
+6. Forecast: show forecast for all categories.
+7. Anomalies: show anomaly type and feedback.
+8. Subscriptions: show recurring payments.
+9. Period Summary: show current-vs-previous period comparison.
+10. Assistant: ask a Polish question about specific data.
 
-## 20. Krótkie Zdania Do Zapamiętania
+## 20. Short Lines To Remember
 
-- "Typ transakcji mówi, czym jest przepływ pieniędzy, a kategoria mówi, do
-  jakiego koszyka budżetowego trafia wydatek."
-- "LLM nie liczy faktów. Fakty liczy backend, a LLM je opisuje."
-- "Jakość danych jest miejscem budowania lepszych etykiet treningowych."
-- "Model kategorii jest produkcyjnie używany do sugestii, a model typu
-  transakcji jest na razie eksperymentem evidence-only."
-- "Anomalie są połączeniem IsolationForest, reguł biznesowych i feedbacku."
-- "Forecast ma największy sens dla wszystkich kategorii i przy dłuższej
-  historii."
+- "Transaction type says what the money flow is; category says which budget
+  bucket the expense belongs to."
+- "The LLM does not compute facts. The backend computes facts, and the LLM
+  explains them."
+- "Data Quality is the place for improving training labels."
+- "The category model is used in production for suggestions; the transaction
+  type model is currently evidence-only."
+- "Anomalies combine IsolationForest, business rules and feedback."
+- "Forecasting is most useful for all categories and longer histories."

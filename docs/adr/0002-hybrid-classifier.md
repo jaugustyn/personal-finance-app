@@ -1,65 +1,66 @@
-# ADR-0002: Hybrydowa klasyfikacja transakcji (LLM + LinearSVC)
+# ADR-0002: Hybrid Transaction Classification (LLM + LinearSVC)
 
 - **Status:** ACCEPTED
-- **Data:** 2026-05-01
-- **Faza:** Faza 1 → Faza 3 (kalibracja konfidencji)
+- **Date:** 2026-05-01
+- **Phase:** Phase 1 -> Phase 3 (confidence calibration)
 
-## Kontekst
+## Context
 
-Klasyfikacja transakcji bankowych do 9 kategorii systemowych
-(`food`, `transport`, `housing`, `health`, `savings`, `subscriptions`,
-`entertainment`, `shopping`, `other`)
-to klasyczny problem klasyfikacji wielo­klasowej na krótkim tekście (merchant +
-title) z dużą nierównowagą klas i silnym ogonem rzadkich wzorców (np. apteki,
-abonamenty z nowymi merchantami). Dwie skrajne strategie:
+Classifying bank transactions into 9 system categories (`food`, `transport`,
+`housing`, `health`, `savings`, `subscriptions`, `entertainment`, `shopping`,
+`other`) is a classic multiclass classification problem over short text
+(`merchant + title`). The dataset is imbalanced and contains a long tail of rare
+patterns, for example pharmacies or subscriptions with new merchants.
 
-- **A) Czysty klasyk ML** (TF-IDF + LinearSVC). Szybki, deterministyczny,
-  wymaga oznakowanego datasetu, słabo radzi sobie z OOV merchantami.
-- **B) Czysty LLM** (Llama 3.1 8B via Ollama). Zero-shot, dobrze rozumie nowe
-  merchanty, ale: niedeterministyczny, drogi obliczeniowo, halucynuje
-  kategorie spoza ontologii.
+Two extreme strategies were considered:
 
-## Decyzja
+- **A) Classic ML only** (TF-IDF + LinearSVC). Fast and deterministic, but
+  requires labelled data and struggles with out-of-vocabulary merchants.
+- **B) LLM only** (Llama 3.1 8B through Ollama). Good zero-shot understanding of
+  new merchants, but non-deterministic, slower and prone to hallucinating
+  categories outside the ontology.
 
-Wybrano **podejście hybrydowe**:
+## Decision
 
-1. **LinearSVC** (TF-IDF na `text` + numeryczne `abs_amount`, `day_of_week`)
-   jako pierwszy klasyfikator. Jeśli `decision_function`-derived confidence ≥ τ
-   (domyślnie 0.55) → akceptujemy predykcję.
-2. **LLM (Ollama llama3.1:8b)** jako fallback dla niskiego confidence i dla
-   merchantów nieobecnych w treningu (cold-start). Prompt zawiera ścisłą
-   ontologię i przykłady few-shot z `SEED_EXAMPLES` w `augment.py`.
-3. **LLM-driven augmentacja** rzadkich klas (`finance.ml.classification.augment`)
-   poprawia macro-F1 SVC dla `health`, `housing`, `savings`.
+Use a **hybrid approach**:
 
-## Konsekwencje
+1. **LinearSVC** (TF-IDF on `text` + numeric `abs_amount`, `day_of_week`) is the
+   first classifier. If `decision_function`-derived confidence is at least `tau`
+   (default 0.55), accept the prediction.
+2. **LLM fallback** (Ollama `llama3.1:8b`) handles low-confidence predictions and
+   merchants absent from training data. The prompt contains a strict ontology
+   and few-shot examples from `SEED_EXAMPLES` in `augment.py`.
+3. **LLM-driven augmentation** (`finance.ml.classification.augment`) generates
+   synthetic merchant strings for rare classes to improve macro-F1.
 
-**Pozytywne:**
+## Consequences
 
-- Średnia latencja predykcji <50 ms na ~95 % zapytań (SVC ścieżka).
-- Macro-F1 wzrasta z ~0.71 (czysty SVC, ~400 rzeczywistych transakcji) do
-  ~0.78 po augmentacji LLM (n=120 syntetycznych próbek na 4 rzadkie klasy).
-- Brak zależności od chmury — Ollama działa lokalnie.
+**Positive:**
 
-**Negatywne:**
+- Mean prediction latency below 50 ms for the SVC path.
+- Macro-F1 improved from approximately 0.71 on a small real dataset to
+  approximately 0.78 after rare-class augmentation in the working evidence.
+- No cloud dependency. Ollama runs locally.
 
-- Dwie ścieżki kodu = większa złożoność i powierzchnia testów.
-- Augmentacja LLM jest niedeterministyczna; zapisujemy seed i wersję modelu
-  Ollama w nazwie pliku CSV.
-- Próg τ jest kalibrowany empirycznie w `classification_*.json` przez
-  `confidence_curve`: coverage i accuracy na zaakceptowanych predykcjach dla
-  progów 0.50/0.55/0.60/0.70/0.80/0.90. Dla `LinearSVC` confidence jest
-  proxy znormalizowanym z marginów, nie skalibrowanym prawdopodobieństwem.
+**Negative:**
 
-## Alternatywy odrzucone
+- Two decision paths increase code and test complexity.
+- LLM augmentation is non-deterministic, so generated CSV files must record the
+  seed and model version.
+- Threshold `tau` is empirical. `classification_*.json` reports a
+  `confidence_curve` with coverage and accuracy for thresholds
+  0.50/0.55/0.60/0.70/0.80/0.90. For `LinearSVC`, confidence is a normalized
+  margin proxy, not a calibrated probability.
 
-- **Fine-tuning DistilBERT-multilingual.** Wymaga GPU, ~5–10× większy artefakt,
-  marginalna poprawa na małym datasecie (<2k oznakowanych transakcji).
-- **Reguły regexowe.** Nie skalują się; merchanci zmieniają formatowanie.
-  Reguły zachowane jako *override* dla ścieżki LLM (planowane).
+## Rejected Alternatives
 
-## Mierniki sukcesu
+- **Fine-tuning multilingual DistilBERT.** Requires GPU, produces a much larger
+  artifact and gives limited value on a small dataset.
+- **Regex-only rules.** They do not scale well because merchant formatting
+  changes frequently. Rules remain useful as deterministic overrides.
 
-- Macro-F1 ≥ 0.75 w 5-fold StratifiedKFold po augmentacji.
-- p99 latencji `/ml/classify` ≤ 200 ms (bez LLM fallback).
-- Hit rate LLM fallback ≤ 10 % zapytań (jeśli wyższy → re-train SVC).
+## Success Metrics
+
+- Macro-F1 >= 0.75 in 5-fold StratifiedKFold after augmentation.
+- p99 latency of `/ml/classify` <= 200 ms without the LLM fallback.
+- LLM fallback hit rate <= 10%; if higher, retrain the SVC model.

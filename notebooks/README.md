@@ -1,8 +1,8 @@
 # Notebooks
 
-Notebooki `.ipynb` są domyślnie ignorowane, bo lokalne analizy często używają
-prywatnych eksportów bankowych i mogą zawierać outputy z nazwami odbiorców,
-kwotami albo ścieżkami do danych.
+`.ipynb` notebooks are ignored by default because local analyses often use
+private bank exports and may contain outputs with merchant names, amounts or
+local data paths.
 
-Do repo wrzucać tylko notebooki oczyszczone z outputów i oparte o dane
-syntetyczne albo jawnie zanonimizowane.
+Commit only notebooks that have been cleared of outputs and use synthetic or
+explicitly anonymized data.

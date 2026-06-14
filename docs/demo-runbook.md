@@ -1,70 +1,71 @@
 # Clean-Start Demo Runbook
 
-Ten runbook opisuje finalną walidację projektu na świeżej bazie. Nie zawiera
-surowych danych i nie powinien trafiać do niego żaden eksport bankowy.
+This runbook describes final project validation on a fresh database. It does
+not contain raw data and must never include bank exports.
 
-## 1. Czysty start
+## 1. Clean Start
 
-Operacja usunięcia volume jest destrukcyjna. Wykonać ją tylko wtedy, gdy bieżąca
-baza może zostać utracona.
+Deleting the Docker volume is destructive. Run it only when the current database
+can be lost.
 
 ```powershell
 docker compose -f docker/docker-compose.yml down -v
 docker compose -f docker/docker-compose.yml up -d --build
 ```
 
-API uruchamia `alembic upgrade head` przy starcie kontenera, więc świeża baza
-powinna mieć wszystkie migracje, w tym `category_suggestion_rejected`.
+The API container runs `alembic upgrade head` on startup, so a fresh database
+should include all migrations, including `category_suggestion_rejected`.
 
-Smoke:
+Smoke checks:
 
 ```powershell
 curl http://localhost:8000/health
 curl http://localhost:8000/transactions
 ```
 
-Jeżeli BasicAuth jest włączony, użyć użytkownika i hasła z `.env`.
+If BasicAuth is enabled, use the username and password from `.env`.
 
-## 2. Import i review kategorii
+## 2. Import And Category Review
 
-1. Otworzyć Next.js: <http://localhost:3000>.
-2. Wejść w `/imports`, załadować realny eksport bankowy i potwierdzić mapping.
-3. Po imporcie odczekać kilka sekund na background suggestions.
-4. Wejść w `/transactions` → `Do przypisania`.
-5. Sprawdzić:
-   - typy transakcji (`purchase`, `own_transfer`, `person_transfer`, `salary`,
+1. Open Next.js: <http://localhost:3000>.
+2. Go to `/imports`, upload a real bank export and confirm the mapping.
+3. Wait a few seconds for background suggestions.
+4. Go to `/transactions` -> `Do przypisania`.
+5. Check:
+   - transaction types (`purchase`, `own_transfer`, `person_transfer`, `salary`,
      `income`, `refund`, `cash_withdrawal`, `bank_fee`, `savings_investment`),
-   - `is_transfer` dla przelewów własnych,
-   - sugestie ML i confidence,
-   - accept/reject sugestii.
-6. Ręcznie oznaczyć seed treningowy. Cel praktyczny: kilkadziesiąt przykładów
-   na kategorię, a dla rzadkich klas tyle, ile realnie występuje.
+   - `is_transfer` for own transfers,
+   - ML suggestions and confidence,
+   - accepting/rejecting suggestions.
+6. Manually label the training seed. A practical goal is several dozen examples
+   per category, and as many as realistically possible for rare classes.
 
-Nie traktować `category_predicted` jako etykiety treningowej, dopóki użytkownik
-jej nie zaakceptuje albo ręcznie nie przypisze kategorii.
+Do not treat `category_predicted` as a training label until the user accepts it
+or assigns the category manually.
 
-## 3. Retraining i reclassify
+## 3. Retraining And Reclassification
 
-Z poziomu API docs albo curl:
+From API docs or curl:
 
 ```powershell
 curl -X POST "http://localhost:8000/ml/retrain?estimator=linear_svc"
 curl -X POST "http://localhost:8000/ml/reclassify"
 ```
 
-Po reclassify wrócić do `/transactions` → `Do przypisania` i sprawdzić, czy
-nowe sugestie są sensowne. Błędne sugestie odrzucać, nie akceptować.
+After reclassification, return to `/transactions` -> `Do przypisania` and check
+whether the new suggestions are reasonable. Reject incorrect suggestions instead
+of accepting them.
 
-## 4. Pakiet ML evidence
+## 4. ML Evidence Package
 
-Po etykietowaniu i retrainingu uruchomić lokalnie:
+After labelling and retraining, run locally:
 
 ```powershell
 .\.venv\Scripts\python.exe scripts\build_ml_evidence.py --from-db
 .\.venv\Scripts\python.exe scripts\inspect_report.py --strict
 ```
 
-Jeżeli baza działa pod innym URL:
+If the database uses a different URL:
 
 ```powershell
 .\.venv\Scripts\python.exe scripts\build_ml_evidence.py `
@@ -72,7 +73,7 @@ Jeżeli baza działa pod innym URL:
   --database-url "postgresql+psycopg://finance:finance@localhost:5432/finance"
 ```
 
-Następnie uzupełnić prywatny review anomalii:
+Then complete the private anomaly review:
 
 ```powershell
 .\.venv\Scripts\python.exe scripts\build_ml_evidence.py `
@@ -81,7 +82,7 @@ Następnie uzupełnić prywatny review anomalii:
 .\.venv\Scripts\python.exe scripts\inspect_report.py --strict
 ```
 
-Do pracy i prezentacji cytować tylko:
+For the thesis and demo, cite only:
 
 - `data/reports/summary.md`,
 - `data/reports/latest_classification.json`,
@@ -90,39 +91,41 @@ Do pracy i prezentacji cytować tylko:
 - `data/reports/latest_anomaly_summary.json`,
 - `data/reports/privacy_check_latest.json`.
 
-`data/private/latest_anomaly_review.csv` zostaje lokalnie.
+`data/private/latest_anomaly_review.csv` stays local.
 
-## 5. Scenariusz demo
+## 5. Demo Scenario
 
-Przed pokazem sprawdzić, czy baza demo ma wystarczająco dużo sygnału:
+Before the demo, make sure the database contains enough signal:
 
-- kilka miesięcy transakcji, najlepiej 6+ miesięcy dla podstawowego forecastu,
-- kilkadziesiąt potwierdzonych kategorii wydatkowych,
-- kilka różnych typów transakcji widocznych w tabeli (`purchase`, transfery,
-  przychody, opłaty itd.),
-- co najmniej jedną wykrytą subskrypcję,
-- kilka anomalii oraz zapisany feedback `Trafne` / `Nietrafne` /
-  `Ignoruj odbiorcę`,
-- prognozę prezentować przede wszystkim dla `Wszystkie kategorie`; pojedyncze
-  kategorie pokazywać tylko wtedy, gdy mają regularną historię.
+- several months of transactions, ideally 6+ months for basic forecasting,
+- several dozen confirmed expense-category labels,
+- several transaction types visible in the table (`purchase`, transfers,
+  income, fees, etc.),
+- at least one detected subscription,
+- several anomalies with saved feedback (`Trafne`, `Nietrafne`,
+  `Ignoruj odbiorce`),
+- forecast should be shown mainly for all categories; individual categories are
+  worth showing only when they have regular history.
 
-1. Pulpit: KPI, cashflow, kategorie, top merchantów.
-2. Import: preview, mapping, wynik importu i deduplikacja.
-3. Transakcje: typ transakcji, tryb `Do przypisania`, accept/reject sugestii,
-   ręczna kategoria.
-4. Jakość danych: pokazać kolejki pracy nad danymi treningowymi.
-5. Modele ML: raport eksperymentów, retrain, reclassify, confidence threshold.
-6. Forecast: miesięczna prognoza wydatków i komunikat o długości historii.
-7. Anomalie: typ, priorytet, powody flagowania i feedback.
-8. Subskrypcje: koszt miesięczny i confidence.
-9. Asystent: pytanie po polsku, np. `Co mogę ograniczyć w kwietniu 2026?`.
+Recommended flow:
 
-## 6. Kryteria gotowości
+1. Dashboard: KPIs, cash flow, categories and top merchants.
+2. Imports: preview, mapping, import result and deduplication.
+3. Transactions: transaction type, assignment view, suggestion accept/reject and
+   manual category.
+4. Data Quality: training-data work queues.
+5. ML Models: experiment report, retrain, reclassify and confidence threshold.
+6. Forecast: monthly expense forecast and history-length hint.
+7. Anomalies: type, priority, reasons and feedback.
+8. Subscriptions: monthly cost and confidence.
+9. Assistant: ask in Polish, for example `Co moge ograniczyc w kwietniu 2026?`.
 
-- `ruff check .`, `pytest`, `mypy src/finance apps` przechodzą.
-- Frontend: `npm run lint`, `npx tsc --noEmit`, `npm run build` przechodzą.
-- `inspect_report.py --strict` nie zgłasza brakujących raportów ani wycieku
-  raw merchant/title.
-- `linear_svc` jest lepszy od `dummy_most_frequent`.
-- Anomalie mają ręcznie uzupełnione `precision@20` albo jasno opisany brak
-  review.
+## 6. Readiness Criteria
+
+- `ruff check .`, `pytest`, `mypy src/finance apps` pass.
+- Frontend: `npm run lint`, `npx tsc --noEmit`, `npm run build` pass.
+- `inspect_report.py --strict` reports no missing files and no raw
+  merchant/title leaks.
+- `linear_svc` beats `dummy_most_frequent`.
+- Anomalies have manually completed `precision@20`, or the lack of review is
+  explicitly documented.

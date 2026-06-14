@@ -1,331 +1,279 @@
-# Personal Finance ML — Project Overview
+# Personal Finance ML - Project Overview
 
-> Briefing dla osoby, która widzi projekt pierwszy raz. Skondensowany przegląd
-> celu, architektury, decyzji projektowych i statusu prac. Do przedstawienia w
-> ~10 min rozmowy.
+> A compact briefing for someone seeing the project for the first time. It
+> covers the goal, architecture, key decisions, ML/AI components and current
+> status.
 
-## 1. Cel projektu (one-liner)
+## 1. Project Goal
 
-**Self-hosted system do analizy i optymalizacji wydatków osobistych z
-wykorzystaniem klasycznego ML i lokalnego LLM.**
+**A self-hosted system for personal expense analysis and optimization using
+classical ML and a local LLM.**
 
-Praca magisterska — WSEI Kraków, 2026, Informatyka Stosowana, II stopień.
-Zakres: end-to-end aplikacja od ingest CSV z banków, przez ML (klasyfikacja,
-detekcja anomalii, prognozowanie, detekcja abonamentów), aż po
-produkcyjny dashboard webowy + asystenta NLP.
+Master's thesis project, WSEI Krakow, 2026, Applied Computer Science. Scope:
+end-to-end application from bank CSV ingestion, through ML classification,
+anomaly detection, forecasting and subscription detection, to a production web
+dashboard and a natural-language assistant.
 
-### Hipotezy badawcze
+### Research Hypotheses
 
-1. Hybrydowa klasyfikacja (TF-IDF + LinearSVC z fallbackiem do LLM dla
-   niskiego confidence) osiąga macro-F1 ≥ 0.75 na rzeczywistym datasecie ~2k
-   oznakowanych transakcji, przy zachowaniu p99 latencji <200 ms (bez LLM
-   fallback).
-2. Augmentacja LLM rzadkich klas mierzalnie poprawia F1 dla under-represented
-   kategorii (`health`, `housing`, `savings`).
-3. Hybrydowa detekcja anomalii (IsolationForest na cechach liczbowych +
-   robust z-score median/MAD per kategoria + reguły) daje dobre precision@20,
-   a jednocześnie zachowuje czytelne uzasadnienia w UI.
-4. Klasyczne metody prognozowania (Naive / Mean / SES / ARIMA) na
-   miesięcznych szeregach kategorii są wystarczające dla krótkiej historii
-   transakcji bez dokładania ciężkich zależności typu Prophet.
+1. A hybrid classifier (TF-IDF + LinearSVC with an LLM fallback for low
+   confidence) can reach macro-F1 >= 0.75 on a real dataset of about 2k labelled
+   transactions while keeping p99 latency below 200 ms without the LLM fallback.
+2. LLM augmentation for rare classes improves F1 for underrepresented
+   categories such as `health`, `housing` and `savings`.
+3. Hybrid anomaly detection (IsolationForest over numeric features + robust
+   median/MAD z-score per category + rules) can produce useful precision@20
+   while keeping explanations readable in the UI.
+4. Classical forecasting methods (Naive / Mean / SES / ARIMA) over monthly
+   category series are sufficient for short personal-finance histories without
+   adding heavier dependencies such as Prophet.
 
-## 2. Stos technologiczny
+## 2. Technology Stack
 
-| Warstwa | Technologia |
-|---|---|
-| Backend API | **FastAPI 0.115** + Pydantic v2 + SQLAlchemy 2.0 + Alembic |
-| Baza danych | **PostgreSQL** (prod) / SQLite (testy) |
-| ML | scikit-learn 1.5 (LinearSVC, LogReg, RF, IsolationForest), statsmodels |
-| LLM | **Ollama** (Llama 3.1 8B Instruct Q4_K_M) — lokalnie |
-| Web frontend | **Next.js 16** (App Router) + React 19 + TypeScript strict + Tailwind v4 + TanStack Query v5 + Recharts |
-| Tooling frontend | shadcn-lite UI kit (button/card/input/table/badge), lucide-react, next-themes |
-| Obserwowalność | structlog (JSON) + `X-Request-ID` + health/readiness endpoints |
-| Scheduler | APScheduler (in-process, retraining nocą) |
-| Auth | HTTP Basic (single-user, self-hosted) |
-| Konteneryzacja | Docker Compose (api / web / postgres) |
-| CI | GitHub Actions: ruff + mypy + pytest + tsc + eslint + pip-audit + npm audit |
-| Dependencies | Dependabot (weekly) |
+| Layer | Technology |
+| --- | --- |
+| Backend API | FastAPI + Pydantic v2 + SQLAlchemy 2 + Alembic |
+| Database | PostgreSQL in runtime, SQLite in selected tests |
+| ML | scikit-learn, statsmodels, pandas |
+| LLM | Ollama with a local instruct model |
+| Web frontend | Next.js App Router + React + TypeScript + Tailwind + TanStack Query + Recharts |
+| Observability | structlog JSON logs + `X-Request-ID` + health/readiness endpoints |
+| Scheduler | APScheduler in-process jobs |
+| Auth | HTTP Basic for single-user self-hosting |
+| Containers | Docker Compose: api, web, postgres |
+| CI | GitHub Actions for lint, tests, frontend checks and audits |
 
-## 3. Architektura wysokopoziomowa
+## 3. High-Level Architecture
 
-```
-                          ┌─────────────────────┐
-                          │  Next.js 16 (web)   │  ← główne UI (port 3000)
-                          └──────────┬──────────┘
-                                     │ HTTP + BasicAuth (proxy w Next)
-                          ┌──────────▼──────────┐
-                          │   FastAPI (api)     │  port 8000
-                          │  ──────────────     │
-                          │  • routers/         │
-                          │  • middleware:      │
-                          │     - Logging       │
-                          │     - SecurityHdrs  │
-                          │     - RateLimit     │
-                          │     - CORS          │
-                          └──────────┬──────────┘
-                                     │ SQLAlchemy
-                ┌────────────────────┼────────────────────┐
-                ▼                    ▼                    ▼
-        ┌──────────────┐    ┌──────────────┐    ┌──────────────┐
-        │  PostgreSQL  │    │  src/finance │    │   Ollama     │
-        │              │    │  ──────────  │    │  (host net)  │
-        │  transactions│    │  ingestion/  │    │  llama3.1:8b │
-        │  imports     │    │  domain/     │    └──────────────┘
-        │  assets      │    │  ml/         │
-        │  categories  │    │   ├ classification (SVC + augment)
-        └──────────────┘    │   ├ transaction_type (silver-label evidence)
-                            │   ├ anomaly       (IsolationForest + z-score)
-                            │   ├ forecasting   (naive/mean/SES/ARIMA)
-                            │   └ subscriptions (period detector)
-                            │  llm/         │
-                            │  observability│
-                            └──────────────┘
+```text
+Next.js web app
+  -> /api/proxy/* route handlers with optional BasicAuth
+  -> FastAPI API
+  -> src/finance domain package
+  -> PostgreSQL
+
+Optional:
+  FastAPI -> Ollama on the host for LLM fallback and assistant responses.
 ```
 
-### Kluczowe katalogi
+Main directories:
 
-```
-apps/api/         FastAPI backend (routers, middleware, scheduler, security)
-apps/web/         Next.js dashboard (App Router, /transactions, /forecast, ...)
-src/finance/      Importowalny pakiet — używany przez API, web proxy, skrypty i testy
-  ingestion/        Parsery CSV/XLSX: Pekao, Revolut, generic
+```text
+apps/api/         FastAPI backend: routers, middleware, scheduler, security
+apps/web/         Next.js dashboard
+src/finance/      Importable domain package used by API, scripts and tests
+  ingestion/        CSV/XLSX parsers: Pekao, Revolut, generic
   domain/           SQLAlchemy models, Pydantic DTOs, enums
   ml/
-    classification/   pipeline.py, train.py, augment.py, predict.py, registry.py
+    classification/   category classifier, training, prediction, augmentation
     transaction_type/  evidence-only multiclass model on silver labels
-    anomaly/          IsolationForest + robust z-score + reguły
+    anomaly/          IsolationForest + robust z-score + rules
     forecasting/      Naive, Mean, SES, ARIMA + walk-forward CV
-    subscriptions/    detector kadencji 7/30/90/365 dni
-  llm/              Klient Ollama, prompty, tool calls
-  observability.py  structlog config
-docs/
-  adr/              Architecture Decision Records
-  observability/    lightweight logs/health README
-  ml-evidence.md    powtarzalne raporty ML + prywatność wyników
-  model-card.md     Model Card (Mitchell et al. format)
-tests/            150+ testów, ~75%+ coverage
-data/             runtime/private artifacts: models, reports, raw exports (gitignored)
-notebooks/        Lokalne notebooki badawcze; `.ipynb` ignorowane domyślnie
-scripts/          smoke/debug helpers
+    subscriptions/    cadence detector
+  llm/              Ollama client, Polish router, tool calls
+alembic/          database migrations
+docs/             ADRs, model card, evidence docs and demo notes
+tests/            backend, ML and domain tests
+data/             private/runtime artifacts, ignored by Git
+notebooks/        README only; .ipynb files are ignored by default
+scripts/          evidence and maintenance helpers
 ```
 
-### Granice repozytorium
+Repository boundaries:
 
-- **Production demo path**: `apps/web` → `/api/proxy/*` → `apps/api` →
-  `src/finance` → PostgreSQL.
-- **Research/evidence path**: `scripts/`, `src/finance/ml/` i opcjonalne
-  lokalne notebooki bez prywatnych outputów.
-- **Artefakty runtime**: `data/models/`, `data/reports/`, `coverage.xml`,
-  cache i build frontendu są generowane lokalnie i gitignored.
-- **Dane prywatne**: rzeczywiste eksporty bankowe trzymać w `data/raw/`,
-  `data/private/` albo poza repo.
+- **Production demo path:** `apps/web` -> `/api/proxy/*` -> `apps/api` ->
+  `src/finance` -> PostgreSQL.
+- **Research/evidence path:** `scripts/`, `src/finance/ml/` and optional local
+  notebooks without private outputs.
+- **Runtime artifacts:** `data/models/`, `data/reports/`, cache files and
+  frontend builds are local and ignored.
+- **Private data:** real bank exports belong in `data/raw/`, `data/private/` or
+  outside the repository.
 
-## 4. Kluczowe decyzje projektowe (ADR)
+## 4. Architecture Decisions
 
-| # | Decyzja | Plik |
-|---|---|---|
-| 0002 | **Hybrydowy klasyfikator**: TF-IDF + LinearSVC jako pierwszy, LLM (Ollama) jako fallback dla niskiego confidence. Augmentacja LLM rzadkich klas. | [`docs/adr/0002-hybrid-classifier.md`](adr/0002-hybrid-classifier.md) |
-| 0003 | **Hybrydowa detekcja anomalii**: IsolationForest + robust z-score + reguły, oraz abonamenty przez period detection. Powód: skuteczność + interpretowalne uzasadnienia. | [`docs/adr/0003-anomaly-subscription-detection.md`](adr/0003-anomaly-subscription-detection.md) |
-| 0004 | **structlog + health checks**, **bez Prometheus/OpenTelemetry**. Self-hosted single-node nie potrzebuje osobnego stosu metryk. | [`docs/adr/0004-observability.md`](adr/0004-observability.md) |
+| ADR | Decision | File |
+| --- | --- | --- |
+| 0002 | Hybrid classifier: TF-IDF + LinearSVC first, local LLM fallback for low confidence, LLM augmentation for rare classes. | [`docs/adr/0002-hybrid-classifier.md`](adr/0002-hybrid-classifier.md) |
+| 0003 | Hybrid anomaly detection: IsolationForest + robust z-score + rules, and subscriptions via cadence detection. | [`docs/adr/0003-anomaly-subscription-detection.md`](adr/0003-anomaly-subscription-detection.md) |
+| 0004 | Lightweight observability: structlog + health checks, no Prometheus/OpenTelemetry by default. | [`docs/adr/0004-observability.md`](adr/0004-observability.md) |
 
-## 5. ML — co i jak
+## 5. ML And AI Components
 
-### 5.1 Klasyfikacja kategorii wydatkowych
+### 5.1 Expense Category Classification
 
-**Wejście**: merchant + title + abs_amount + day_of_week.
-**Wyjście ML**: sugestia jednej z 9 kategorii wydatkowych (`food`,
-`transport`, `housing`, `health`, `savings`, `subscriptions`,
-`entertainment`, `shopping`, `other`) wraz z confidence. Typ przepływu pieniędzy jest
-osobną warstwą `transaction_type` (`purchase`, przelew własny/do osoby,
-wynagrodzenie, inny przychód, zwrot, wypłata gotówki, opłata bankowa,
-oszczędności/inwestycje),
-żeby nie zanieczyszczać ontologii wydatków.
+**Input:** merchant + title + absolute amount + day of week.
 
-- **Pipeline**: `ColumnTransformer` (TF-IDF char 3-5 + word 1-2 na text;
-  `StandardScaler` na numerycznych) → `LinearSVC(C=1.0)`.
-- **Baseline**: `DummyClassifier(strategy="most_frequent")` w raportach
-  `classification_*.json`, żeby jasno pokazać zysk względem trywialnego modelu.
-- **Trening**: `python -m finance.ml.classification.train --from-files ...
-  --persist linear_svc` → `data/models/classifier_latest.joblib`.
-- **Augmentacja LLM**: `augment.py` generuje syntetyczne merchant strings dla
-  rzadkich klas używając Ollamy (`SEED_EXAMPLES` per kategoria, `AMOUNT_RANGES`).
-- **Ewaluacja**: 5-fold StratifiedKFold, macro-F1 + weighted-F1 + per-class
-  report + confusion matrix → `data/reports/classification_*.json`.
-- **Evidence package**: `scripts/build_ml_evidence.py` generuje real-only vs
-  augmented, EDA, forecasting CV i publiczny summary anomalii; prywatny review
-  top anomalii trafia do `data/private/`.
-- **Predykcja w runtime**: `predict.py::predict_one` → jeśli `confidence >= τ`
-  (0.55) zwraca SVC; inaczej fallback do LLM.
+**Output:** one of 9 expense categories (`food`, `transport`, `housing`,
+`health`, `savings`, `subscriptions`, `entertainment`, `shopping`, `other`) with
+confidence. Money-flow semantics are handled separately by `transaction_type`,
+so salaries, refunds and transfers do not pollute the expense ontology.
 
-Wyniki orientacyjne (zob. `docs/model-card.md`):
+- **Pipeline:** `ColumnTransformer` with TF-IDF char/word features over text and
+  `StandardScaler` over numeric features, followed by `LinearSVC(C=1.0)`.
+- **Baseline:** `DummyClassifier(strategy="most_frequent")` in
+  `classification_*.json`.
+- **Training:** `python -m finance.ml.classification.train --from-files ... --persist linear_svc`.
+- **LLM augmentation:** `augment.py` generates synthetic merchant strings for
+  rare classes using Ollama.
+- **Evaluation:** 5-fold StratifiedKFold with macro-F1, weighted-F1, per-class
+  report and confusion matrix.
+- **Runtime prediction:** `predict.py::predict_one` returns SVC output when
+  confidence is high enough; low-confidence cases may use the LLM fallback.
 
-| Estymator | Macro-F1 | Weighted-F1 |
-|---|---|---|
-| linear_svc | **0.78** | 0.84 |
-| logreg | 0.75 | 0.82 |
-| rf | 0.69 | 0.78 |
+Indicative results are documented in `docs/model-card.md`.
 
-### 5.2 Klasyfikacja typu transakcji (`finance.ml.transaction_type`)
+### 5.2 Transaction Type Classification
 
-Drugi eksperyment nadzorowany spełnia wymóg wieloklasowej analizy typu
-transakcji. Targetem jest `Transaction.transaction_type` z klasami
-`purchase`, `own_transfer`, `person_transfer`, `salary`, `income`, `refund`,
-`cash_withdrawal`, `debt_payment`, `bank_fee`, `savings_investment`, `other`.
+The second supervised experiment covers multiclass `transaction_type` analysis.
+Target classes are `purchase`, `own_transfer`, `person_transfer`, `salary`,
+`income`, `refund`, `cash_withdrawal`, `debt_payment`, `bank_fee`,
+`savings_investment` and `other`.
 
-To jest **evidence-only model na silver labels**: etykiety pochodzą z obecnych
-reguł importu i nie zastępują runtime `finance.transactions.rules.detect_transaction_type`.
-Wejście modelu to tekst `merchant + title + raw_category`, `abs_amount`,
-`direction` i opcjonalnie `source`. Raport porównuje `DummyClassifier`,
-`LogisticRegression` i `LinearSVC`, a wynik trafia do
-`data/reports/transaction_type_classification_*.json` oraz wspólnego
-`evidence_package_*.json`.
+This is an **evidence-only silver-label model**. Labels come from current import
+rules and do not replace `finance.transactions.rules.detect_transaction_type` at
+runtime. Inputs are `merchant + title + raw_category`, `abs_amount`,
+`direction` and optional `source`. The report compares `DummyClassifier`,
+`LogisticRegression` and `LinearSVC` and is included in the shared evidence
+package.
 
-Interpretacja warstw jest celowo rozdzielona: `transaction_type` opisuje
-semantykę przepływu pieniędzy, a `category` opisuje budżetową kategorię
-wydatku.
+Interpretation is intentionally separated:
 
-### 5.3 Detekcja anomalii (`finance.ml.anomaly`)
+- `transaction_type` describes money-flow semantics.
+- `category` describes the budget category of an expense.
 
-Detektor hybrydowy: IsolationForest na prostych cechach liczbowych
-(`log_abs`, dzień tygodnia/miesiąca, częstotliwość merchanta, kierunek),
-robust z-score median/MAD per (`category`, `direction`) oraz reguła
-„nowy merchant + duża kwota”. UI pokazuje `severity` i powody po polsku, więc
-wynik pozostaje interpretowalny mimo użycia IsolationForest.
+### 5.3 Anomaly Detection
 
-### 5.4 Prognozowanie (`finance.ml.forecasting`)
+The detector combines IsolationForest over simple numeric features (`log_abs`,
+day-of-week/month, merchant frequency, direction), robust z-score per
+`(category, direction)` and deterministic rules such as "new merchant + large
+amount". The UI shows severity and human-readable reasons, so the result remains
+interpretable despite the unsupervised model.
 
-Walk-forward CV po szeregach miesięcznych per kategoria. Modele:
-`Naive` (last value), `Mean(window)`, `SES`, `ARIMA`. Wybór
-najlepszego po RMSE. `forecast_best(series, horizon)` zwraca `ForecastResult`
-z metrykami MAPE/RMSE i prognozą N-miesięczną.
+### 5.4 Forecasting
 
-### 5.5 Detekcja abonamentów (`finance.ml.subscriptions`)
+Forecasting uses monthly category time series and walk-forward CV. Candidate
+models are Naive (last value), rolling Mean, SES and ARIMA. The best model is
+selected by RMSE and returns a `ForecastResult` with MAPE/RMSE and an
+N-month forecast.
 
-Dla znormalizowanej nazwy merchanta: medianowy odstęp między transakcjami,
-tolerancja kwoty ±10 %, domyślnie minimum 2 wystąpienia w krótkim oknie danych
-→ zwraca kadencję (weekly/biweekly/monthly/yearly) + confidence + miesięczny
-koszt.
+### 5.5 Subscription Detection
 
-### 5.6 Asystent LLM (`apps/api/routers/chat.py`)
+For each normalized merchant name, the detector analyzes transaction dates,
+median interval and amount stability. It returns cadence
+(`weekly`, `biweekly`, `monthly`, `yearly`), confidence and estimated monthly
+cost.
 
-Hybryda: heurystyczny router PL (intencje: „ile wydałem na X”, „pokaż
-abonamenty”, „prognoza”, „anomalie”) → wywołanie odpowiedniej funkcji domeny.
-LLM (Ollama) używany do *polish & rephrase* odpowiedzi i jako fallback dla
-zapytań niezakwalifikowanych przez heurystykę. To nie jest czysty RAG do
-twardych faktów liczbowych; fakty pochodzą z funkcji domenowych, a LLM tylko
-routuje albo wygładza odpowiedź.
-Rekomendacje oszczędnościowe bazują na policzonych danych z narzędzi
-deterministycznych; LLM może je streścić lub sformułować po polsku.
+### 5.6 Local LLM Assistant
 
-## 6. Bezpieczeństwo i obserwowalność
+The assistant is a hybrid system, not pure vector RAG for numeric facts. A
+Polish heuristic router detects intents such as spending, top merchants,
+subscriptions, forecasting, anomalies and savings recommendations. It calls
+deterministic domain tools first. Ollama may then summarize or rephrase the
+computed result in Polish.
 
-**Bezpieczeństwo**:
-- HTTP Basic auth (włączane przez env `AUTH_USERNAME` / `AUTH_PASSWORD`).
-- `SecurityHeadersMiddleware`: CSP, X-Frame-Options DENY, nosniff,
-  Referrer-Policy, Permissions-Policy.
-- CSV import: limit 10 MiB, allowlist rozszerzeń + MIME, walidacja pustego pliku.
-- CSV export: escaping formula injection (CWE-1236) — prefix `'` dla cell
-  zaczynających się od `=`, `+`, `-`, `@`, `\t`, `\r`.
-- Rate limit per IP (sliding window, in-memory).
-- CORS configurable przez `CORS_ALLOW_ORIGINS`.
-- Zależności: pip-audit + npm audit w CI (non-blocking), Dependabot weekly.
+Financial facts are computed by backend functions. The LLM should not invent
+amounts, dates or categories.
 
-**Obserwowalność**:
-- structlog → JSON do stdout, korelacja po `request_id` (header `X-Request-ID`
-  echo'd).
-- Health: `/health` (publiczny, db + ollama), `/health/live`, `/health/ready`
-  (k8s-style).
-- Brak `/metrics`, Prometheusa i Grafany — świadomie, żeby nie zwiększać
-  złożoności self-hosted single-user demo.
+## 6. Security And Observability
 
-## 7. Testy i jakość kodu
+Security:
 
-- **150+ testów pytest**, coverage **~75%+** (gate 60%).
-- Layers: unit (parsers, ML helpers), API (routers + middleware), property-based
-  (Hypothesis dla CSV preview), security (oversize/MIME/injection), ML
-  pipelines (synthetic dataset, walk-forward CV).
-- **Frontend**: `tsc --noEmit` clean, `eslint` clean.
-- **Lint backend**: `ruff` (E, F, I, UP, B, SIM) clean. `mypy` non-blocking w CI.
-- **CI**: GitHub Actions — lint+test+build+audit na każdy PR i push do main.
+- Optional HTTP Basic auth through `AUTH_USERNAME` / `AUTH_PASSWORD`.
+- Security headers: CSP, `X-Frame-Options: DENY`, `nosniff`,
+  `Referrer-Policy`, `Permissions-Policy`.
+- CSV import limits: 10 MiB, extension/MIME allowlist and empty-file
+  validation.
+- CSV export escapes formula injection cells (CWE-1236).
+- Sliding-window in-memory rate limit per IP.
+- Configurable CORS through `CORS_ALLOW_ORIGINS`.
+- Dependency audits in CI are non-blocking.
 
-## 8. Status pracy (Phase 1–10)
+Observability:
 
-| Faza | Zakres | Status |
-|---|---|---|
-| 1 | Ingestion (Pekao + Revolut), API, podstawowe UI, Docker, CI | ✅ |
-| 2 | ML klasyfikacja (TF-IDF + LinearSVC), augmentacja LLM | ✅ |
-| 3 | Forecasting miesięczny, anomalie, detekcja abonamentów | ✅ |
-| 4 | Hybrydowy LLM asystent (PL router + Ollama tool-calling) | ✅ |
-| 5 | BasicAuth, structlog, scheduler, healthcheck, 10-min setup | ✅ |
-| 6 | Next.js 16 dashboard (KPI, cashflow, transactions, forecast, anomalies, subs) | ✅ |
-| Hardening | CSV security, security headers, request logging, ADRs, model card | ✅ |
-| 7 | ML evidence, confidence calibration, service/module refactors | ✅ |
-| 8 | ML/AI backend hardening: classifier diagnostics, fallback gating, anomaly/forecast/subscription regressions | ✅ |
-| 9 | Category review workflow: filters, suggestion accept/reject, deterministic savings recommendations | ✅ |
-| 10 | Clean-start validation, fresh ML evidence, anomaly review, defence demo runbook | ⏳ |
+- JSON logs to stdout through `structlog`.
+- Request correlation through `X-Request-ID`.
+- Health endpoints: `/health`, `/health/live`, `/health/ready`.
+- No Prometheus/Grafana by default to keep the self-hosted demo small.
 
-## 9. Świadome trade-offs (tematy do dyskusji)
+## 7. Tests And Quality
 
-- **Single-user, self-hosted** — brak multi-tenancy, brak OAuth, brak email
-  notyfikacji. Świadome — zakres pracy magisterskiej, nie SaaS.
-- **PostgreSQL only** — `ON CONFLICT` w ingest. SQLite tylko do testów.
-- **Brak distributed tracing** — patrz ADR-0004. Single-node + request-id wystarczy.
-- **LLM tylko lokalnie (Ollama)** — privacy + brak kosztów. Odpowiedzi
-  wolniejsze niż OpenAI API, ale akceptowalne (UX nie jest blocking — chat to
-  asynchroniczne pytanie).
-- **Brak fine-tuningu** transformera — mały dataset (~2k labelled), TF-IDF +
-  SVC + augmentacja LLM dają porównywalne wyniki przy 100× mniejszym
-  artefakcie i 0 GPU wymaganych.
-- **Brak automatycznych reguł merchant → category definiowanych przez usera** —
-  katalog kategorii istnieje, ale reguły dopasowania są poza zakresem.
+- Backend tests cover parsers, API routers, security checks, ML helpers and
+  evidence builders.
+- Property-based tests cover selected CSV preview/import behavior.
+- Frontend quality checks use TypeScript and ESLint.
+- Backend linting uses Ruff; mypy can be run for type checking.
+- CI runs lint, tests, builds and dependency audits.
 
-## 10. Dane wejściowe (rzeczywiste)
+## 8. Project Status
 
-- **Pekao SA** — ~2 lata historii, główne konto operacyjne.
-- **Revolut** — konta multi-walutowe (PLN, USD), ~1 rok historii.
-- Łącznie: ~3 800 transakcji, ~2 200 oznakowanych ręcznie do treningu.
-- Nierównowaga klas: `food` dominuje, a `savings`/`health` są rzadkie
-  → uzasadnia augmentację LLM. Przepływy typu przelew własny/do osoby,
-  wynagrodzenie i zwroty są oznaczane w `transaction_type`, nie jako klasy
-  modelu wydatkowego.
+| Area | Status |
+| --- | --- |
+| Bank ingestion, API, basic UI, Docker, CI | Done |
+| Category classification, LLM augmentation | Done |
+| Forecasting, anomalies, subscriptions | Done |
+| Local LLM assistant with deterministic tools | Done |
+| BasicAuth, structured logs, scheduler, health checks | Done |
+| Next.js dashboard | Done |
+| ML evidence package and report inspector | Done |
+| Category review workflow and deterministic recommendations | Done |
+| Clean-start validation and final demo evidence | In progress / local-data dependent |
 
-## 11. Najbardziej "thesis-worthy" rzeczy do pokazania
+## 9. Conscious Trade-Offs
 
-1. **Hybrydowa klasyfikacja z fallbackiem LLM** (ADR-0002) + Model Card.
-2. **Walk-forward CV** dla forecastingu (autoselekcja modelu po RMSE).
-3. **Hybrydowa detekcja anomalii**: IsolationForest + robust z-score + reguły,
-   z interpretowalnymi powodami w UI.
-4. **Augmentacja LLM rzadkich klas** — pomiar wpływu na macro-F1.
-5. **Pragmatyczny DevOps**: Docker Compose + GitHub Actions + Dependabot +
-   pip-audit + health checks + structured logs.
-6. **150+ testów / ~75%+ coverage / property-based** — argument o jakości kodu.
+- **Single-user self-hosting:** no multi-tenancy, OAuth or email notifications.
+- **PostgreSQL runtime:** SQLite is only used where tests support it.
+- **No distributed tracing:** request-id correlation is enough for one node.
+- **Local LLM only:** better privacy and no API cost, but slower responses.
+- **No transformer fine-tuning:** the labelled dataset is small; TF-IDF + SVC is
+  easier to explain and cheaper to run.
+- **No automatic user-defined merchant-to-category rules yet:** category
+  management exists, but automatic merchant rules are outside the current scope.
 
-## 12. Pliki do otwarcia podczas prezentacji (kolejność)
+## 10. Real Input Data
 
-1. `README.md` — quick start.
-2. `docs/project-overview.md` — ten dokument.
-3. `docs/adr/0002-hybrid-classifier.md` — kluczowa decyzja ML.
-4. `docs/model-card.md` — fairness/limitations/metrics.
-5. `src/finance/ml/classification/pipeline.py` — TF-IDF + numeric pipeline.
-6. `src/finance/ml/classification/train.py::evaluate` — walk-forward CV.
-7. `apps/api/main.py` — middleware stack.
-8. `apps/web/src/app/page.tsx` — dashboard główny.
-9. `docs/observability/README.md` — minimalna obserwowalność bez Prometheusa.
+- Pekao SA: roughly two years of main-account history.
+- Revolut: multi-currency accounts, roughly one year of history.
+- Combined local dataset: about 3,800 transactions and about 2,200 manually
+  labelled examples for training.
+- Class imbalance: `food` dominates; `savings` and `health` are rare. Transfers,
+  salaries and refunds are represented by `transaction_type`, not by expense
+  categories.
 
-## 13. URL-e (przy uruchomionym `docker compose up`)
+## 11. Most Thesis-Relevant Parts
 
-| Co | URL |
-|---|---|
-| Web (Next.js) | <http://localhost:3000> |
+1. Hybrid category classification with LLM fallback and model card.
+2. Walk-forward CV for forecasting.
+3. Hybrid anomaly detection with IsolationForest, robust z-score and rules.
+4. LLM augmentation for rare classes and its macro-F1 impact.
+5. Practical DevOps: Docker Compose, CI, audits, health checks and logs.
+6. Tests and evidence reports that make the ML claims reproducible.
+
+## 12. Useful Files To Open
+
+1. `README.md` - quick start and scope.
+2. `docs/project-overview.md` - this overview.
+3. `docs/adr/0002-hybrid-classifier.md` - key ML decision.
+4. `docs/model-card.md` - model limitations, metrics and reproducibility.
+5. `src/finance/ml/classification/pipeline.py` - TF-IDF + numeric pipeline.
+6. `src/finance/ml/classification/train.py` - training and evaluation.
+7. `apps/api/main.py` - middleware stack.
+8. `apps/web/src/app/page.tsx` - dashboard entry point.
+
+## 13. URLs
+
+| Component | URL |
+| --- | --- |
+| Web app | <http://localhost:3000> |
 | API + Swagger | <http://localhost:8000/docs> |
-| Health (publiczny) | <http://localhost:8000/health> |
-| Postgres | localhost:5432 (db `finance`) |
-| Ollama (host) | localhost:11434 |
+| Health | <http://localhost:8000/health> |
+| PostgreSQL | localhost:5432, database `finance` |
+| Ollama host | localhost:11434 |
 
-## 14. Ile to "kosztuje"
+## 14. Runtime Footprint
 
-- ~7 000 LOC Python + ~4 000 LOC TS/TSX (backend + frontend + tests).
-- ~2 GB RAM dla pełnego stacku (api 200 MB, web 300 MB, postgres 100 MB,
-  Ollama 5 GB przy wczytanym modelu — host).
-- Cold start ~10 sekund (Postgres → API → Web). Predict latency: <50 ms (SVC),
-  ~500–2000 ms (LLM fallback, lokalnie).
+- Approximately 2 GB RAM for the app stack without a loaded LLM model.
+- Ollama memory depends on the selected local model.
+- Cold start is roughly several seconds after PostgreSQL is ready.
+- SVC prediction latency is typically below 50 ms; LLM fallback is much slower
+  and depends on local hardware.

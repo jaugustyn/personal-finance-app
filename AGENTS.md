@@ -1,100 +1,106 @@
 # AGENTS.md
 
-## Project context
+## Project Context
 
-This is a self-hosted personal finance analysis system using:
+Self-hosted personal finance analysis app:
 
-- FastAPI backend in `apps/api`
-- Next.js production dashboard in `apps/web`
-- core Python package in `src/finance`
-- Postgres database
-- ML pipelines for classification, forecasting, anomalies and subscriptions
-- local LLM assistant with Polish router and Ollama fallback
+- FastAPI backend: `apps/api`
+- Next.js dashboard: `apps/web`
+- core package: `src/finance`
+- PostgreSQL database
+- ML: category classification, transaction type evidence, forecasting,
+  anomalies, subscriptions
+- LLM: local Ollama with Polish routing and deterministic tools
 
-The project is in quality-hardening mode. Do not rewrite working modules from scratch unless explicitly asked.
+The project is in quality-hardening mode. Do not rewrite working modules from
+scratch unless explicitly asked.
 
-## Main architecture boundaries
+## Boundaries
 
-Respect these boundaries:
+- Keep API routers thin; put domain logic in `src/finance`.
+- Keep ingestion/parsing in `src/finance/ingestion`.
+- Keep SQLAlchemy models, enums and DTOs in `src/finance/domain`.
+- Keep ML logic in `src/finance/ml`.
+- Keep LLM routing/tools in `src/finance/llm`.
+- Use synthetic or anonymized data in tests.
+- Do not move logic across layers unless the task is explicitly architectural.
 
-- `apps/api/` should contain thin FastAPI routers and API orchestration.
-- `apps/web/` should contain production frontend code.
-- `src/finance/ingestion/` handles bank import/parsing.
-- `src/finance/domain/` owns SQLAlchemy models, enums and DTOs.
-- `src/finance/ml/` contains classification, forecasting, anomaly and subscription logic.
-- `src/finance/llm/` contains Ollama client, Polish router and tool functions.
-- `tests/` should use synthetic or anonymized data.
+## Privacy
 
-Do not move logic between layers unless the change is explicitly architectural.
-
-## Privacy rules
-
-- Never commit real bank exports.
-- Never print full raw transaction datasets.
-- Never expose `.env`, credentials, account numbers or raw private CSV/XLSX contents.
-- Treat `data/raw/`, `data/private/`, `data/reports/`, `data/models/` as local/runtime artifacts.
-- Use synthetic or anonymized fixtures in tests and examples.
+- Never commit real bank exports, `.env` files, credentials, account numbers or
+  raw private CSV/XLSX contents.
+- Treat `data/raw/`, `data/private/`, `data/reports/`, `data/models/` and
+  `data/external/` as local/runtime artifacts.
+- Do not print full raw transaction datasets.
 - Do not send private financial data to external APIs.
 
-## Data model rules
+## Data Model
 
-The transaction model is still evolving, so changes must be conservative.
+Before changing transaction/domain models, inspect:
 
-Before modifying transaction/domain models:
+1. `src/finance/domain/models.py`
+2. related API schemas/DTOs
+3. ingestion parsers
+4. ML feature builders
+5. frontend assumptions
 
-1. Inspect `src/finance/domain/models.py`.
-2. Inspect related API schemas/DTOs.
-3. Check ingestion parsers.
-4. Check ML feature builders.
-5. Check frontend assumptions.
-6. Add or update tests.
+Do not change category taxonomy, `transaction_type`, `is_transfer`, amount
+semantics or date semantics without documenting migration impact and updating
+tests.
 
-Do not change category taxonomy, `transaction_type`, `is_transfer`, amount semantics, or date semantics without documenting migration impact.
+## Frontend
 
-## ML rules
+- Inspect `apps/web/package.json` before assuming scripts or library versions.
+- The app uses a recent Next.js version; verify current local package behavior
+  for framework-specific changes.
+- Preserve loading, error and empty states.
+- Keep financial values formatted consistently.
+- UI text is intentionally Polish; do not translate runtime UI unless asked.
 
-For classification:
+## ML
 
-- Keep TF-IDF + LinearSVC baseline reproducible.
-- Report macro-F1, weighted-F1 and confusion matrix when changing training logic.
-- Avoid data leakage from manual labels, predicted labels or bank-provided categories.
+- Keep the TF-IDF + LinearSVC baseline reproducible.
+- Report macro-F1, weighted-F1 and confusion matrix when changing training
+  logic.
+- Avoid leakage from manual labels, predicted labels or bank-provided
+  categories.
 - Preserve confidence diagnostics and optional LLM fallback behavior.
-
-For forecasting:
-
-- Preserve simple baselines.
-- Do not replace current model selection with a more complex model without comparison.
-- Report evaluation impact.
-
-For anomaly/subscription logic:
-
-- Prefer explainable heuristics and regression tests.
+- Preserve simple forecasting baselines unless a comparison justifies replacing
+  them.
+- Prefer explainable anomaly/subscription heuristics and regression tests.
 - Do not optimize only for one private dataset.
 
-## LLM assistant rules
+## LLM
 
 The LLM is not the source of truth for financial facts.
 
-For numeric questions:
+- Numeric answers must use deterministic tools, SQL, aggregation functions or
+  API endpoints first.
+- Recommendations must compute facts first, then generate interpretation.
+- RAG/vector search is acceptable for documentation, category explanations and
+  user notes, not for hard financial aggregation.
+- Polish query behavior should be tested when changed.
 
-- use deterministic tools, SQL, aggregation functions or API endpoints,
-- then let the LLM explain the result.
+## Agent Tooling
 
-For recommendations:
-
-- compute facts first,
-- then generate interpretation and suggestions.
-
-RAG/vector search is acceptable for documentation, category explanations and user notes, not for hard financial aggregation.
+- Keep one root `AGENTS.md` unless a subproject truly needs different rules.
+- Do not commit personal MCP configs, local agent state, credentials or
+  IDE-specific agent files.
+- Prefer normal repo assets first: scripts, tests, docs and package commands.
+- Add repo-local hooks only when lightweight, documented and optional; required
+  validation should live in tests/CI, not hooks.
+- Custom skills are not needed yet. Add one only for a repeated project workflow
+  that cannot be captured clearly in this file or a script.
 
 ## Commands
 
-Use these commands where relevant:
+Backend:
 
 ```powershell
-pytest
-ruff check .
-mypy src/finance apps
+python -m pytest
+python -m ruff check .
+python -m mypy src/finance apps
+.\.venv\Scripts\python.exe -m uvicorn apps.api.main:app --reload --port 8000
 ```
 
 Frontend:
@@ -105,51 +111,24 @@ npm run lint
 npm run typecheck
 ```
 
-If exact frontend scripts differ, inspect apps/web/package.json first.
-
-Run API locally:
-
-```powershell
-.\.venv\Scripts\python.exe -m uvicorn apps.api.main:app --reload --port 8000
-```
-
 Docker:
 
 ```powershell
 docker compose -f docker/docker-compose.yml up -d
 ```
 
-## Definition of done
+## Definition Of Done
 
-For backend changes:
+- Backend: relevant tests pass, API behavior is preserved or documented, no
+  private data is exposed.
+- Frontend: TypeScript/lint passes where available, states are preserved,
+  financial formatting stays consistent.
+- ML: metrics are reported, baseline comparison is preserved, reproducibility is
+  not weakened.
+- LLM: factual answers use tools/functions and prompts do not invent amounts,
+  dates or categories.
 
-- relevant tests pass,
-- API behavior is preserved or documented,
-- no private data is exposed.
+## Response Format
 
-For frontend changes:
-
-- TypeScript/lint passes where available,
-- loading/error/empty states are preserved,
-- financial values are formatted consistently.
-
-For ML changes:
-
-- metrics are reported,
-- baseline comparison is preserved,
-- reproducibility is not weakened.
-
-For LLM changes:
-
-- factual answers use tools/functions,
-- prompts do not invent amounts, dates or categories,
-- Polish query behavior is tested where relevant.
-- Response format
-
-After making changes, summarize:
-
-- changed files,
-- what changed,
-- commands/tests run,
-- known risks,
-- recommended next steps.
+After changes, summarize changed files, what changed, commands/tests run, known
+risks and recommended next steps.

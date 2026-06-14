@@ -1,66 +1,65 @@
-# ADR-0003: Detekcja anomalii i abonamentów — hybryda klasyczna, bez deep learning
+# ADR-0003: Anomaly And Subscription Detection With Classical Methods
 
 - **Status:** ACCEPTED
-- **Data:** 2026-05-01
+- **Date:** 2026-05-01
 
-## Kontekst
+## Context
 
-Dwa rdzeniowe wymagania funkcjonalne:
+Two core product requirements:
 
-1. **Anomalia** — wykryć transakcję istotnie odbiegającą od historii kategorii
-   (np. zakup AGD w „food” lub 5× średnia w „transport”).
-2. **Abonament** — wykryć powtarzalne obciążenia (Netflix, Orange Flex) o
-   stabilnej kwocie i kadencji 7/30/90/365 dni, mimo zmieniającego się
-   merchant string.
+1. **Anomaly detection:** find transactions that significantly deviate from
+   category history, for example an appliance purchase inside `food` or a
+   transport transaction five times above the usual value.
+2. **Subscription detection:** find recurring charges with stable amount and
+   cadence (7/30/90/365 days), even when merchant strings vary slightly.
 
-Dataset użytkownika: 12–36 mies. historii, ~3–6k transakcji, 9 kategorii
-wydatków plus osobna flaga `is_transfer`.
-Każda kategoria ma 50–800 obserwacji.
+The expected user dataset contains 12-36 months of history, roughly 3-6k
+transactions, 9 expense categories and a separate `is_transfer` flag. Each
+category usually has 50-800 observations.
 
-## Decyzja
+## Decision
 
-**Hybrydowa metoda klasyczna**, bez autoencoderów i bez embeddingów LLM:
+Use a **hybrid classical method** without autoencoders and without LLM
+embeddings:
 
-- **Anomalie** — IsolationForest na prostych, jawnych cechach liczbowych
-  (`log_abs`, dzień tygodnia/miesiąca, frequency merchanta, kierunek) +
-  `Robust Z-score` (median + MAD) per `(category, direction)` + reguła
-  „nowy merchant + duża kwota”.
-- **Abonamenty** — *period detection* na sekwencji dat dla danej (znormalizowanej)
-  nazwy merchanta: medianowy odstęp + tolerancja kwoty ±10 %, domyślnie
-  minimum 2 wystąpienia w krótkim oknie danych.
+- **Anomalies:** IsolationForest over simple numeric features (`log_abs`,
+  day-of-week/month, merchant frequency, direction) plus robust z-score
+  (median + MAD) per `(category, direction)` plus the deterministic
+  "new merchant + large amount" rule.
+- **Subscriptions:** period detection over dates for a normalized merchant
+  name: median interval, +/-10% amount tolerance and at least 2 occurrences by
+  default for short histories.
 
-## Konsekwencje
+## Consequences
 
-**Pozytywne:**
+**Positive:**
 
-- Czytelne uzasadnienia — w UI pokazujemy powody typu „nietypowo wysoka
-  kwota (z=4.8)” albo „nowy odbiorca + duża kwota”.
-- Brak GPU i brak zewnętrznego serwisu ML.
-- Stabilność na małych podpopulacjach (MAD jest robustny na outliery, czego
-  z-score klasyczny nie gwarantuje).
-- IsolationForest łapie przypadki wielowymiarowe, których sam z-score nie
-  wykryje.
+- Explanations remain readable in the UI, for example "unusually high amount"
+  or "new merchant + large amount".
+- No GPU and no external ML service.
+- Robust z-score is stable for small subpopulations because MAD is less
+  sensitive to outliers than a standard z-score.
+- IsolationForest can catch multidimensional patterns that z-score alone would
+  miss.
 
-**Negatywne:**
+**Negative:**
 
-- IsolationForest jest mniej interpretowalny niż czysty z-score, dlatego wynik
-  jest łączony z powodami regułowymi i robust z-score.
-- Detektor abonamentów nie złapie zmiennych kwot (Bolt). Świadoma decyzja:
-  zmienne kwoty to nie abonament w sensie produktowym.
+- IsolationForest is less interpretable than pure z-score, so its output is
+  combined with rule-based reasons.
+- The subscription detector intentionally ignores highly variable charges. In
+  this product, variable spending is not treated as a subscription.
 
-## Alternatywy odrzucone
+## Rejected Alternatives
 
-- **Czysty robust z-score.** Bardzo interpretowalny, ale pomija przypadki typu
-  „nowy merchant + nietypowy wzorzec”.
-- **LOF / embedding-based outlier detection.** Większa złożoność, słabsza
-  kontrola nad interpretacją i brak potrzeby przy tej skali danych.
-- **Autoencoder na embeddingach merchantów.** Overkill dla skali datasetu.
-- **Prophet do detekcji anomalii.** Detekcja transakcyjna i prognozowanie
-  miesięczne to różne problemy; Prophet nie jest potrzebny w runtime.
+- **Pure robust z-score.** Very interpretable, but misses cases such as a new
+  merchant with an unusual pattern.
+- **LOF / embedding-based outlier detection.** More complex, harder to explain
+  and unnecessary at this data scale.
+- **Merchant autoencoder.** Overkill for the dataset size.
+- **Prophet for anomaly detection.** Transaction-level anomaly detection and
+  monthly forecasting are separate problems; Prophet is not needed at runtime.
 
-## Mierniki sukcesu
+## Success Metrics
 
-- Precyzja anomalii ≥ 0.8 na ręcznie oznaczonym subsecie 50 transakcji
-  (false-positive rate kontrolowany progiem |z|).
-- Recall abonamentów ≥ 0.9 dla rzeczywistego zbioru znanych subskrypcji
-  użytkownika.
+- Anomaly precision >= 0.8 on a manually reviewed subset of 50 transactions.
+- Subscription recall >= 0.9 on the user's known real subscriptions.

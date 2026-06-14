@@ -1,47 +1,47 @@
-# ADR-0004: Lekka obserwowalność — structlog + health checks, bez Prometheus
+# ADR-0004: Lightweight Observability With structlog And Health Checks
 
 - **Status:** ACCEPTED
-- **Data:** 2026-05-01
+- **Date:** 2026-05-01
 
-## Kontekst
+## Context
 
-Aplikacja działa w trybie self-hosted (Docker Compose, jeden host).
-Wymagane sygnały diagnostyczne:
+The app is self-hosted through Docker Compose on a single host. Required
+diagnostic signals:
 
-- **Logi** — kontekstowe (request-id, user, path), JSON dla parsowalności.
-- **Health checks** — szybka diagnoza DB, Ollama i gotowości procesu.
-- **Trace** — opcjonalne; przy 1 hoście korelacja po request-id wystarcza.
+- **Logs:** contextual JSON logs with request id, user and path.
+- **Health checks:** quick diagnosis of database, Ollama and process readiness.
+- **Tracing:** optional; on one host, request-id correlation is enough.
 
-## Decyzja
+## Decision
 
-- **Logi:** `structlog` z processorami JSON, korelacja przez `bind_contextvars`
-  z UUID na każde żądanie. Header `X-Request-ID` na wejściu i wyjściu.
-- **Health:** publiczne `/health`, `/health/live`, `/health/ready`.
-- **Metryki Prometheus:** brak. Endpoint `/metrics`, middleware Prometheus i
-  dashboard Grafany zostały usunięte jako nadmiarowe dla single-user demo.
-- **Tracing:** **brak OpenTelemetry**. Zbyt duży narzut dla single-node
-  setupu i poza zakresem pracy magisterskiej.
+- **Logs:** use `structlog` with JSON processors and `bind_contextvars`; assign
+  a UUID to each request. Echo `X-Request-ID` on input and output.
+- **Health:** expose public `/health`, `/health/live`, `/health/ready`.
+- **Prometheus metrics:** not included. `/metrics`, Prometheus middleware and
+  Grafana dashboards were removed as excessive for a single-user demo.
+- **Tracing:** no OpenTelemetry. It adds too much operational overhead for the
+  single-node thesis setup.
 
-## Konsekwencje
+## Consequences
 
-**Pozytywne:**
+**Positive:**
 
-- Mniej zależności runtime i mniej elementów do tłumaczenia podczas obrony.
-- Brak publicznego `/metrics`, więc mniejsza powierzchnia ekspozycji.
-- Debugowanie nadal jest praktyczne przez `request_id`, health checks i
+- Fewer runtime dependencies and fewer components to explain.
+- No public `/metrics` endpoint, so the exposed surface is smaller.
+- Debugging remains practical with `request_id`, health checks and
   `docker logs`.
 
-**Negatywne:**
+**Negative:**
 
-- Brak dashboardu RED i historycznych metryk bez dołożenia zewnętrznego stosu.
-- Trudniejsze profilowanie endpointów, jeśli projekt rozrośnie się poza
-  single-host demo.
+- No RED dashboard or historical metrics without adding an external stack.
+- Endpoint profiling becomes harder if the project grows beyond a single-host
+  demo.
 
-## Alternatywy odrzucone
+## Rejected Alternatives
 
-- **Prometheus + Grafana.** Dobre dla produkcji wieloużytkownikowej, ale
-  w tym projekcie zwiększało złożoność bardziej niż wartość demonstracyjną.
-- **OpenTelemetry SDK** (logs + metrics + traces). Większa złożoność,
-  wymaga collectora. Można dodać później bez zmian w logice domenowej.
-- **Sentry** dla błędów. Płatny w skali, niepotrzebny przy 1 użytkowniku.
-- **ELK stack.** Overkill — `docker logs` + `jq` wystarczy do iteracji.
+- **Prometheus + Grafana.** Useful for multi-user production systems, but too
+  complex for this project.
+- **OpenTelemetry SDK** for logs, metrics and traces. More complexity and a
+  collector requirement. It can be added later without changing domain logic.
+- **Sentry.** Unnecessary for a single-user local deployment.
+- **ELK stack.** Overkill; `docker logs` plus `jq` is enough for iteration.

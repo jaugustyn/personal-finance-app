@@ -1,138 +1,137 @@
-# Model Card — Klasyfikator transakcji bankowych
+# Model Card - Bank Transaction Classifier
 
-> Standard model-card wg Mitchell et al., 2019 (FAccT). Szablon dostosowany do
-> klasyfikatora wbudowanego w pracę magisterską „Personal Finance ML”.
+> Model card based on Mitchell et al., 2019 (FAccT). Adapted for the classifier
+> embedded in the "Personal Finance ML" thesis project.
 
-## 1. Szczegóły modelu
+## 1. Model Details
 
-| Pole             | Wartość                                                                                       |
-| ---------------- | --------------------------------------------------------------------------------------------- |
-| **Nazwa**        | `classifier_linear_svc`                                                                       |
-| **Wersja**       | 0.1.0 (faza 3)                                                                                |
-| **Architektura** | TF-IDF (char 3-5 + word 1-2) + numeryczne (`abs_amount`, `day_of_week`) → `LinearSVC` (C=1.0) |
-| **Pipeline**     | `src/finance/ml/classification/pipeline.py::build_pipeline`                                   |
-| **Train script** | `python -m finance.ml.classification.train --from-files data/...`                             |
-| **Artefakt**     | `data/models/classifier_latest.joblib`                                                        |
-| **Autor**        | Jakub \*\*\* (praca magisterska, WSEI Kraków, 2026)                                           |
-| **Licencja**     | MIT (kod), dane treningowe — prywatne                                                         |
-
-## 2. Zamierzony użytek
-
-- **Primary:** sugestia kategorii wydatkowej dla transakcji bankowych (PL/EN
-  merchant strings) na 9 kategorii zgodnie z ontologią użytkownika.
-- **Secondary:** sugestia kategorii w UI z poziomem pewności.
-- **Evidence-only secondary:** analiza wieloklasowa `transaction_type` na
-  silver labels z obecnych reguł importu. Ten model służy do raportów i
-  argumentacji ML, nie do decyzji runtime.
-- **Out of scope:**
-  - decyzje kredytowe / scoring,
-  - profilowanie behawioralne,
-  - zastąpienie reguł wykrywania przelewów/przychodów modelem ML,
-  - klasyfikacja transakcji w innych walutach niż PLN (eksperymentalne).
-
-## 3. Dane treningowe
-
-| Pole            | Wartość                                                                                               |
-| --------------- | ----------------------------------------------------------------------------------------------------- |
-| **Źródła**      | CSV: Pekao SA, Revolut                                                                                |
-| **Okres**       | 2024-01 – 2026-04                                                                                     |
-| **Wielkość**    | ~3 800 transakcji, ~2 200 oznakowanych ręcznie                                                        |
-| **Klasy**       | food, transport, housing, health, savings, subscriptions, entertainment, shopping, other              |
-| **Augmentacja** | `finance.ml.classification.augment` (LLM Llama 3.1 8B) — synthetic merchant strings dla rzadkich klas |
-| **Train/test**  | StratifiedKFold (5-fold), MIN_PER_CLASS=2                                                             |
-
-### Charakterystyka
-
-- Nierównowaga: dominuje `food`; `savings` i `health` mają niski support.
-- Przelewy, wynagrodzenia i zwroty są wyłączane z ontologii wydatków i
-  oznaczane w warstwie `transaction_type`; przelewy własne dodatkowo mają
-  `is_transfer`.
-- Klasy poniżej 2 % udziału (`savings`, `health`) augmentowane do ~5 %.
-- Język: ~90 % polskie merchant strings, ~10 % angielskie (Revolut).
-
-### Pre-processing
-
-- Lowercase, strip diacritics tylko w analyzerze TF-IDF.
-- Brak stop-listy (krótkie merchant strings) — testowane, pogarsza F1.
-- `abs_amount` standaryzowane (`StandardScaler`).
-
-## 4. Metryki ewaluacyjne
-
-StratifiedKFold, 5 splitów. Estymator wybrany: `linear_svc`. Raporty generowane
-przez `scripts/build_ml_evidence.py` zawierają też baseline
-`dummy_most_frequent`, confusion matrix, confidence curve dla progów akceptacji
-oraz porównanie real-only vs augmented.
-
-| Estymator    | Macro-F1 | Weighted-F1 |
-| ------------ | -------- | ----------- |
-| `linear_svc` | **0.78** | 0.84        |
-| `logreg`     | 0.75     | 0.82        |
-| `rf`         | 0.69     | 0.78        |
-
-Per-class F1 (linear_svc, agregat 5 foldów):
-
-| Klasa         | F1   | Support |
-| ------------- | ---- | ------- |
-| food          | 0.91 | 770     |
-| transport     | 0.86 | 290     |
-| housing       | 0.78 | 180     |
-| subscriptions | 0.81 | 95      |
-| entertainment | 0.72 | 120     |
-| shopping      | _TBD_ | _TBD_   |
-| health        | 0.68 | 70      |
-| savings       | 0.66 | 55      |
-| other         | 0.61 | 210     |
-
-> _Wartości orientacyjne — odtwórz z `data/reports/classification\__.json` po
-> ponownym treningu na własnym datasecie.\*
-
-### 4.1 Dodatkowy eksperyment: `transaction_type`
-
-| Pole | Wartość |
+| Field | Value |
 | --- | --- |
-| **Nazwa** | `transaction_type_evidence` |
+| **Name** | `classifier_linear_svc` |
+| **Version** | 0.1.0 |
+| **Architecture** | TF-IDF (char 3-5 + word 1-2) + numeric features (`abs_amount`, `day_of_week`) -> `LinearSVC` (C=1.0) |
+| **Pipeline** | `src/finance/ml/classification/pipeline.py::build_pipeline` |
+| **Train script** | `python -m finance.ml.classification.train --from-files data/...` |
+| **Artifact** | `data/models/classifier_latest.joblib` |
+| **Author** | Jakub *** (master's thesis, WSEI Krakow, 2026) |
+| **License** | MIT for code; training data is private |
+
+## 2. Intended Use
+
+- **Primary:** suggest an expense category for bank transactions (PL/EN merchant
+  strings) using the user-defined 9-category ontology.
+- **Secondary:** show category suggestions in the UI with confidence.
+- **Evidence-only secondary:** supervised multiclass analysis of
+  `transaction_type` on silver labels from the current import rules. This model
+  supports reports and ML argumentation; it does not make runtime decisions.
+- **Out of scope:**
+  - credit decisions or scoring,
+  - behavioral profiling,
+  - replacing transfer/income detection rules with an ML model,
+  - reliable classification for currencies other than PLN.
+
+## 3. Training Data
+
+| Field | Value |
+| --- | --- |
+| **Sources** | CSV exports from Pekao SA and Revolut |
+| **Period** | 2024-01 - 2026-04 |
+| **Size** | ~3,800 transactions, ~2,200 manually labelled |
+| **Classes** | food, transport, housing, health, savings, subscriptions, entertainment, shopping, other |
+| **Augmentation** | `finance.ml.classification.augment` (LLM Llama 3.1 8B) generating synthetic merchant strings for rare classes |
+| **Train/test** | StratifiedKFold (5-fold), `MIN_PER_CLASS=2` |
+
+### Dataset Characteristics
+
+- Class imbalance: `food` dominates; `savings` and `health` have low support.
+- Transfers, salaries and refunds are excluded from the expense-category
+  ontology and represented by `transaction_type`; own transfers also set
+  `is_transfer`.
+- Classes below 2% support (`savings`, `health`) may be augmented toward ~5%.
+- Language: ~90% Polish merchant strings, ~10% English merchant strings
+  from Revolut.
+
+### Preprocessing
+
+- Lowercase and strip diacritics only inside the TF-IDF analyzer.
+- No stop-list: transaction strings are short and tests showed it hurts F1.
+- `abs_amount` is standardized with `StandardScaler`.
+
+## 4. Evaluation Metrics
+
+The selected estimator is `linear_svc`, evaluated with 5-fold StratifiedKFold.
+Reports generated by `scripts/build_ml_evidence.py` also include
+`dummy_most_frequent`, a confusion matrix, a confidence curve for acceptance
+thresholds and a real-only vs augmented comparison.
+
+| Estimator | Macro-F1 | Weighted-F1 |
+| --- | --- | --- |
+| `linear_svc` | **0.78** | 0.84 |
+| `logreg` | 0.75 | 0.82 |
+| `rf` | 0.69 | 0.78 |
+
+Per-class F1 for `linear_svc` over 5 folds:
+
+| Class | F1 | Support |
+| --- | --- | --- |
+| food | 0.91 | 770 |
+| transport | 0.86 | 290 |
+| housing | 0.78 | 180 |
+| subscriptions | 0.81 | 95 |
+| entertainment | 0.72 | 120 |
+| shopping | _TBD_ | _TBD_ |
+| health | 0.68 | 70 |
+| savings | 0.66 | 55 |
+| other | 0.61 | 210 |
+
+> Values are indicative. Rebuild them from `data/reports/classification_*.json`
+> after retraining on the local dataset.
+
+### 4.1 Additional Experiment: `transaction_type`
+
+| Field | Value |
+| --- | --- |
+| **Name** | `transaction_type_evidence` |
 | **Pipeline** | `src/finance/ml/transaction_type/pipeline.py` |
-| **Wejście** | `merchant + title + raw_category`, `abs_amount`, `direction`, opcjonalnie `source` |
+| **Input** | `merchant + title + raw_category`, `abs_amount`, `direction`, optional `source` |
 | **Target** | `Transaction.transaction_type` |
-| **Klasy** | `purchase`, `own_transfer`, `person_transfer`, `salary`, `income`, `refund`, `cash_withdrawal`, `debt_payment`, `bank_fee`, `savings_investment`, `other` |
+| **Classes** | `purchase`, `own_transfer`, `person_transfer`, `salary`, `income`, `refund`, `cash_withdrawal`, `debt_payment`, `bank_fee`, `savings_investment`, `other` |
 | **Label source** | `silver_transaction_type` |
-| **Runtime** | Bez zmian: import nadal używa `finance.transactions.rules.detect_transaction_type` |
+| **Runtime** | Unchanged: import still uses `finance.transactions.rules.detect_transaction_type` |
 
-Raport `transaction_type_classification_*.json` porównuje
-`dummy_most_frequent`, `logreg` i `linear_svc`, zawiera macro-F1, weighted-F1,
-metryki per-class, confusion matrix, class counts oraz listę klas odrzuconych
-przez zbyt niski support. Wynik jest częścią wspólnego
-`evidence_package_*.json`.
+`transaction_type_classification_*.json` compares `dummy_most_frequent`,
+`logreg` and `linear_svc`. It includes macro-F1, weighted-F1, per-class
+metrics, a confusion matrix, class counts and classes dropped due to low
+support. The result is part of the shared `evidence_package_*.json`.
 
-Ograniczenie metodologiczne: `Transaction.transaction_type` jest v1 silver
-label, bo repo nie ma osobnego pola `transaction_type_source`. To wystarcza do
-pokazania analizy wieloklasowej typu transakcji, ale nie dowodzi jeszcze, że
-model ML jest lepszy od reguł produkcyjnych.
+Methodological limitation: `Transaction.transaction_type` is a v1 silver label,
+because the repository has no separate `transaction_type_source` field. This is
+enough to demonstrate supervised multiclass analysis of transaction type, but
+it does not prove that the ML model is better than production rules.
 
-## 5. Ograniczenia i ryzyka
+## 5. Limitations And Risks
 
-- **OOV merchanty** — nowy bank/sklep z nietypową nazwą → niski confidence,
-  fallback do LLM (ADR-0002).
-- **Drift** — sezonowość świąteczna i zmiana nazewnictwa merchantów (np. po
-  rebrandzie). Mitygacja: re-train co 3–6 miesięcy.
-- **Klasa `other`** to „śmietnik” — nie jest interpretowalna jako kategoria
-  budżetowa. Unikać prezentowania jej w analizach trendu.
-- **Bias geograficzny** — model uczony na transakcjach jednego użytkownika
-  (Polska, Kraków). Generalizacja na inne miasta/kraje nieznana.
-- **Privacy** — model artefakt nie zawiera surowych transakcji, ale TF-IDF
-  vocabulary potencjalnie ujawnia merchantów. Nie udostępniać artefaktu
-  publicznie.
-- **Silver labels dla `transaction_type`** — nowy eksperyment uczy się na
-  etykietach pochodzących z reguł, więc raportuje zgodność z obecną semantyką,
-  a nie niezależną prawdę ekspercką.
+- **OOV merchants:** a new bank or store format can produce low confidence and
+  trigger the LLM fallback.
+- **Drift:** holiday seasonality and merchant renaming may reduce quality.
+  Mitigation: retrain every 3-6 months.
+- **`other` class:** this is a catch-all and should not be interpreted as a
+  meaningful budget category in trend analysis.
+- **Geographic bias:** the model is trained on one user's transactions
+  (Poland, Krakow). Generalization to other regions is unknown.
+- **Privacy:** the model artifact does not contain raw transactions, but the
+  TF-IDF vocabulary may reveal merchants. Do not publish trained artifacts.
+- **Silver labels for `transaction_type`:** the experiment learns labels
+  produced by rules, so it measures consistency with current semantics rather
+  than independent expert truth.
 
-## 6. Etyka i fairness
+## 6. Ethics And Fairness
 
-Aplikacja jest narzędziem osobistym (single-user). Brak decyzji wobec osób
-trzecich, brak ryzyka dyskryminacji w sensie ML fairness. Augmentacja LLM:
+The application is a single-user personal tool. It does not make decisions about
+third parties, so classical ML fairness risks are limited. LLM augmentation:
 
-- prompt nie generuje danych osobowych (wymóg w `_build_prompt`),
-- generowane stringi są fikcyjne (random merchant + lokalizacja).
+- prompts do not request personal data,
+- generated strings are fictional merchant/location examples.
 
 ## 7. Reproducibility
 
@@ -144,9 +143,9 @@ python -m finance.ml.classification.train \
 
 python scripts/build_ml_evidence.py --from-db
 
-# Standalone wariant wymaga CSV z kolumną transaction_type.
+# Standalone variant requires a CSV with a transaction_type column.
 python -m finance.ml.transaction_type.train data/private/transaction_type_silver_labels.csv
 ```
 
-Seed: `random_state=42` w `StratifiedKFold`. Wersje bibliotek: zob.
-`pyproject.toml` i lockfile frontendu `apps/web/package-lock.json`.
+Seed: `random_state=42` in `StratifiedKFold`. Library versions are defined in
+`pyproject.toml` and `apps/web/package-lock.json`.
