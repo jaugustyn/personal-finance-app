@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { DataTable, type DataTableColumn } from "@/components/data-table";
 import { PageHeader } from "@/components/page-header";
 import { EmptyState } from "@/components/empty-state";
 import { ErrorState } from "@/components/error-state";
@@ -20,8 +21,23 @@ import {
 } from "lucide-react";
 
 import { Input } from "@/components/ui/input";
+import { useLocalStorageState } from "@/hooks/use-local-storage-state";
+import { transactionsHref } from "@/lib/transaction-links";
 
 type Period = "week" | "month" | "custom";
+type CategoryChangeRow = {
+  category: string;
+  current: number;
+  previous: number;
+  delta: number;
+};
+type TopMerchantRow = { merchant: string; amount: number; count: number };
+type LimitBreachRow = {
+  category: string;
+  spent: number;
+  limit: number;
+  overshoot: number;
+};
 
 /** Tone for spending deltas: more spending is negative (red), less is green. */
 function deltaTone(delta: number): string {
@@ -43,9 +59,18 @@ function previousValue(current: number, delta: number): number {
 
 export default function RecapPage() {
   const { t } = useT();
-  const [period, setPeriod] = useState<Period>("month");
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
+  const [period, setPeriod] = useLocalStorageState<Period>(
+    "finance.recap.period",
+    "month",
+  );
+  const [dateFrom, setDateFrom] = useLocalStorageState(
+    "finance.recap.dateFrom",
+    "",
+  );
+  const [dateTo, setDateTo] = useLocalStorageState(
+    "finance.recap.dateTo",
+    "",
+  );
 
   const isCustomReady =
     period === "custom" && !!dateFrom && !!dateTo && dateFrom <= dateTo;
@@ -58,6 +83,116 @@ export default function RecapPage() {
         : api.recap(period),
     enabled: period !== "custom" || isCustomReady,
   });
+  const categoryChangeColumns: DataTableColumn<CategoryChangeRow>[] = [
+    {
+      id: "category",
+      header: t("transactions.column.category"),
+      sortValue: (row) => tCategory(t, row.category),
+      cell: (row) => tCategory(t, row.category),
+    },
+    {
+      id: "previous",
+      header: t("recap.previous"),
+      align: "right",
+      className: "tabular-nums text-muted-foreground",
+      sortValue: (row) => row.previous,
+      cell: (row) => formatCurrency(row.previous),
+    },
+    {
+      id: "current",
+      header: t("recap.current"),
+      align: "right",
+      className: "tabular-nums",
+      sortValue: (row) => row.current,
+      cell: (row) => formatCurrency(row.current),
+    },
+    {
+      id: "delta",
+      header: t("recap.delta"),
+      align: "right",
+      className: "tabular-nums",
+      sortValue: (row) => row.delta,
+      cell: (row) => (
+        <span className={cn(deltaTone(row.delta))}>
+          {row.delta > 0 ? "+" : ""}
+          {formatCurrency(row.delta)}
+        </span>
+      ),
+    },
+  ];
+  const merchantColumns: DataTableColumn<TopMerchantRow>[] = [
+    {
+      id: "merchant",
+      header: t("transactions.column.merchant"),
+      sortValue: (row) => row.merchant,
+      className: "font-medium",
+      cell: (row) => (
+        <Link
+          href={transactionsHref({
+            search: row.merchant,
+            direction: "debit",
+            date_from: query.data?.current_from,
+            date_to: query.data?.current_to,
+          })}
+          className="text-primary underline-offset-4 hover:underline"
+        >
+          {row.merchant}
+        </Link>
+      ),
+    },
+    {
+      id: "count",
+      header: t("recap.count"),
+      align: "right",
+      className: "tabular-nums text-muted-foreground",
+      sortValue: (row) => row.count,
+      cell: (row) => row.count,
+    },
+    {
+      id: "amount",
+      header: t("transactions.column.amount"),
+      align: "right",
+      className: "tabular-nums",
+      sortValue: (row) => row.amount,
+      cell: (row) => formatCurrency(row.amount),
+    },
+  ];
+  const breachColumns: DataTableColumn<LimitBreachRow>[] = [
+    {
+      id: "category",
+      header: t("transactions.column.category"),
+      sortValue: (row) => tCategory(t, row.category),
+      cell: (row) => (
+        <Link
+          href={transactionsHref({
+            category: row.category,
+            direction: "debit",
+            date_from: query.data?.current_from,
+            date_to: query.data?.current_to,
+          })}
+          className="text-primary underline-offset-4 hover:underline"
+        >
+          {tCategory(t, row.category)}
+        </Link>
+      ),
+    },
+    {
+      id: "spent",
+      header: t("recap.spent"),
+      align: "right",
+      className: "tabular-nums",
+      sortValue: (row) => row.spent,
+      cell: (row) => formatCurrency(row.spent),
+    },
+    {
+      id: "limit",
+      header: t("recap.limit"),
+      align: "right",
+      className: "tabular-nums text-muted-foreground",
+      sortValue: (row) => row.limit,
+      cell: (row) => formatCurrency(row.limit),
+    },
+  ];
 
   return (
     <div className="space-y-6">
@@ -202,36 +337,13 @@ export default function RecapPage() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                {query.data.category_changes.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">
-                    {t("recap.changes.empty")}
-                  </p>
-                ) : (
-                  <ul className="divide-y divide-border">
-                    {query.data.category_changes.map((c) => (
-                      <li
-                        key={c.category}
-                        className="flex items-center justify-between gap-3 py-2 text-sm"
-                      >
-                        <span>{tCategory(t, c.category)}</span>
-                        <span
-                          className={cn(
-                            "flex items-center gap-1 tabular-nums",
-                            deltaTone(c.delta),
-                          )}
-                        >
-                          {c.delta > 0 ? (
-                            <TrendingUp className="h-3.5 w-3.5" />
-                          ) : (
-                            <TrendingDown className="h-3.5 w-3.5" />
-                          )}
-                          {c.delta > 0 ? "+" : ""}
-                          {formatCurrency(c.delta)}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                )}
+                <DataTable
+                  columns={categoryChangeColumns}
+                  data={query.data.category_changes}
+                  rowKey={(row) => row.category}
+                  emptyTitle={t("recap.changes.empty")}
+                  initialSort={{ id: "delta", dir: "desc" }}
+                />
               </CardContent>
             </Card>
 
@@ -243,25 +355,13 @@ export default function RecapPage() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                {query.data.top_merchants.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">
-                    {t("recap.merchants.empty")}
-                  </p>
-                ) : (
-                  <ul className="divide-y divide-border">
-                    {query.data.top_merchants.map((m) => (
-                      <li
-                        key={m.merchant}
-                        className="flex items-center justify-between gap-3 py-2 text-sm"
-                      >
-                        <span className="truncate">{m.merchant}</span>
-                        <span className="shrink-0 tabular-nums text-muted-foreground">
-                          {formatCurrency(m.amount)} · {m.count}×
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                )}
+                <DataTable
+                  columns={merchantColumns}
+                  data={query.data.top_merchants}
+                  rowKey={(row) => row.merchant}
+                  emptyTitle={t("recap.merchants.empty")}
+                  initialSort={{ id: "amount", dir: "desc" }}
+                />
               </CardContent>
             </Card>
 
@@ -273,25 +373,13 @@ export default function RecapPage() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                {query.data.limit_breaches.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">
-                    {t("recap.breaches.empty")}
-                  </p>
-                ) : (
-                  <ul className="divide-y divide-border">
-                    {query.data.limit_breaches.map((b) => (
-                      <li
-                        key={b.category}
-                        className="flex items-center justify-between gap-3 py-2 text-sm"
-                      >
-                        <span>{tCategory(t, b.category)}</span>
-                        <span className="shrink-0 tabular-nums text-negative">
-                          {formatCurrency(b.spent)} / {formatCurrency(b.limit)}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                )}
+                <DataTable
+                  columns={breachColumns}
+                  data={query.data.limit_breaches}
+                  rowKey={(row) => row.category}
+                  emptyTitle={t("recap.breaches.empty")}
+                  initialSort={{ id: "spent", dir: "desc" }}
+                />
               </CardContent>
             </Card>
 

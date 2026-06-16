@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -11,6 +12,7 @@ import {
   Loader2,
   Trash2,
   History,
+  Receipt,
 } from "lucide-react";
 import {
   api,
@@ -21,6 +23,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { DataTable, type DataTableColumn } from "@/components/data-table";
 import { PageHeader } from "@/components/page-header";
 import { useConfirm } from "@/components/confirm-dialog";
 import {
@@ -46,6 +49,7 @@ import {
 } from "@/components/ui/tooltip";
 import { toast } from "sonner";
 import { useT, type TranslationKey } from "@/lib/i18n";
+import { transactionsHref } from "@/lib/transaction-links";
 
 const LOGICAL_FIELDS = [
   { key: "date", required: true, recommended: false, description: "" },
@@ -446,6 +450,82 @@ function ImportsHistory() {
     });
     if (ok) deleteMut.mutate(row.id);
   };
+  const columns: DataTableColumn<ImportHistoryRow>[] = [
+    {
+      id: "created_at",
+      header: t("imports.history.created"),
+      sortValue: (row) => new Date(row.created_at).getTime(),
+      className: "text-xs whitespace-nowrap text-muted-foreground",
+      cell: (row) => new Date(row.created_at).toLocaleString(),
+    },
+    {
+      id: "filename",
+      header: t("imports.history.filename"),
+      sortValue: (row) => row.filename,
+      className: "font-medium",
+      cell: (row) => row.filename,
+    },
+    {
+      id: "source",
+      header: t("imports.history.source"),
+      sortValue: (row) => row.source,
+      cell: (row) => <Badge variant="outline">{row.source}</Badge>,
+    },
+    {
+      id: "total_rows",
+      header: t("imports.history.totalRows"),
+      align: "right",
+      className: "tabular-nums",
+      sortValue: (row) => row.total_rows,
+      cell: (row) => row.total_rows,
+    },
+    {
+      id: "inserted",
+      header: t("imports.history.inserted"),
+      align: "right",
+      className: "tabular-nums text-positive",
+      sortValue: (row) => row.inserted,
+      cell: (row) => row.inserted,
+    },
+    {
+      id: "duplicates",
+      header: t("imports.history.duplicates"),
+      align: "right",
+      className: "tabular-nums text-muted-foreground",
+      sortValue: (row) => row.duplicates,
+      cell: (row) => row.duplicates,
+    },
+    {
+      id: "actions",
+      header: "",
+      align: "right",
+      headerClassName: "w-24",
+      className: "w-24",
+      cell: (row) => (
+        <div className="flex justify-end gap-1">
+          <Button
+            size="icon"
+            variant="ghost"
+            asChild
+            aria-label={t("imports.history.openTransactions")}
+          >
+            <Link href={transactionsHref({ import_id: row.id })}>
+              <Receipt className="h-4 w-4" />
+            </Link>
+          </Button>
+          <Button
+            size="icon"
+            variant="ghost"
+            onClick={() => onDelete(row)}
+            disabled={deleteMut.isPending}
+            aria-label={t("common.delete")}
+          >
+            <Trash2 className="h-4 w-4 text-destructive" />
+          </Button>
+        </div>
+      ),
+    },
+  ];
 
   return (
     <Card>
@@ -455,68 +535,15 @@ function ImportsHistory() {
         </CardTitle>
       </CardHeader>
       <CardContent className="p-0">
-        {isLoading ? (
-          <div className="flex h-24 items-center justify-center text-muted-foreground">
-            <Loader2 className="h-5 w-5 animate-spin" />
-          </div>
-        ) : imports.length === 0 ? (
-          <p className="p-6 text-center text-sm text-muted-foreground">
-            {t("imports.history.empty")}
-          </p>
-        ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>{t("imports.history.created")}</TableHead>
-                <TableHead>{t("imports.history.filename")}</TableHead>
-                <TableHead>{t("imports.history.source")}</TableHead>
-                <TableHead className="text-right">
-                  {t("imports.history.totalRows")}
-                </TableHead>
-                <TableHead className="text-right">
-                  {t("imports.history.inserted")}
-                </TableHead>
-                <TableHead className="text-right">
-                  {t("imports.history.duplicates")}
-                </TableHead>
-                <TableHead className="w-12" />
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {imports.map((row) => (
-                <TableRow key={row.id}>
-                  <TableCell className="text-muted-foreground text-xs whitespace-nowrap">
-                    {new Date(row.created_at).toLocaleString()}
-                  </TableCell>
-                  <TableCell className="font-medium">{row.filename}</TableCell>
-                  <TableCell>
-                    <Badge variant="outline">{row.source}</Badge>
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {row.total_rows}
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums text-positive">
-                    {row.inserted}
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums text-muted-foreground">
-                    {row.duplicates}
-                  </TableCell>
-                  <TableCell>
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      onClick={() => onDelete(row)}
-                      disabled={deleteMut.isPending}
-                      aria-label={t("common.delete")}
-                    >
-                      <Trash2 className="h-4 w-4 text-destructive" />
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        )}
+        <DataTable
+          columns={columns}
+          data={imports}
+          rowKey={(row) => row.id}
+          isLoading={isLoading}
+          emptyTitle={t("imports.history.empty")}
+          initialSort={{ id: "created_at", dir: "desc" }}
+          className="rounded-none border-0"
+        />
       </CardContent>
     </Card>
   );

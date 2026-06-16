@@ -14,6 +14,7 @@ import { cn, formatNumber, formatPercent } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { DataTable, type DataTableColumn } from "@/components/data-table";
 import { ErrorState } from "@/components/error-state";
 import { PageHeader } from "@/components/page-header";
 import { CardGridSkeleton } from "@/components/ui/skeleton";
@@ -133,6 +134,86 @@ function ModelComparisonCard({
 }) {
   const { t } = useT();
   const hasRows = rows.length > 0;
+  const columns: DataTableColumn<MlModelComparison>[] = [
+    {
+      id: "model",
+      header: t("ml.comparison.model"),
+      sortValue: (row) => row.rank ?? 999,
+      className: "font-medium",
+      cell: (row) => (
+        <>
+          <span className="mr-2 text-xs text-muted-foreground">
+            #{row.rank}
+          </span>
+          {row.estimator}
+        </>
+      ),
+    },
+    {
+      id: "features",
+      header: t("ml.comparison.features"),
+      sortValue: (row) => row.feature_set,
+      className: "text-muted-foreground",
+      cell: (row) => row.feature_set,
+    },
+    {
+      id: "macro",
+      header: t("ml.comparison.macro"),
+      align: "right",
+      className: "tabular-nums",
+      sortValue: (row) => row.macro_f1,
+      cell: (row) => percent(row.macro_f1),
+    },
+    {
+      id: "weighted",
+      header: t("ml.comparison.weighted"),
+      align: "right",
+      className: "tabular-nums",
+      sortValue: (row) => row.weighted_f1,
+      cell: (row) => percent(row.weighted_f1),
+    },
+    {
+      id: "stability",
+      header: t("ml.comparison.stability"),
+      align: "right",
+      className: "tabular-nums",
+      sortValue: (row) => row.stability_score,
+      cell: (row) => percent(row.stability_score),
+    },
+    {
+      id: "coverage",
+      header: t("ml.comparison.coverage"),
+      align: "right",
+      className: "tabular-nums",
+      sortValue: (row) => row.coverage_at_055,
+      cell: (row) => percent(row.coverage_at_055),
+    },
+    {
+      id: "accuracy",
+      header: t("ml.comparison.accuracy"),
+      align: "right",
+      className: "tabular-nums",
+      sortValue: (row) => row.accuracy_at_055,
+      cell: (row) => percent(row.accuracy_at_055),
+    },
+    {
+      id: "status",
+      header: t("ml.comparison.status"),
+      cell: (row) => (
+        <div className="flex flex-wrap gap-1">
+          {row.is_recommended ? (
+            <Badge variant="success">{t("ml.comparison.recommended")}</Badge>
+          ) : null}
+          {row.is_current ? (
+            <Badge variant="secondary">{t("ml.comparison.current")}</Badge>
+          ) : null}
+          {row.skipped ? (
+            <Badge variant="warning">{t("ml.comparison.skipped")}</Badge>
+          ) : null}
+        </div>
+      ),
+    },
+  ];
   return (
     <Card>
       <CardHeader>
@@ -168,90 +249,16 @@ function ModelComparisonCard({
         </div>
 
         {hasRows ? (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[840px] text-sm">
-              <thead className="border-b text-xs text-muted-foreground">
-                <tr>
-                  <th className="py-2 pr-3 text-left font-medium">
-                    {t("ml.comparison.model")}
-                  </th>
-                  <th className="px-3 py-2 text-left font-medium">
-                    {t("ml.comparison.features")}
-                  </th>
-                  <th className="px-3 py-2 text-right font-medium">
-                    {t("ml.comparison.macro")}
-                  </th>
-                  <th className="px-3 py-2 text-right font-medium">
-                    {t("ml.comparison.weighted")}
-                  </th>
-                  <th className="px-3 py-2 text-right font-medium">
-                    {t("ml.comparison.stability")}
-                  </th>
-                  <th className="px-3 py-2 text-right font-medium">
-                    {t("ml.comparison.coverage")}
-                  </th>
-                  <th className="px-3 py-2 text-right font-medium">
-                    {t("ml.comparison.accuracy")}
-                  </th>
-                  <th className="py-2 pl-3 text-left font-medium">
-                    {t("ml.comparison.status")}
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y">
-                {rows.map((row) => (
-                  <tr
-                    key={`${row.feature_set}-${row.estimator}`}
-                    className={row.is_recommended ? "bg-primary/5" : ""}
-                  >
-                    <td className="py-2 pr-3 font-medium">
-                      <span className="mr-2 text-xs text-muted-foreground">
-                        #{row.rank}
-                      </span>
-                      {row.estimator}
-                    </td>
-                    <td className="px-3 py-2 text-muted-foreground">
-                      {row.feature_set}
-                    </td>
-                    <td className="px-3 py-2 text-right tabular-nums">
-                      {percent(row.macro_f1)}
-                    </td>
-                    <td className="px-3 py-2 text-right tabular-nums">
-                      {percent(row.weighted_f1)}
-                    </td>
-                    <td className="px-3 py-2 text-right tabular-nums">
-                      {percent(row.stability_score)}
-                    </td>
-                    <td className="px-3 py-2 text-right tabular-nums">
-                      {percent(row.coverage_at_055)}
-                    </td>
-                    <td className="px-3 py-2 text-right tabular-nums">
-                      {percent(row.accuracy_at_055)}
-                    </td>
-                    <td className="py-2 pl-3">
-                      <div className="flex flex-wrap gap-1">
-                        {row.is_recommended ? (
-                          <Badge variant="success">
-                            {t("ml.comparison.recommended")}
-                          </Badge>
-                        ) : null}
-                        {row.is_current ? (
-                          <Badge variant="secondary">
-                            {t("ml.comparison.current")}
-                          </Badge>
-                        ) : null}
-                        {row.skipped ? (
-                          <Badge variant="warning">
-                            {t("ml.comparison.skipped")}
-                          </Badge>
-                        ) : null}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <DataTable
+            columns={columns}
+            data={rows}
+            rowKey={(row) => `${row.feature_set}-${row.estimator}`}
+            initialSort={{ id: "model", dir: "asc" }}
+            tableClassName="min-w-[840px]"
+            getRowClassName={(row) =>
+              row.is_recommended ? "bg-primary/5" : undefined
+            }
+          />
         ) : (
           <p className="text-sm text-muted-foreground">
             {t("ml.comparison.noReport")}

@@ -30,13 +30,18 @@ interface DataTableProps<T> {
   data: T[] | undefined;
   rowKey: (row: T) => string | number;
   isLoading?: boolean;
+  initialSort?: SortState;
   /** Rendered when data is loaded but empty. */
   emptyTitle?: string;
   emptyDescription?: string;
   onRowClick?: (row: T) => void;
+  getRowClassName?: (row: T) => string | undefined;
   /** Sticky header keeps the head visible while scrolling. */
   stickyHeader?: boolean;
   className?: string;
+  tableClassName?: string;
+  toolbar?: React.ReactNode;
+  rowCountLabel?: string;
 }
 
 type SortState = { id: string; dir: "asc" | "desc" } | null;
@@ -52,14 +57,19 @@ export function DataTable<T>({
   data,
   rowKey,
   isLoading,
+  initialSort = null,
   emptyTitle,
   emptyDescription,
   onRowClick,
+  getRowClassName,
   stickyHeader,
   className,
+  tableClassName,
+  toolbar,
+  rowCountLabel,
 }: DataTableProps<T>) {
   const { t } = useT();
-  const [sort, setSort] = React.useState<SortState>(null);
+  const [sort, setSort] = React.useState<SortState>(initialSort);
 
   const sorted = React.useMemo(() => {
     if (!data || !sort) return data;
@@ -75,7 +85,10 @@ export function DataTable<T>({
       if (typeof av === "number" && typeof bv === "number") {
         return (av - bv) * factor;
       }
-      return String(av).localeCompare(String(bv)) * factor;
+      return (
+        String(av).localeCompare(String(bv), "pl", { sensitivity: "base" }) *
+        factor
+      );
     });
   }, [data, sort, columns]);
 
@@ -105,8 +118,14 @@ export function DataTable<T>({
   }
 
   return (
-    <div className={cn("rounded-lg border", className)}>
-      <Table>
+    <div className={cn("overflow-x-auto rounded-lg border", className)}>
+      {(toolbar || rowCountLabel) && (
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b px-3 py-2 text-xs text-muted-foreground">
+          <div>{rowCountLabel}</div>
+          {toolbar}
+        </div>
+      )}
+      <Table className={tableClassName}>
         <TableHeader
           className={cn(stickyHeader && "sticky top-0 z-10 bg-card")}
         >
@@ -117,6 +136,15 @@ export function DataTable<T>({
               return (
                 <TableHead
                   key={col.id}
+                  aria-sort={
+                    active
+                      ? sort!.dir === "asc"
+                        ? "ascending"
+                        : "descending"
+                      : sortable
+                        ? "none"
+                        : undefined
+                  }
                   className={cn(
                     alignClass[col.align ?? "left"],
                     col.headerClassName,
@@ -126,6 +154,7 @@ export function DataTable<T>({
                     <button
                       type="button"
                       onClick={() => toggleSort(col.id)}
+                      title={t("table.sort")}
                       className={cn(
                         "inline-flex items-center gap-1 transition-colors hover:text-foreground",
                         active && "text-foreground",
@@ -156,7 +185,10 @@ export function DataTable<T>({
             <TableRow
               key={rowKey(row)}
               onClick={onRowClick ? () => onRowClick(row) : undefined}
-              className={onRowClick ? "cursor-pointer" : undefined}
+              className={cn(
+                onRowClick && "cursor-pointer",
+                getRowClassName?.(row),
+              )}
             >
               {columns.map((col) => (
                 <TableCell

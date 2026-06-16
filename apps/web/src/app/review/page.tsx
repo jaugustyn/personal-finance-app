@@ -5,11 +5,13 @@ import { useQuery } from "@tanstack/react-query";
 import { api, type ReviewSummary } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { DataTable, type DataTableColumn } from "@/components/data-table";
 import { PageHeader } from "@/components/page-header";
 import { EmptyState } from "@/components/empty-state";
 import { ErrorState } from "@/components/error-state";
 import { CardGridSkeleton } from "@/components/ui/skeleton";
 import { useT, tCategory } from "@/lib/i18n";
+import { transactionsHref } from "@/lib/transaction-links";
 import { ClipboardCheck, Layers, Repeat } from "lucide-react";
 
 const COUNT_KEYS = [
@@ -21,12 +23,67 @@ const COUNT_KEYS = [
   "categorized",
 ] as const;
 
+type RareClassRow = { category: string; count: number };
+type RecurringMerchantRow = { merchant: string; count: number };
+
 export default function ReviewPage() {
   const { t } = useT();
   const query = useQuery({
     queryKey: ["review-summary"],
     queryFn: () => api.reviewSummary(),
   });
+  const rareClassColumns: DataTableColumn<RareClassRow>[] = [
+    {
+      id: "category",
+      header: t("transactions.column.category"),
+      sortValue: (row) => tCategory(t, row.category),
+      className: "font-medium",
+      cell: (row) => (
+        <Link
+          href={transactionsHref({
+            view: "review",
+            category: row.category,
+            category_state: "needs_review",
+          })}
+          className="text-primary underline-offset-4 hover:underline"
+        >
+          {tCategory(t, row.category)}
+        </Link>
+      ),
+    },
+    {
+      id: "count",
+      header: t("review.count"),
+      align: "right",
+      className: "tabular-nums text-muted-foreground",
+      sortValue: (row) => row.count,
+      cell: (row) => row.count,
+    },
+  ];
+  const recurringColumns: DataTableColumn<RecurringMerchantRow>[] = [
+    {
+      id: "merchant",
+      header: t("transactions.column.merchant"),
+      sortValue: (row) => row.merchant,
+      className: "font-medium",
+      cell: (row) => (
+        <Link
+          href={transactionsHref({ search: row.merchant })}
+          className="text-primary underline-offset-4 hover:underline"
+        >
+          {row.merchant}
+        </Link>
+      ),
+    },
+    {
+      id: "count",
+      header: t("review.count"),
+      align: "right",
+      className: "tabular-nums text-muted-foreground",
+      sortValue: (row) => row.count,
+      cell: (row) => t("review.timesSeen", { count: row.count }),
+    },
+  ];
 
   return (
     <div className="space-y-6">
@@ -72,25 +129,13 @@ export default function ReviewPage() {
                 </p>
               </CardHeader>
               <CardContent>
-                {query.data.rare_classes.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">
-                    {t("review.rareClasses.empty")}
-                  </p>
-                ) : (
-                  <ul className="divide-y divide-border">
-                    {query.data.rare_classes.map((rc) => (
-                      <li
-                        key={rc.category}
-                        className="flex items-center justify-between py-2 text-sm"
-                      >
-                        <span>{tCategory(t, rc.category)}</span>
-                        <span className="tabular-nums text-muted-foreground">
-                          {rc.count}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                )}
+                <DataTable
+                  columns={rareClassColumns}
+                  data={query.data.rare_classes}
+                  rowKey={(row) => row.category}
+                  emptyTitle={t("review.rareClasses.empty")}
+                  initialSort={{ id: "count", dir: "asc" }}
+                />
               </CardContent>
             </Card>
 
@@ -105,30 +150,13 @@ export default function ReviewPage() {
                 </p>
               </CardHeader>
               <CardContent>
-                {query.data.recurring_unruled.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">
-                    {t("review.recurring.empty")}
-                  </p>
-                ) : (
-                  <ul className="divide-y divide-border">
-                    {query.data.recurring_unruled.map((rm) => (
-                      <li
-                        key={rm.merchant}
-                        className="flex items-center justify-between gap-3 py-2 text-sm"
-                      >
-                        <Link
-                          href={`/transactions?search=${encodeURIComponent(rm.merchant)}`}
-                          className="truncate font-medium hover:underline"
-                        >
-                          {rm.merchant}
-                        </Link>
-                        <span className="shrink-0 tabular-nums text-muted-foreground">
-                          {t("review.timesSeen", { count: rm.count })}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                )}
+                <DataTable
+                  columns={recurringColumns}
+                  data={query.data.recurring_unruled}
+                  rowKey={(row) => row.merchant}
+                  emptyTitle={t("review.recurring.empty")}
+                  initialSort={{ id: "count", dir: "desc" }}
+                />
               </CardContent>
             </Card>
           </div>
@@ -164,7 +192,10 @@ function ReviewActionPanel({ data }: { data: ReviewSummary }) {
                 description={t("review.next.labelTransactionsHint", {
                   n: needsReview,
                 })}
-                href="/transactions?view=review"
+                href={transactionsHref({
+                  view: "review",
+                  category_state: "needs_review",
+                })}
                 cta={t("review.openQueue")}
               />
             ) : null}
@@ -174,7 +205,10 @@ function ReviewActionPanel({ data }: { data: ReviewSummary }) {
                 description={t("review.next.rareClassesHint", {
                   n: rareCount,
                 })}
-                href="/transactions?view=review"
+                href={transactionsHref({
+                  view: "review",
+                  category_state: "needs_review",
+                })}
                 cta={t("review.openQueue")}
               />
             ) : null}

@@ -13,7 +13,11 @@ import {
 import { useMemo } from "react";
 import { useCategories } from "@/hooks/use-categories";
 import { formatCurrency } from "@/lib/utils";
-import { tooltipStyle } from "./chart-utils";
+import {
+  formatCompactAxisNumber,
+  tooltipStyle,
+  truncateChartLabel,
+} from "./chart-utils";
 
 export function TopMerchantsBar({
   data,
@@ -39,29 +43,33 @@ export function TopMerchantsBar({
     category: d.category ?? null,
   }));
   return (
-    <ResponsiveContainer width="100%" height={Math.max(160, rows.length * 32)}>
+    <ResponsiveContainer width="100%" height={Math.max(180, rows.length * 38)}>
       <BarChart
         data={rows}
         layout="vertical"
-        margin={{ top: 0, right: 16, bottom: 0, left: 0 }}
+        barCategoryGap={6}
+        margin={{ top: 0, right: 16, bottom: 0, left: 10 }}
       >
         <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
         <XAxis
           type="number"
           tick={{ fontSize: 11 }}
           stroke="hsl(var(--muted-foreground))"
-          tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`}
+          tickFormatter={formatCompactAxisNumber}
         />
         <YAxis
           type="category"
           dataKey="merchant"
           tick={{ fontSize: 11 }}
+          tickFormatter={(value) => truncateChartLabel(value, 16)}
           stroke="hsl(var(--muted-foreground))"
-          width={120}
+          tickMargin={8}
+          width={128}
         />
         <Tooltip
           contentStyle={tooltipStyle()}
           formatter={(value) => formatCurrency(Number(value))}
+          labelFormatter={(label) => String(label)}
         />
         <Bar dataKey="amount" name="Wydatki" radius={[0, 4, 4, 0]}>
           {rows.map((row, i) => (

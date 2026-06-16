@@ -18,14 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { DataTable, type DataTableColumn } from "@/components/data-table";
 import { KpiCard } from "@/components/kpi-card";
 import { PortfolioHistoryChart } from "@/components/charts";
 import { formatCurrency, formatDate, formatPercent } from "@/lib/utils";
@@ -114,6 +107,89 @@ export default function AssetsPage() {
   const totalCost = s ? Number(s.total_cost_pln) : 0;
   const pnl = s ? Number(s.pnl_pln) : 0;
   const isCash = form.asset_class === "cash";
+  const assetColumns: DataTableColumn<Asset>[] = [
+    {
+      id: "symbol",
+      header: t("assets.column.symbol"),
+      sortValue: (a) => `${a.symbol} ${a.name ?? ""}`,
+      cell: (a) => (
+        <div>
+          <div className="font-medium">{a.symbol}</div>
+          <div className="text-xs text-muted-foreground">{a.name || "—"}</div>
+        </div>
+      ),
+    },
+    {
+      id: "asset_class",
+      header: t("assets.column.class"),
+      sortValue: (a) => a.asset_class,
+      cell: (a) => <Badge variant="outline">{a.asset_class}</Badge>,
+    },
+    {
+      id: "quantity",
+      header: t("assets.column.quantity"),
+      align: "right",
+      className: "tabular-nums",
+      sortValue: (a) => Number(a.quantity),
+      cell: (a) => Number(a.quantity),
+    },
+    {
+      id: "price",
+      header: t("assets.column.price"),
+      align: "right",
+      className: "tabular-nums text-muted-foreground",
+      sortValue: (a) => (a.last_price != null ? Number(a.last_price) : null),
+      cell: (a) =>
+        a.last_price != null
+          ? `${Number(a.last_price).toFixed(2)} ${a.currency}`
+          : "—",
+    },
+    {
+      id: "value",
+      header: t("assets.column.value"),
+      align: "right",
+      className: "tabular-nums",
+      sortValue: (a) =>
+        a.last_value_pln != null ? Number(a.last_value_pln) : null,
+      cell: (a) =>
+        a.last_value_pln != null
+          ? formatCurrency(Number(a.last_value_pln))
+          : "—",
+    },
+    {
+      id: "pnl",
+      header: t("assets.column.pnl"),
+      align: "right",
+      sortValue: (a) => (a.pnl_pln != null ? Number(a.pnl_pln) : null),
+      cell: (a) =>
+        a.pnl_pln != null ? <Money amount={Number(a.pnl_pln)} signed /> : "—",
+    },
+    {
+      id: "actions",
+      header: "",
+      align: "right",
+      headerClassName: "w-12",
+      className: "w-12",
+      cell: (a) => (
+        <Button
+          size="icon"
+          variant="ghost"
+          onClick={async () => {
+            const ok = await confirm({
+              title: t("assets.deleteConfirm", {
+                symbol: a.symbol,
+              }),
+              destructive: true,
+            });
+            if (ok) remove.mutate(a.id);
+          }}
+          aria-label={t("common.delete")}
+        >
+          <Trash2 className="h-4 w-4" />
+        </Button>
+      ),
+    },
+  ];
 
   return (
     <div className="space-y-6">
@@ -355,88 +431,14 @@ export default function AssetsPage() {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          {assets.isLoading ? (
-            <div className="flex h-40 items-center justify-center text-muted-foreground">
-              <Loader2 className="h-5 w-5 animate-spin" />
-            </div>
-          ) : !assets.data || assets.data.length === 0 ? (
-            <div className="flex h-40 items-center justify-center text-sm text-muted-foreground">
-              {t("assets.empty")}
-            </div>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>{t("assets.column.symbol")}</TableHead>
-                  <TableHead>{t("assets.column.class")}</TableHead>
-                  <TableHead className="text-right">
-                    {t("assets.column.quantity")}
-                  </TableHead>
-                  <TableHead className="text-right">
-                    {t("assets.column.price")}
-                  </TableHead>
-                  <TableHead className="text-right">
-                    {t("assets.column.value")}
-                  </TableHead>
-                  <TableHead className="text-right">
-                    {t("assets.column.pnl")}
-                  </TableHead>
-                  <TableHead></TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {assets.data.map((a: Asset) => {
-                  const value =
-                    a.last_value_pln != null ? Number(a.last_value_pln) : null;
-                  const apnl = a.pnl_pln != null ? Number(a.pnl_pln) : null;
-                  return (
-                    <TableRow key={a.id}>
-                      <TableCell>
-                        <div className="font-medium">{a.symbol}</div>
-                        <div className="text-xs text-muted-foreground">
-                          {a.name || "—"}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="outline">{a.asset_class}</Badge>
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {Number(a.quantity)}
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums text-muted-foreground">
-                        {a.last_price != null
-                          ? `${Number(a.last_price).toFixed(2)} ${a.currency}`
-                          : "—"}
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {value != null ? formatCurrency(value) : "—"}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {apnl != null ? <Money amount={apnl} signed /> : "—"}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          onClick={async () => {
-                            const ok = await confirm({
-                              title: t("assets.deleteConfirm", {
-                                symbol: a.symbol,
-                              }),
-                              destructive: true,
-                            });
-                            if (ok) remove.mutate(a.id);
-                          }}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          )}
+          <DataTable
+            columns={assetColumns}
+            data={assets.data}
+            rowKey={(a) => a.id}
+            isLoading={assets.isLoading}
+            emptyTitle={t("assets.empty")}
+            initialSort={{ id: "value", dir: "desc" }}
+          />
         </CardContent>
       </Card>
     </div>

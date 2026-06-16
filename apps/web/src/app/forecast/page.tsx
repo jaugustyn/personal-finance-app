@@ -2,31 +2,26 @@
 
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { api } from "@/lib/api";
+import { api, type ForecastPoint } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { CategorySelect } from "@/components/category-select";
+import { FilterField } from "@/components/filter-panel";
 import { ForecastChart } from "@/components/charts";
 import { PageHeader } from "@/components/page-header";
 import { ErrorState } from "@/components/error-state";
+import { DataTable, type DataTableColumn } from "@/components/data-table";
 import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { formatCurrency, formatMonth } from "@/lib/utils";
 import { Info, Loader2 } from "lucide-react";
 import { useT } from "@/lib/i18n";
+import { useLocalStorageState } from "@/hooks/use-local-storage-state";
 
 function forecastConfidenceLabel(
   historyMonths: number,
@@ -39,17 +34,39 @@ function forecastConfidenceLabel(
 
 export default function ForecastPage() {
   const { t } = useT();
-  const [category, setCategory] = useState("");
-  const [horizon, setHorizon] = useState(3);
+  const [category, setCategory] = useLocalStorageState(
+    "finance.forecast.category",
+    "",
+  );
+  const [horizon, setHorizon] = useLocalStorageState(
+    "finance.forecast.horizon",
+    3,
+  );
   const [submitted, setSubmitted] = useState<{
     category: string | null;
     horizon: number;
-  }>({ category: null, horizon: 3 });
+  }>({ category: category || null, horizon });
 
   const query = useQuery({
     queryKey: ["forecast", submitted],
     queryFn: () => api.forecast(submitted.category, submitted.horizon),
   });
+  const forecastColumns: DataTableColumn<ForecastPoint>[] = [
+    {
+      id: "month",
+      header: t("forecast.column.month"),
+      sortValue: (f) => f.month,
+      cell: (f) => formatMonth(String(f.month).slice(0, 7)),
+    },
+    {
+      id: "amount",
+      header: t("forecast.column.amount"),
+      align: "right",
+      className: "tabular-nums",
+      sortValue: (f) => f.amount,
+      cell: (f) => formatCurrency(f.amount),
+    },
+  ];
 
   return (
     <div className="space-y-6">
@@ -72,10 +89,7 @@ export default function ForecastPage() {
               setSubmitted({ category: category || null, horizon });
             }}
           >
-            <div className="grid grid-rows-[1rem_2.25rem] gap-1">
-              <label className="flex items-center text-xs text-muted-foreground">
-                {t("forecast.category")}
-              </label>
+            <FilterField label={t("forecast.category")}>
               <CategorySelect
                 value={category}
                 onChange={setCategory}
@@ -83,11 +97,8 @@ export default function ForecastPage() {
                 ariaLabel={t("forecast.category")}
                 className="h-9 w-full"
               />
-            </div>
-            <div className="grid grid-rows-[1rem_2.25rem] gap-1">
-              <label className="flex items-center text-xs text-muted-foreground">
-                {t("forecast.horizon")}
-              </label>
+            </FilterField>
+            <FilterField label={t("forecast.horizon")}>
               <Input
                 type="number"
                 min={1}
@@ -96,7 +107,7 @@ export default function ForecastPage() {
                 onChange={(e) => setHorizon(Number(e.target.value))}
                 className="h-9 w-full"
               />
-            </div>
+            </FilterField>
             <div className="grid grid-rows-[1rem_2.25rem] gap-1 justify-self-start">
               <span
                 className="block h-4 select-none"
@@ -160,28 +171,13 @@ export default function ForecastPage() {
                 history={query.data.history}
                 forecast={query.data.forecast}
               />
-              <Table className="mt-4">
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>{t("forecast.column.month")}</TableHead>
-                    <TableHead className="text-right">
-                      {t("forecast.column.amount")}
-                    </TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {query.data.forecast.map((f) => (
-                    <TableRow key={f.month}>
-                      <TableCell>
-                        {formatMonth(String(f.month).slice(0, 7))}
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {formatCurrency(f.amount)}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+              <DataTable
+                columns={forecastColumns}
+                data={query.data.forecast}
+                rowKey={(f) => f.month}
+                initialSort={{ id: "month", dir: "asc" }}
+                className="mt-4"
+              />
             </>
           ) : null}
         </CardContent>

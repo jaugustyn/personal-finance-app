@@ -20,6 +20,20 @@ export function tooltipStyle() {
   };
 }
 
+export function truncateChartLabel(value: unknown, maxLength = 18): string {
+  const text = String(value ?? "");
+  if (text.length <= maxLength) return text;
+  if (maxLength <= 3) return text.slice(0, maxLength);
+  return `${text.slice(0, maxLength - 3).trimEnd()}...`;
+}
+
+export function formatCompactAxisNumber(value: unknown): string {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return "";
+  if (Math.abs(number) >= 1000) return `${Math.round(number / 1000)}k`;
+  return String(Math.round(number));
+}
+
 export interface SankeyNodeProps {
   x: number;
   y: number;

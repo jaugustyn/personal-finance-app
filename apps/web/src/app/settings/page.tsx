@@ -9,6 +9,7 @@ import { useT, tCategory, tTransactionType } from "@/lib/i18n";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { DataTable, type DataTableColumn } from "@/components/data-table";
 import { PageHeader } from "@/components/page-header";
 import { CategorySelect } from "@/components/category-select";
 import {
@@ -18,14 +19,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 
 const PROFILE_KEY = ["profile"] as const;
 const RULES_KEY = ["personalRules"] as const;
@@ -112,6 +105,93 @@ export default function SettingsPage() {
     },
     onError: () => toast.error(t("toast.error")),
   });
+  const ruleColumns: DataTableColumn<PersonalRule>[] = [
+    {
+      id: "pattern",
+      header: t("settings.rulePattern"),
+      sortValue: (rule) => rule.pattern,
+      cell: (rule) => (
+        <>
+          <div className="font-medium">{rule.pattern}</div>
+          <div className="text-xs text-muted-foreground">
+            {rule.pattern_target} · priority {rule.priority}
+          </div>
+        </>
+      ),
+    },
+    {
+      id: "category",
+      header: t("transactions.column.category"),
+      sortValue: (rule) => rule.category ?? "",
+      cell: (rule) =>
+        rule.category ? tCategory(t, rule.category) : t("common.unknown"),
+    },
+    {
+      id: "type",
+      header: t("transactions.filterType"),
+      sortValue: (rule) => rule.transaction_type ?? "",
+      cell: (rule) =>
+        rule.transaction_type
+          ? tTransactionType(t, rule.transaction_type)
+          : t("common.unknown"),
+    },
+    {
+      id: "mode",
+      header: t("settings.mode"),
+      sortValue: (rule) => rule.mode,
+      cell: (rule) => (
+        <select
+          value={rule.mode}
+          onChange={(event) =>
+            patchRule.mutate({
+              id: rule.id,
+              patch: {
+                mode: event.target.value as "suggest_only" | "auto_apply",
+              },
+            })
+          }
+          className="h-8 rounded-md border border-input bg-transparent px-2 text-xs"
+        >
+          <option value="suggest_only">{t("settings.modeSuggest")}</option>
+          <option value="auto_apply">{t("settings.modeAuto")}</option>
+        </select>
+      ),
+    },
+    {
+      id: "active",
+      header: t("settings.active"),
+      sortValue: (rule) => (rule.active ? 1 : 0),
+      cell: (rule) => (
+        <input
+          type="checkbox"
+          checked={rule.active}
+          onChange={(event) =>
+            patchRule.mutate({
+              id: rule.id,
+              patch: { active: event.target.checked },
+            })
+          }
+          className="h-4 w-4"
+        />
+      ),
+    },
+    {
+      id: "actions",
+      header: "",
+      headerClassName: "w-16",
+      className: "w-16",
+      cell: (rule) => (
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={() => deleteRule.mutate(rule.id)}
+          aria-label={t("common.delete")}
+        >
+          <Trash2 className="h-4 w-4 text-destructive" />
+        </Button>
+      ),
+    },
+  ];
 
   return (
     <div className="space-y-6">
@@ -222,86 +302,13 @@ export default function SettingsPage() {
               {t("common.add")}
             </Button>
           </div>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>{t("settings.rulePattern")}</TableHead>
-                <TableHead>{t("transactions.column.category")}</TableHead>
-                <TableHead>{t("transactions.filterType")}</TableHead>
-                <TableHead>{t("settings.mode")}</TableHead>
-                <TableHead>{t("settings.active")}</TableHead>
-                <TableHead className="w-16" />
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {(rulesQuery.data ?? []).map((rule) => (
-                <TableRow key={rule.id}>
-                  <TableCell>
-                    <div className="font-medium">{rule.pattern}</div>
-                    <div className="text-xs text-muted-foreground">
-                      {rule.pattern_target} · priority {rule.priority}
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    {rule.category
-                      ? tCategory(t, rule.category)
-                      : t("common.unknown")}
-                  </TableCell>
-                  <TableCell>
-                    {rule.transaction_type
-                      ? tTransactionType(t, rule.transaction_type)
-                      : t("common.unknown")}
-                  </TableCell>
-                  <TableCell>
-                    <select
-                      value={rule.mode}
-                      onChange={(event) =>
-                        patchRule.mutate({
-                          id: rule.id,
-                          patch: {
-                            mode: event.target.value as
-                              | "suggest_only"
-                              | "auto_apply",
-                          },
-                        })
-                      }
-                      className="h-8 rounded-md border border-input bg-transparent px-2 text-xs"
-                    >
-                      <option value="suggest_only">
-                        {t("settings.modeSuggest")}
-                      </option>
-                      <option value="auto_apply">
-                        {t("settings.modeAuto")}
-                      </option>
-                    </select>
-                  </TableCell>
-                  <TableCell>
-                    <input
-                      type="checkbox"
-                      checked={rule.active}
-                      onChange={(event) =>
-                        patchRule.mutate({
-                          id: rule.id,
-                          patch: { active: event.target.checked },
-                        })
-                      }
-                      className="h-4 w-4"
-                    />
-                  </TableCell>
-                  <TableCell>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => deleteRule.mutate(rule.id)}
-                      aria-label={t("common.delete")}
-                    >
-                      <Trash2 className="h-4 w-4 text-destructive" />
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+          <DataTable
+            columns={ruleColumns}
+            data={rulesQuery.data ?? []}
+            rowKey={(rule) => rule.id}
+            isLoading={rulesQuery.isLoading}
+            initialSort={{ id: "pattern", dir: "asc" }}
+          />
         </CardContent>
       </Card>
     </div>
