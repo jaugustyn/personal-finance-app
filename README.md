@@ -34,7 +34,7 @@ Requirements:
 
 ```powershell
 copy .env.example .env
-docker compose --env-file .env -p personal-finance-app -f docker/docker-compose.yml up -d --build
+docker compose --env-file .env.example -p personal-finance-app -f docker/docker-compose.yml up -d --build
 ```
 
 URLs:
