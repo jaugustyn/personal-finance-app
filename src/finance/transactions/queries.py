@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from finance.analytics.filters import expense_category_candidate_filters
 from finance.domain.models import Transaction
+from finance.transactions.normalization import normalize_text
 
 CategoryState = Literal[
     "all",
@@ -105,12 +106,27 @@ def filtered_transactions_stmt(filters: TransactionFilters):
     if filters.merchant:
         stmt = stmt.where(Transaction.merchant == filters.merchant)
     if filters.search:
-        pattern = f"%{filters.search.strip().lower()}%"
-        stmt = stmt.where(
-            or_(
-                func.lower(Transaction.merchant).like(pattern),
-                func.lower(Transaction.title).like(pattern),
+        search = filters.search.strip().lower()
+        pattern = f"%{search}%"
+        search_conditions = [
+            func.lower(Transaction.merchant).like(pattern),
+            func.lower(Transaction.title).like(pattern),
+        ]
+        terms = normalize_text(filters.search).split()
+        if len(terms) > 1:
+            search_conditions.append(
+                and_(
+                    *[
+                        or_(
+                            func.lower(Transaction.merchant).like(f"%{term}%"),
+                            func.lower(Transaction.title).like(f"%{term}%"),
+                        )
+                        for term in terms
+                    ]
+                )
             )
+        stmt = stmt.where(
+            or_(*search_conditions)
         )
     if filters.direction in {"debit", "credit"}:
         stmt = stmt.where(Transaction.direction == filters.direction)

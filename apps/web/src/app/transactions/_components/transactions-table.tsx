@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { type ReactNode, useMemo, useState } from "react";
 import { CategoryCombobox } from "@/components/category-combobox";
+import { TransactionTypeCombobox } from "@/components/transaction-type-combobox";
 import { Money } from "@/components/money";
 import { ConfidenceBadge } from "@/components/status-badge";
 import { Badge } from "@/components/ui/badge";
@@ -30,11 +31,14 @@ import {
 } from "@/components/ui/table";
 import type { Transaction } from "@/lib/api";
 import { tCategory, tTransactionType, useT } from "@/lib/i18n";
-import { formatDate } from "@/lib/utils";
+import { cn, formatDate } from "@/lib/utils";
 import {
+  ArrowDown,
   ArrowLeftRight,
+  ArrowUp,
   Ban,
   Check,
+  ChevronsUpDown,
   MoreHorizontal,
   Pencil,
   RotateCcw,
@@ -46,25 +50,14 @@ import {
 } from "lucide-react";
 import {
   PAGE_SIZE,
+  TRANSACTION_TYPE_OPTIONS,
   hasCategorySuggestion,
   hasRejectedCategorySuggestion,
   isCategoryCandidate,
 } from "../_lib/constants";
 
-/** All manually assignable transaction types (mirrors the backend enum). */
-const TRANSACTION_TYPES = [
-  "purchase",
-  "own_transfer",
-  "person_transfer",
-  "salary",
-  "income",
-  "refund",
-  "cash_withdrawal",
-  "debt_payment",
-  "bank_fee",
-  "savings_investment",
-  "other",
-] as const;
+type TransactionSortId = "date" | "merchant" | "type" | "category" | "amount";
+type TransactionSort = { id: TransactionSortId; dir: "asc" | "desc" } | null;
 
 interface TransactionsTableProps {
   rows: Transaction[];
@@ -120,9 +113,38 @@ export function TransactionsTable({
 }: TransactionsTableProps) {
   const { t } = useT();
   const [editing, setEditing] = useState<number | null>(null);
+  const [editingType, setEditingType] = useState<number | null>(null);
   const [annotating, setAnnotating] = useState<number | null>(null);
+  const [sort, setSort] = useState<TransactionSort>(null);
   const allOnPageSelected =
     rows.length > 0 && rows.every((r) => selected.has(r.id));
+  const sortedRows = useMemo(() => {
+    if (!sort) return rows;
+    const factor = sort.dir === "asc" ? 1 : -1;
+    return rows
+      .map((row, index) => ({ row, index }))
+      .sort((a, b) => {
+        const av = transactionSortValue(a.row, sort.id);
+        const bv = transactionSortValue(b.row, sort.id);
+        let result: number;
+        if (typeof av === "number" && typeof bv === "number") {
+          result = av - bv;
+        } else {
+          result = String(av).localeCompare(String(bv), "pl", {
+            sensitivity: "base",
+          });
+        }
+        return result === 0 ? a.index - b.index : result * factor;
+      })
+      .map(({ row }) => row);
+  }, [rows, sort]);
+  const toggleSort = (id: TransactionSortId) => {
+    setSort((prev) => {
+      if (prev?.id !== id) return { id, dir: "asc" };
+      if (prev.dir === "asc") return { id, dir: "desc" };
+      return null;
+    });
+  };
 
   return (
     <Card>
@@ -145,40 +167,73 @@ export function TransactionsTable({
                       aria-label="select all"
                     />
                   </TableHead>
-                  <TableHead className="w-28">
+                  <SortableTableHead
+                    id="date"
+                    sort={sort}
+                    onSort={toggleSort}
+                    className="w-28"
+                  >
                     {t("transactions.column.date")}
-                  </TableHead>
-                  <TableHead>{t("transactions.column.merchant")}</TableHead>
-                  <TableHead className="w-40">
+                  </SortableTableHead>
+                  <SortableTableHead
+                    id="merchant"
+                    sort={sort}
+                    onSort={toggleSort}
+                  >
+                    {t("transactions.column.merchant")}
+                  </SortableTableHead>
+                  <SortableTableHead
+                    id="type"
+                    sort={sort}
+                    onSort={toggleSort}
+                    className="w-40"
+                  >
                     {t("transactions.column.type")}
-                  </TableHead>
-                  <TableHead className="w-64">
+                  </SortableTableHead>
+                  <SortableTableHead
+                    id="category"
+                    sort={sort}
+                    onSort={toggleSort}
+                    className="w-64"
+                  >
                     {t("transactions.column.category")}
-                  </TableHead>
-                  <TableHead className="w-32 text-right">
+                  </SortableTableHead>
+                  <SortableTableHead
+                    id="amount"
+                    sort={sort}
+                    onSort={toggleSort}
+                    className="w-32 text-right"
+                    align="right"
+                  >
                     {t("transactions.column.amount")}
-                  </TableHead>
+                  </SortableTableHead>
                   <TableHead className="w-12" />
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {rows.map((tx) => (
+                {sortedRows.map((tx) => (
                   <TransactionRow
                     key={tx.id}
                     tx={tx}
                     selected={selected.has(tx.id)}
                     editing={editing === tx.id}
+                    editingType={editingType === tx.id}
                     acceptPending={acceptPending}
                     rejectPending={rejectPending}
                     restorePending={restorePending}
                     onToggle={() => onToggleOne(tx.id)}
                     onEdit={() => setEditing(tx.id)}
                     onCancelEdit={() => setEditing(null)}
+                    onEditType={() => setEditingType(tx.id)}
+                    onCancelEditType={() => setEditingType(null)}
                     onPatchCategory={(value, subcategory, rememberRule) => {
                       onPatchCategory(tx.id, value, subcategory, rememberRule);
                       setEditing(null);
                     }}
-                    onPatchType={(value) => onPatchType(tx.id, value)}
+                    onPatchType={(value) => {
+                      onPatchType(tx.id, value);
+                      setEditingType(null);
+                    }}
                     onAcceptSuggestion={() => onAcceptSuggestion(tx.id)}
                     onRejectSuggestion={() => onRejectSuggestion(tx.id)}
                     onRestoreSuggestion={() => onRestoreSuggestion(tx.id)}
@@ -225,16 +280,83 @@ export function TransactionsTable({
   );
 }
 
+function transactionSortValue(tx: Transaction, id: TransactionSortId) {
+  switch (id) {
+    case "date":
+      return tx.booking_date;
+    case "merchant":
+      return tx.merchant || tx.title;
+    case "type":
+      return tx.transaction_type;
+    case "category":
+      return tx.category ?? tx.category_predicted ?? "";
+    case "amount":
+      return Number(tx.amount);
+  }
+}
+
+function SortableTableHead({
+  id,
+  sort,
+  onSort,
+  children,
+  className,
+  align = "left",
+}: {
+  id: TransactionSortId;
+  sort: TransactionSort;
+  onSort: (id: TransactionSortId) => void;
+  children: ReactNode;
+  className?: string;
+  align?: "left" | "right";
+}) {
+  const { t } = useT();
+  const active = sort?.id === id;
+  return (
+    <TableHead
+      aria-sort={
+        active ? (sort!.dir === "asc" ? "ascending" : "descending") : "none"
+      }
+      className={className}
+    >
+      <button
+        type="button"
+        onClick={() => onSort(id)}
+        title={t("table.sort")}
+        className={cn(
+          "inline-flex items-center gap-1 transition-colors hover:text-foreground",
+          active && "text-foreground",
+          align === "right" && "ml-auto flex-row-reverse",
+        )}
+      >
+        {children}
+        {active ? (
+          sort!.dir === "asc" ? (
+            <ArrowUp className="h-3.5 w-3.5" />
+          ) : (
+            <ArrowDown className="h-3.5 w-3.5" />
+          )
+        ) : (
+          <ChevronsUpDown className="h-3.5 w-3.5 opacity-50" />
+        )}
+      </button>
+    </TableHead>
+  );
+}
+
 interface TransactionRowProps {
   tx: Transaction;
   selected: boolean;
   editing: boolean;
+  editingType: boolean;
   acceptPending: boolean;
   rejectPending: boolean;
   restorePending: boolean;
   onToggle: () => void;
   onEdit: () => void;
   onCancelEdit: () => void;
+  onEditType: () => void;
+  onCancelEditType: () => void;
   onPatchCategory: (
     value: string | null,
     subcategory: string | null,
@@ -255,12 +377,15 @@ function TransactionRow({
   tx,
   selected,
   editing,
+  editingType,
   acceptPending,
   rejectPending,
   restorePending,
   onToggle,
   onEdit,
   onCancelEdit,
+  onEditType,
+  onCancelEditType,
   onPatchCategory,
   onPatchType,
   onAcceptSuggestion,
@@ -330,13 +455,26 @@ function TransactionRow({
           )
         )}
       </TableCell>
-      <TableCell>
-        <Badge variant="outline" className="max-w-full truncate">
-          {tx.is_transfer ? (
-            <ArrowLeftRight className="mr-1 h-3 w-3 shrink-0" />
-          ) : null}
-          {tTransactionType(t, tx.transaction_type)}
-        </Badge>
+      <TableCell
+        onDoubleClick={() => {
+          if (!editingType) onEditType();
+        }}
+        title={!editingType ? t("transactions.editTypeHint") : undefined}
+      >
+        {editingType ? (
+          <TransactionTypeInlineSelect
+            value={tx.transaction_type || "purchase"}
+            onChange={onPatchType}
+            onCancel={onCancelEditType}
+          />
+        ) : (
+          <Badge variant="outline" className="max-w-full truncate">
+            {tx.is_transfer ? (
+              <ArrowLeftRight className="mr-1 h-3 w-3 shrink-0" />
+            ) : null}
+            {tTransactionType(t, tx.transaction_type)}
+          </Badge>
+        )}
       </TableCell>
       <TableCell
         onDoubleClick={() => {
@@ -501,7 +639,7 @@ function TransactionRow({
                   {t("transactions.changeType")}
                 </DropdownMenuSubTrigger>
                 <DropdownMenuSubContent className="max-h-80 overflow-y-auto">
-                  {TRANSACTION_TYPES.map((type) => (
+                  {TRANSACTION_TYPE_OPTIONS.map((type) => (
                     <DropdownMenuItem
                       key={type}
                       onClick={() => onPatchType(type)}
@@ -530,6 +668,26 @@ function TransactionRow({
         )}
       </TableCell>
     </TableRow>
+  );
+}
+
+function TransactionTypeInlineSelect({
+  value,
+  onChange,
+  onCancel,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  onCancel: () => void;
+}) {
+  return (
+    <TransactionTypeCombobox
+      value={value}
+      onChange={onChange}
+      onCancel={onCancel}
+      autoFocus
+      size="sm"
+    />
   );
 }
 

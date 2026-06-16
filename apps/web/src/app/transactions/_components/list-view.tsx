@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
@@ -12,6 +12,7 @@ import {
 import { useT } from "@/lib/i18n";
 import { useConfirm } from "@/components/confirm-dialog";
 import { ErrorState } from "@/components/error-state";
+import { useLocalStorageState } from "@/hooks/use-local-storage-state";
 import {
   PAGE_SIZE,
   hasCategorySuggestion,
@@ -23,27 +24,115 @@ import { TransactionsTable } from "./transactions-table";
 
 interface ListViewProps {
   reviewMode: boolean;
-  initialSearch?: string;
+  initialFilters?: TransactionInitialFilters;
 }
 
-export function ListView({ reviewMode, initialSearch = "" }: ListViewProps) {
+export interface TransactionInitialFilters {
+  key: string;
+  search?: string;
+  category?: string;
+  direction?: Direction;
+  transactionType?: string;
+  dateFrom?: string;
+  dateTo?: string;
+  importId?: number;
+  reviewState?: CategoryState;
+  includeTransfers?: boolean;
+}
+
+export function ListView({ reviewMode, initialFilters }: ListViewProps) {
   const { t } = useT();
   const qc = useQueryClient();
   const confirm = useConfirm();
-  const [search, setSearch] = useState(initialSearch);
-  const [direction, setDirection] = useState<Direction>("all");
-  const [category, setCategory] = useState("");
+  const storagePrefix = reviewMode
+    ? "finance.transactions.review"
+    : "finance.transactions.list";
+  const [search, setSearch] = useLocalStorageState(
+    `${storagePrefix}.search`,
+    "",
+  );
+  const [direction, setDirection] = useLocalStorageState<Direction>(
+    `${storagePrefix}.direction`,
+    "all",
+  );
+  const [category, setCategory] = useLocalStorageState(
+    `${storagePrefix}.category`,
+    "",
+  );
   const [page, setPage] = useState(0);
-  const [includeTransfers, setIncludeTransfers] = useState(!reviewMode);
-  const [transactionType, setTransactionType] = useState("");
-  const [minConfidence, setMinConfidence] = useState("");
-  const [reviewState, setReviewState] = useState<CategoryState>("needs_review");
+  const [importId, setImportId] = useState<number | undefined>(
+    initialFilters?.importId,
+  );
+  const [includeTransfers, setIncludeTransfers] = useLocalStorageState(
+    `${storagePrefix}.includeTransfers`,
+    !reviewMode,
+  );
+  const [transactionType, setTransactionType] = useLocalStorageState(
+    `${storagePrefix}.transactionType`,
+    "",
+  );
+  const [dateFrom, setDateFrom] = useLocalStorageState(
+    `${storagePrefix}.dateFrom`,
+    "",
+  );
+  const [dateTo, setDateTo] = useLocalStorageState(
+    `${storagePrefix}.dateTo`,
+    "",
+  );
+  const [minConfidence, setMinConfidence] = useLocalStorageState(
+    `${storagePrefix}.minConfidence`,
+    "",
+  );
+  const [reviewState, setReviewState] = useLocalStorageState<CategoryState>(
+    `${storagePrefix}.reviewState`,
+    "needs_review",
+  );
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [bulkCat, setBulkCat] = useState<string | null>(null);
+  const [bulkType, setBulkType] = useState("");
   const confidenceFilter = minConfidence ? Number(minConfidence) : undefined;
   const searchFilter = search.trim() || undefined;
   const directionFilter = direction === "all" ? undefined : direction;
   const categoryFilter = category || undefined;
+
+  useEffect(() => {
+    if (!initialFilters?.key) return;
+    if (initialFilters.search !== undefined) setSearch(initialFilters.search);
+    if (initialFilters.category !== undefined) setCategory(initialFilters.category);
+    if (initialFilters.direction !== undefined) setDirection(initialFilters.direction);
+    if (initialFilters.transactionType !== undefined) {
+      setTransactionType(initialFilters.transactionType);
+    }
+    if (initialFilters.dateFrom !== undefined) setDateFrom(initialFilters.dateFrom);
+    if (initialFilters.dateTo !== undefined) setDateTo(initialFilters.dateTo);
+    if (initialFilters.importId !== undefined) setImportId(initialFilters.importId);
+    if (initialFilters.reviewState !== undefined) {
+      setReviewState(initialFilters.reviewState);
+    }
+    if (initialFilters.includeTransfers !== undefined) {
+      setIncludeTransfers(initialFilters.includeTransfers);
+    }
+    setPage(0);
+  }, [
+    initialFilters?.key,
+    initialFilters?.search,
+    initialFilters?.category,
+    initialFilters?.direction,
+    initialFilters?.transactionType,
+    initialFilters?.dateFrom,
+    initialFilters?.dateTo,
+    initialFilters?.importId,
+    initialFilters?.reviewState,
+    initialFilters?.includeTransfers,
+    setCategory,
+    setDateFrom,
+    setDateTo,
+    setDirection,
+    setIncludeTransfers,
+    setReviewState,
+    setSearch,
+    setTransactionType,
+  ]);
 
   const query = useQuery({
     queryKey: [
@@ -53,6 +142,9 @@ export function ListView({ reviewMode, initialSearch = "" }: ListViewProps) {
         search: searchFilter,
         direction: directionFilter,
         category: categoryFilter,
+        dateFrom,
+        dateTo,
+        importId,
         includeTransfers,
         reviewMode,
         reviewState,
@@ -67,6 +159,9 @@ export function ListView({ reviewMode, initialSearch = "" }: ListViewProps) {
         search: searchFilter,
         direction: directionFilter,
         category: categoryFilter,
+        date_from: dateFrom || undefined,
+        date_to: dateTo || undefined,
+        import_id: importId,
         include_transfers: includeTransfers,
         category_state: reviewMode ? reviewState : "all",
         min_confidence: confidenceFilter,
@@ -183,6 +278,21 @@ export function ListView({ reviewMode, initialSearch = "" }: ListViewProps) {
     onError: () => toast.error(t("toast.error")),
   });
 
+  const bulkSetType = useMutation({
+    mutationFn: (vars: { ids: number[]; transactionType: string }) =>
+      api.bulkCategorize({
+        ids: vars.ids,
+        transaction_type: vars.transactionType,
+      }),
+    onSuccess: () => {
+      invalidateAll();
+      setSelected(new Set());
+      setBulkType("");
+      toast.success(t("toast.saved"));
+    },
+    onError: () => toast.error(t("toast.error")),
+  });
+
   const bulkDelete = useMutation({
     mutationFn: (ids: number[]) => api.bulkDelete(ids),
     onSuccess: () => {
@@ -283,6 +393,9 @@ export function ListView({ reviewMode, initialSearch = "" }: ListViewProps) {
         category={category}
         direction={direction}
         transactionType={transactionType}
+        dateFrom={dateFrom}
+        dateTo={dateTo}
+        importId={importId}
         minConfidence={minConfidence}
         reviewState={reviewState}
         includeTransfers={includeTransfers}
@@ -302,6 +415,14 @@ export function ListView({ reviewMode, initialSearch = "" }: ListViewProps) {
         }}
         onTransactionTypeChange={(value) => {
           setTransactionType(value);
+          resetPage();
+        }}
+        onDateFromChange={(value) => {
+          setDateFrom(value);
+          resetPage();
+        }}
+        onDateToChange={(value) => {
+          setDateTo(value);
           resetPage();
         }}
         onMinConfidenceChange={(value) => {
@@ -327,15 +448,26 @@ export function ListView({ reviewMode, initialSearch = "" }: ListViewProps) {
         selectedSuggestionCount={selectedSuggestionIds.length}
         selectedRejectedSuggestionCount={selectedRejectedSuggestionIds.length}
         bulkCategory={bulkCat}
+        bulkType={bulkType}
         bulkCategorizePending={bulkCategorize.isPending}
+        bulkTypePending={bulkSetType.isPending}
         bulkDeletePending={bulkDelete.isPending}
         rejectPending={rejectSuggestions.isPending}
         restorePending={restoreSuggestions.isPending}
         onBulkCategoryChange={setBulkCat}
+        onBulkTypeChange={(value) =>
+          setBulkType(value === "none" ? "" : value)
+        }
         onBulkCategorize={() =>
           bulkCategorize.mutate({
             ids: Array.from(selected),
             category: bulkCat,
+          })
+        }
+        onBulkType={() =>
+          bulkSetType.mutate({
+            ids: Array.from(selected),
+            transactionType: bulkType,
           })
         }
         onRejectSuggestions={() =>
@@ -351,7 +483,10 @@ export function ListView({ reviewMode, initialSearch = "" }: ListViewProps) {
           })
         }
         onDelete={onConfirmDelete}
-        onCancel={() => setSelected(new Set())}
+        onCancel={() => {
+          setSelected(new Set());
+          setBulkType("");
+        }}
       />
 
       {query.isError ? (

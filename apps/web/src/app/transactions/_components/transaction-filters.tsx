@@ -1,7 +1,6 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -12,10 +11,11 @@ import {
 } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { CategorySelect } from "@/components/category-select";
+import { TransactionTypeCombobox } from "@/components/transaction-type-combobox";
+import { FilterField, FilterPanel } from "@/components/filter-panel";
 import { api, type CategoryState, type Direction } from "@/lib/api";
-import { tTransactionType, useT } from "@/lib/i18n";
+import { useT } from "@/lib/i18n";
 import { Download } from "lucide-react";
-import { TRANSACTION_TYPE_OPTIONS } from "../_lib/constants";
 
 interface TransactionFiltersProps {
   reviewMode: boolean;
@@ -23,6 +23,9 @@ interface TransactionFiltersProps {
   category: string;
   direction: Direction;
   transactionType: string;
+  dateFrom: string;
+  dateTo: string;
+  importId?: number;
   minConfidence: string;
   reviewState: CategoryState;
   includeTransfers: boolean;
@@ -32,6 +35,8 @@ interface TransactionFiltersProps {
   onCategoryChange: (value: string) => void;
   onDirectionChange: (value: Direction) => void;
   onTransactionTypeChange: (value: string) => void;
+  onDateFromChange: (value: string) => void;
+  onDateToChange: (value: string) => void;
   onMinConfidenceChange: (value: string) => void;
   onReviewStateChange: (value: CategoryState) => void;
   onIncludeTransfersChange: (value: boolean) => void;
@@ -44,6 +49,9 @@ export function TransactionFilters({
   category,
   direction,
   transactionType,
+  dateFrom,
+  dateTo,
+  importId,
   minConfidence,
   reviewState,
   includeTransfers,
@@ -53,6 +61,8 @@ export function TransactionFilters({
   onCategoryChange,
   onDirectionChange,
   onTransactionTypeChange,
+  onDateFromChange,
+  onDateToChange,
   onMinConfidenceChange,
   onReviewStateChange,
   onIncludeTransfersChange,
@@ -65,91 +75,154 @@ export function TransactionFilters({
   const categoryFilter = category || undefined;
 
   return (
-    <Card>
-      <CardContent className="pt-6">
-        <div className="flex flex-wrap items-center gap-3">
-          <Input
-            placeholder={t("transactions.search")}
-            value={search}
-            onChange={(e) => onSearchChange(e.target.value)}
-            className="max-w-xs"
-          />
-          {reviewMode && (
-            <Select
-              value={reviewState}
-              onValueChange={(v) => onReviewStateChange(v as CategoryState)}
-            >
-              <SelectTrigger
-                className="w-auto min-w-40"
-                aria-label={t("transactions.reviewQueue")}
+    <FilterPanel
+      hint={reviewMode ? t("transactions.reviewHint") : undefined}
+      actions={
+        <>
+          <label className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Checkbox
+              checked={includeTransfers}
+              onCheckedChange={(c) => onIncludeTransfersChange(c === true)}
+            />
+            {t("transactions.includeTransfers")}
+          </label>
+          <div className="ml-auto flex flex-wrap items-center gap-2">
+            <Button size="sm" variant="outline" asChild>
+              <a
+                href={api.exportTransactionsUrl({
+                  search: searchFilter,
+                  direction: directionFilter,
+                  category: categoryFilter,
+                  date_from: dateFrom || undefined,
+                  date_to: dateTo || undefined,
+                  import_id: importId,
+                  include_transfers: includeTransfers,
+                  category_state: reviewMode ? reviewState : "all",
+                  min_confidence: confidenceFilter,
+                  transaction_type: transactionType || undefined,
+                  review_priority: reviewMode,
+                })}
               >
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="needs_review">
-                  {t("transactions.reviewQueue.needsReview")}
-                </SelectItem>
-                <SelectItem value="rejected">
-                  {t("transactions.reviewQueue.rejected")}
-                </SelectItem>
-              </SelectContent>
-            </Select>
-          )}
-          <CategorySelect
-            value={category}
-            onChange={onCategoryChange}
-            allLabel={t("transactions.filterCategoryAll")}
-            ariaLabel={t("transactions.filterCategory")}
+                <Download className="mr-2 h-4 w-4" />
+                {t("transactions.exportCsv")}
+              </a>
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={suggestionCount === 0 || acceptPending}
+              onClick={onAcceptSuggestions}
+            >
+              {t("transactions.acceptSuggestions", { n: suggestionCount })}
+            </Button>
+          </div>
+        </>
+      }
+    >
+      <FilterField
+        label={t("transactions.filterSearch")}
+        className="md:col-span-2 xl:col-span-2"
+      >
+        <Input
+          placeholder={t("transactions.search")}
+          value={search}
+          onChange={(e) => onSearchChange(e.target.value)}
+          className="w-full"
+        />
+      </FilterField>
+      {reviewMode && (
+        <FilterField label={t("transactions.reviewQueue")}>
+          <Select
+            value={reviewState}
+            onValueChange={(v) => onReviewStateChange(v as CategoryState)}
+          >
+            <SelectTrigger
+              className="w-full"
+              aria-label={t("transactions.reviewQueue")}
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="needs_review">
+                {t("transactions.reviewQueue.needsReview")}
+              </SelectItem>
+              <SelectItem value="rejected">
+                {t("transactions.reviewQueue.rejected")}
+              </SelectItem>
+            </SelectContent>
+          </Select>
+        </FilterField>
+      )}
+      <FilterField label={t("transactions.filterDateRange")} className="md:col-span-2">
+        <div className="grid grid-cols-2 gap-2">
+          <Input
+            type="date"
+            value={dateFrom}
+            onChange={(e) => onDateFromChange(e.target.value)}
+            aria-label={t("transactions.filterDateFrom")}
           />
-          <Select
-            value={direction}
-            onValueChange={(v) => onDirectionChange(v as Direction)}
+          <Input
+            type="date"
+            value={dateTo}
+            onChange={(e) => onDateToChange(e.target.value)}
+            aria-label={t("transactions.filterDateTo")}
+          />
+        </div>
+      </FilterField>
+      <FilterField label={t("transactions.filterCategory")}>
+        <CategorySelect
+          value={category}
+          onChange={onCategoryChange}
+          allLabel={t("transactions.filterCategoryAll")}
+          ariaLabel={t("transactions.filterCategory")}
+          className="w-full"
+        />
+      </FilterField>
+      <FilterField label={t("transactions.filterDirection")}>
+        <Select
+          value={direction}
+          onValueChange={(v) => onDirectionChange(v as Direction)}
+        >
+          <SelectTrigger
+            className="w-full"
+            aria-label={t("transactions.filterDirection")}
           >
-            <SelectTrigger
-              className="w-auto min-w-36"
-              aria-label={t("transactions.filterDirection")}
-            >
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">
-                {t("transactions.filterDirection.all")}
-              </SelectItem>
-              <SelectItem value="debit">
-                {t("transactions.filterDirection.debit")}
-              </SelectItem>
-              <SelectItem value="credit">
-                {t("transactions.filterDirection.credit")}
-              </SelectItem>
-            </SelectContent>
-          </Select>
-          <Select
-            value={transactionType || "all"}
-            onValueChange={(v) => onTransactionTypeChange(v === "all" ? "" : v)}
-          >
-            <SelectTrigger
-              className="w-auto min-w-36"
-              aria-label={t("transactions.filterType")}
-            >
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">
-                {t("transactions.filterType.all")}
-              </SelectItem>
-              {TRANSACTION_TYPE_OPTIONS.map((type) => (
-                <SelectItem key={type} value={type}>
-                  {tTransactionType(t, type)}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">
+              {t("transactions.filterDirection.all")}
+            </SelectItem>
+            <SelectItem value="debit">
+              {t("transactions.filterDirection.debit")}
+            </SelectItem>
+            <SelectItem value="credit">
+              {t("transactions.filterDirection.credit")}
+            </SelectItem>
+          </SelectContent>
+        </Select>
+      </FilterField>
+      <FilterField label={t("transactions.filterType")}>
+        <TransactionTypeCombobox
+          value={transactionType || "all"}
+          onChange={(v) => onTransactionTypeChange(v === "all" ? "" : v)}
+          includeEmpty
+          emptyValue="all"
+          emptyLabel={t("transactions.filterType.all")}
+          ariaLabel={t("transactions.filterType")}
+          size="md"
+        />
+      </FilterField>
+      {reviewMode && (
+        <FilterField label={t("transactions.filterConfidence")}>
           <Select
             value={minConfidence || "all"}
-            onValueChange={(v) => onMinConfidenceChange(v === "all" ? "" : v)}
+            onValueChange={(v) =>
+              onMinConfidenceChange(v === "all" ? "" : v)
+            }
           >
             <SelectTrigger
-              className="w-auto min-w-36"
+              className="w-full"
               aria-label={t("transactions.filterConfidence")}
             >
               <SelectValue />
@@ -169,41 +242,8 @@ export function TransactionFilters({
               </SelectItem>
             </SelectContent>
           </Select>
-          <label className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Checkbox
-              checked={includeTransfers}
-              onCheckedChange={(c) => onIncludeTransfersChange(c === true)}
-            />
-            {t("transactions.includeTransfers")}
-          </label>
-          <a
-            href={api.exportTransactionsUrl({
-              search: searchFilter,
-              direction: directionFilter,
-              category: categoryFilter,
-              include_transfers: includeTransfers,
-              category_state: reviewMode ? reviewState : "all",
-              min_confidence: confidenceFilter,
-              transaction_type: transactionType || undefined,
-              review_priority: reviewMode,
-            })}
-            className="ml-auto"
-          >
-            <Button size="sm" variant="outline" asChild={false}>
-              <Download className="mr-2 h-4 w-4" />
-              {t("transactions.exportCsv")}
-            </Button>
-          </a>
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={suggestionCount === 0 || acceptPending}
-            onClick={onAcceptSuggestions}
-          >
-            {t("transactions.acceptSuggestions", { n: suggestionCount })}
-          </Button>
-        </div>
-      </CardContent>
-    </Card>
+        </FilterField>
+      )}
+    </FilterPanel>
   );
 }

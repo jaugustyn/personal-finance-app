@@ -354,6 +354,62 @@ def test_update_type_to_non_candidate_clears_category_and_prediction(db_session)
     assert tx.category_suggestion_rejected is False
 
 
+def test_bulk_set_transaction_type_keeps_category_when_still_candidate(db_session) -> None:
+    first = _tx(
+        db_session,
+        dedup_hash="bulk-type-1",
+        category="food",
+        category_source="manual",
+    )
+    second = _tx(
+        db_session,
+        dedup_hash="bulk-type-2",
+        category="shopping",
+        category_source="manual",
+    )
+
+    affected = service.bulk_categorize(
+        db_session,
+        ids=[first.id, second.id],
+        merchant=None,
+        transaction_type="bank_fee",
+    )
+
+    assert affected == 2
+    db_session.refresh(first)
+    db_session.refresh(second)
+    assert first.transaction_type == "bank_fee"
+    assert second.transaction_type == "bank_fee"
+    assert first.category == "food"
+    assert second.category == "shopping"
+
+
+def test_bulk_set_transaction_type_clears_category_for_non_candidate(db_session) -> None:
+    tx = _tx(
+        db_session,
+        dedup_hash="bulk-type-clear",
+        category="food",
+        category_source="manual",
+        category_predicted="shopping",
+        category_confidence=0.88,
+        category_predicted_source="model",
+    )
+
+    affected = service.bulk_categorize(
+        db_session,
+        ids=[tx.id],
+        merchant=None,
+        transaction_type="person_transfer",
+    )
+
+    assert affected == 1
+    db_session.refresh(tx)
+    assert tx.transaction_type == "person_transfer"
+    assert tx.category is None
+    assert tx.category_predicted is None
+    assert tx.category_suggestion_rejected is False
+
+
 def test_accept_suggestions_promotes_high_confidence_predictions(db_session) -> None:
     high = _tx(
         db_session,

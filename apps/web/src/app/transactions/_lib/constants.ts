@@ -1,22 +1,9 @@
 import type { Transaction } from "@/lib/api";
+export { TRANSACTION_TYPE_OPTIONS } from "@/lib/transaction-types";
 
 export const PAGE_SIZE = 100;
 
 export type TransactionsView = "list" | "review" | "groups";
-
-export const TRANSACTION_TYPE_OPTIONS = [
-  "purchase",
-  "person_transfer",
-  "own_transfer",
-  "salary",
-  "income",
-  "refund",
-  "cash_withdrawal",
-  "debt_payment",
-  "bank_fee",
-  "savings_investment",
-  "other",
-];
 
 export const CATEGORY_CANDIDATE_TYPES = new Set([
   "purchase",

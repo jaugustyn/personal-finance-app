@@ -323,8 +323,9 @@ def update_annotations(
 class BulkCategorize(BaseModel):
     ids: list[int] | None = None
     merchant: str | None = None
-    category: str | None  # None clears
+    category: str | None = None  # explicit null clears
     mark_transfer: bool | None = None
+    transaction_type: str | None = None
 
 
 class BulkResult(BaseModel):
@@ -343,13 +344,24 @@ def bulk_categorize(
         raise HTTPException(
             status_code=422, detail="Provide ids or merchant for bulk update."
         )
-    affected = tx_service.bulk_categorize(
-        session,
-        ids=payload.ids,
-        merchant=payload.merchant,
-        category=payload.category,
-        mark_transfer=payload.mark_transfer,
-    )
+    try:
+        affected = tx_service.bulk_categorize(
+            session,
+            ids=payload.ids,
+            merchant=payload.merchant,
+            category=(
+                payload.category
+                if "category" in payload.model_fields_set
+                else tx_service.UNCHANGED
+            ),
+            mark_transfer=payload.mark_transfer,
+            transaction_type=payload.transaction_type,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail="Invalid transaction type.",
+        ) from exc
     return BulkResult(affected=affected)
 
 

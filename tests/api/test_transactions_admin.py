@@ -94,6 +94,27 @@ def test_bulk_categorize_by_merchant(client, db_session) -> None:
     assert r.json()["affected"] == 2
 
 
+def test_bulk_set_transaction_type_by_ids(client, db_session) -> None:
+    a = _tx(db_session, dedup_hash="bt1", category="food")
+    b = _tx(db_session, dedup_hash="bt2", category="shopping")
+
+    r = client.post(
+        "/transactions/bulk/categorize",
+        json={"ids": [a.id, b.id], "transaction_type": "own_transfer"},
+    )
+
+    assert r.status_code == 200
+    assert r.json()["affected"] == 2
+    db_session.refresh(a)
+    db_session.refresh(b)
+    assert a.transaction_type == "own_transfer"
+    assert b.transaction_type == "own_transfer"
+    assert a.is_transfer is True
+    assert b.is_transfer is True
+    assert a.category is None
+    assert b.category is None
+
+
 def test_bulk_categorize_requires_selection(client) -> None:
     r = client.post("/transactions/bulk/categorize", json={"category": "food"})
     assert r.status_code == 422

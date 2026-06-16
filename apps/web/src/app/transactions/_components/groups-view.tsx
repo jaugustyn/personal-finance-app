@@ -3,17 +3,10 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CategoryCombobox } from "@/components/category-combobox";
+import { DataTable, type DataTableColumn } from "@/components/data-table";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { TableSkeleton } from "@/components/ui/skeleton";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { api, type MerchantGroup } from "@/lib/api";
 import { useT } from "@/lib/i18n";
 import { formatCurrency } from "@/lib/utils";
@@ -42,6 +35,113 @@ export function GroupsView() {
       });
     },
   });
+  const groupNet = (g: MerchantGroup) => {
+    const debit = Math.abs(Number(g.total_debit) || 0);
+    const credit = Math.abs(Number(g.total_credit) || 0);
+    return credit - debit;
+  };
+  const columns: DataTableColumn<MerchantGroup>[] = [
+    {
+      id: "merchant",
+      header: t("transactions.column.merchant"),
+      sortValue: (g) => g.merchant,
+      className: "font-medium",
+      cell: (g) => (
+        <>
+          <div className="truncate">{g.merchant}</div>
+          {g.sample_titles.length > 0 && (
+            <div className="line-clamp-1 text-xs text-muted-foreground">
+              {g.sample_titles.slice(0, 2).join(" · ")}
+            </div>
+          )}
+        </>
+      ),
+    },
+    {
+      id: "amount",
+      header: t("transactions.column.amount"),
+      align: "right",
+      headerClassName: "w-36",
+      className: "w-36 tabular-nums",
+      sortValue: groupNet,
+      cell: (g) => {
+        const net = groupNet(g);
+        return (
+          <span
+            className={
+              net < 0
+                ? "text-red-600 dark:text-red-400"
+                : "text-emerald-600 dark:text-emerald-400"
+            }
+          >
+            {formatCurrency(net, "PLN")}
+          </span>
+        );
+      },
+    },
+    {
+      id: "count",
+      header: "#",
+      align: "center",
+      headerClassName: "w-16",
+      className: "w-16 text-muted-foreground",
+      sortValue: (g) => g.count,
+      cell: (g) => g.count,
+    },
+    {
+      id: "category",
+      header: t("transactions.column.category"),
+      headerClassName: "w-64",
+      className: "w-64",
+      sortValue: (g) => g.common_category ?? "",
+      cell: (g) => {
+        const picked =
+          g.merchant in pickers
+            ? pickers[g.merchant]
+            : (g.common_category ?? null);
+        return (
+          <CategoryCombobox
+            value={picked}
+            onChange={(sel) =>
+              setPickers((p) => ({
+                ...p,
+                [g.merchant]: sel.category,
+              }))
+            }
+            groupsOnly
+            size="md"
+            className="w-60"
+          />
+        );
+      },
+    },
+    {
+      id: "actions",
+      header: "",
+      headerClassName: "w-28",
+      className: "w-28",
+      cell: (g) => {
+        const picked =
+          g.merchant in pickers
+            ? pickers[g.merchant]
+            : (g.common_category ?? null);
+        return (
+          <Button
+            size="sm"
+            disabled={apply.isPending || !picked}
+            onClick={() =>
+              apply.mutate({
+                merchant: g.merchant,
+                category: picked,
+              })
+            }
+          >
+            {t("transactions.groups.apply")}
+          </Button>
+        );
+      },
+    },
+  ];
 
   return (
     <Card>
@@ -71,84 +171,13 @@ export function GroupsView() {
             {t("transactions.groups.empty")}
           </p>
         ) : (
-          <Table className="min-w-[760px] table-fixed">
-            <TableHeader>
-              <TableRow>
-                <TableHead>{t("transactions.column.merchant")}</TableHead>
-                <TableHead className="w-36 text-right">
-                  {t("transactions.column.amount")}
-                </TableHead>
-                <TableHead className="w-16 text-center">#</TableHead>
-                <TableHead className="w-64">
-                  {t("transactions.column.category")}
-                </TableHead>
-                <TableHead className="w-28" />
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {(query.data ?? []).map((g) => {
-                const debit = Math.abs(Number(g.total_debit) || 0);
-                const credit = Math.abs(Number(g.total_credit) || 0);
-                const net = credit - debit;
-                const picked =
-                  g.merchant in pickers
-                    ? pickers[g.merchant]
-                    : (g.common_category ?? null);
-                return (
-                  <TableRow key={g.merchant}>
-                    <TableCell className="font-medium">
-                      <div className="truncate">{g.merchant}</div>
-                      {g.sample_titles.length > 0 && (
-                        <div className="line-clamp-1 text-xs text-muted-foreground">
-                          {g.sample_titles.slice(0, 2).join(" · ")}
-                        </div>
-                      )}
-                    </TableCell>
-                    <TableCell
-                      className={`text-right tabular-nums ${
-                        net < 0
-                          ? "text-red-600 dark:text-red-400"
-                          : "text-emerald-600 dark:text-emerald-400"
-                      }`}
-                    >
-                      {formatCurrency(net, "PLN")}
-                    </TableCell>
-                    <TableCell className="text-center text-muted-foreground">
-                      {g.count}
-                    </TableCell>
-                    <TableCell className="w-64">
-                      <CategoryCombobox
-                        value={picked}
-                        onChange={(sel) =>
-                          setPickers((p) => ({
-                            ...p,
-                            [g.merchant]: sel.category,
-                          }))
-                        }
-                        groupsOnly
-                        size="md"
-                        className="w-60"
-                      />
-                    </TableCell>
-                    <TableCell className="w-28">
-                      <Button
-                        size="sm"
-                        disabled={apply.isPending || !picked}
-                        onClick={() =>
-                          apply.mutate({
-                            merchant: g.merchant,
-                            category: picked,
-                          })
-                        }
-                      >
-                        {t("transactions.groups.apply")}
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
+          <DataTable
+            columns={columns}
+            data={query.data ?? []}
+            rowKey={(g) => g.merchant}
+            initialSort={{ id: "count", dir: "desc" }}
+            tableClassName="min-w-[760px] table-fixed"
+          />
         )}
       </CardContent>
     </Card>

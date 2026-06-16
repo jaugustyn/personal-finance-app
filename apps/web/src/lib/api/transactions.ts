@@ -125,8 +125,9 @@ export const transactionsApi = {
   bulkCategorize: (payload: {
     ids?: number[];
     merchant?: string;
-    category: string | null;
+    category?: string | null;
     mark_transfer?: boolean;
+    transaction_type?: string | null;
   }) =>
     request<{ affected: number }>("/transactions/bulk/categorize", {
       method: "POST",

@@ -139,6 +139,17 @@ def test_list_transactions_search_direction_and_category_filters(
     assert search.status_code == 200
     assert [row["id"] for row in search.json()] == [allegro.id]
 
+    netflix = _seed(
+        db_session,
+        merchant="NETFLIX.COM AMSTERDAM",
+        title="Card payment",
+        category="subscriptions",
+        dedup_hash="h-filter-netflix",
+    )
+    punctuation_free = client.get("/transactions?search=netflix com")
+    assert punctuation_free.status_code == 200
+    assert [row["id"] for row in punctuation_free.json()] == [netflix.id]
+
     direction = client.get("/transactions?direction=credit")
     assert direction.status_code == 200
     assert [row["id"] for row in direction.json()] == [income.id]

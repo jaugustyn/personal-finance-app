@@ -209,9 +209,14 @@ def bulk_categorize(
     *,
     ids: list[int] | None,
     merchant: str | None,
-    category: str | None,
-    mark_transfer: bool | None,
+    category: str | None | object = UNCHANGED,
+    mark_transfer: bool | None = None,
+    transaction_type: str | None = None,
 ) -> int:
+    tx_type_value: str | None = None
+    if transaction_type is not None:
+        tx_type_value = TransactionType(transaction_type).value
+
     stmt = select(Transaction)
     if ids:
         stmt = stmt.where(Transaction.id.in_(ids))
@@ -232,6 +237,15 @@ def bulk_categorize(
             changed = True
             if mark_transfer:
                 _clear_category_state(tx)
+        if tx_type_value is not None:
+            tx_model.transaction_type = tx_type_value
+            tx_model.is_transfer = tx_type_value in _TRANSFER_TYPES
+            changed = True
+            if not _can_assign_expense_category(tx):
+                _clear_category_state(tx)
+        if category is UNCHANGED:
+            affected += int(changed)
+            continue
         if category is None:
             tx_model.category = None
             tx_model.subcategory = None

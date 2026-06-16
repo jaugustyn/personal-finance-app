@@ -191,6 +191,7 @@ export interface Anomaly {
 
 export interface Subscription {
   merchant: string;
+  merchant_key: string;
   cadence: string;
   median_amount: number;
   occurrences: number;
