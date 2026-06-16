@@ -38,6 +38,20 @@ _EXPECTED_HEADER = {
 }
 
 
+def _decode_pekao_csv(raw: bytes) -> str:
+    """Decode Pekao export with UTF-8 BOM first, then legacy cp1250."""
+    try:
+        return raw.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        return raw.decode("cp1250", errors="replace")
+
+
+def _normalize_header(raw: str | None) -> str:
+    if not raw:
+        return ""
+    return raw.replace("\ufeff", "").replace("\xa0", " ").strip()
+
+
 def _parse_decimal(raw: str) -> Decimal:
     raw = raw.strip().replace(" ", "").replace(",", ".")
     if not raw:
@@ -71,11 +85,13 @@ class PekaoParser(BankParser):
     expected_headers = _EXPECTED_HEADER
 
     def parse(self, stream: IO[bytes], filename: str = "") -> list[TransactionDTO]:
-        text = stream.read().decode("cp1250", errors="replace")
+        text = _decode_pekao_csv(stream.read())
         reader = csv.DictReader(io.StringIO(text), delimiter=";")
         if reader.fieldnames is None:
             raise ParseError("Empty Pekao CSV")
-        missing = _EXPECTED_HEADER - set(reader.fieldnames)
+
+        reader.fieldnames = [_normalize_header(h) for h in reader.fieldnames]
+        missing = _EXPECTED_HEADER - {h for h in reader.fieldnames if h}
         if missing:
             raise ParseError(f"Pekao CSV missing columns: {sorted(missing)}")
 

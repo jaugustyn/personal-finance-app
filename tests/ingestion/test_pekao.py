@@ -68,3 +68,23 @@ def test_pekao_parser_does_not_require_operation_type() -> None:
     assert len(out) == 1
     assert out[0].merchant == "CARREFOUR"
     assert out[0].category is Category.FOOD
+
+
+def test_pekao_parser_accepts_utf8_bom_exports() -> None:
+    header = (
+        "Data księgowania;Data waluty;Nadawca / Odbiorca;Adres nadawcy / odbiorcy;"
+        "Rachunek źródłowy;Rachunek docelowy;Tytułem;Kwota operacji;Waluta;"
+        "Numer referencyjny;Typ operacji;Kategoria"
+    )
+    row = (
+        "01.04.2026;01.04.2026;CARREFOUR;;'91...;;Zakupy;-31,41;PLN;"
+        "'C99261082;TRANSAKCJA KARTĄ PŁATNICZĄ;Artykuły spożywcze"
+    )
+    sample = f"{header}\n{row}\n".encode("utf-8-sig")
+
+    out = PekaoParser().parse(io.BytesIO(sample), filename="pekao-utf8.csv")
+
+    assert len(out) == 1
+    assert out[0].merchant == "CARREFOUR"
+    assert out[0].title == "Zakupy"
+    assert out[0].category is Category.FOOD

@@ -189,6 +189,44 @@ def test_subscription_detected_for_monthly_payment() -> None:
     assert s.confidence >= 0.8  # whitelisted Spotify with regular amount
 
 
+def test_subscription_uses_raw_merchant_for_display() -> None:
+    dates = pd.date_range("2025-09-15", periods=3, freq="30D")
+    df = pd.DataFrame({
+        "booking_date": dates,
+        "amount": [-67.99] * 3,
+        "direction": ["debit"] * 3,
+        "merchant": [
+            "NETFLIX.COM AMSTERDAM",
+            "NETFLIX.COM AMSTERDAM",
+            "NETFLIX.COM AMSTERDAM",
+        ],
+        "category": ["subscriptions"] * 3,
+    })
+
+    subs = detect_subscriptions(df)
+
+    assert len(subs) == 1
+    assert subs[0].merchant == "NETFLIX.COM AMSTERDAM"
+    assert subs[0].merchant_key == "netflix com amsterdam"
+
+
+def test_subscription_display_compacts_repeated_descriptor() -> None:
+    dates = pd.date_range("2025-09-15", periods=3, freq="30D")
+    df = pd.DataFrame({
+        "booking_date": dates,
+        "amount": [-43.63] * 3,
+        "direction": ["debit"] * 3,
+        "merchant": ["NETFLIX.COM NETFLIX.COM"] * 3,
+        "category": ["subscriptions"] * 3,
+    })
+
+    subs = detect_subscriptions(df)
+
+    assert len(subs) == 1
+    assert subs[0].merchant == "NETFLIX.COM"
+    assert subs[0].merchant_key == "netflix com netflix com"
+
+
 def test_subscription_blacklist_rejects_grocery() -> None:
     # Even with 4 monthly visits, Biedronka should never be a subscription.
     dates = pd.date_range("2025-09-15", periods=4, freq="30D")

@@ -17,6 +17,15 @@ SAMPLE = (
     "-5.00;0.00;PLN;OCZEKUJE;0.00\n"
 ).encode()
 
+SAMPLE_COMMA_ISO = (
+    "Rodzaj,Produkt,Data rozpoczęcia,Data zrealizowania,Opis,Kwota,"
+    "Opłata,Waluta,State,Saldo\n"
+    "Zasilenie,Bieżące,2025-08-06 12:21:18,2025-08-06 12:21:43,"
+    "Zasilenie o *2874,100.00,0.00,PLN,ZAKOŃCZONO,100.00\n"
+    "Płatność kartą,Bieżące,2025-11-17 21:50:15,2025-11-19 03:40:01,"
+    "Nike,-119.99,0.00,PLN,ZAKOŃCZONO,132.77\n"
+).encode()
+
 
 def test_revolut_parser_polish() -> None:
     parser = RevolutParser()
@@ -36,3 +45,14 @@ def test_revolut_parser_polish() -> None:
     assert payment.amount == Decimal("-10.00")
     assert payment.direction is TransactionDirection.DEBIT
     assert "GitHub" in payment.merchant
+
+
+def test_revolut_parser_comma_iso_dates() -> None:
+    parser = RevolutParser()
+    out = parser.parse(io.BytesIO(SAMPLE_COMMA_ISO), filename="revolut.csv")
+
+    assert len(out) == 2
+    assert out[0].booking_date == date(2025, 8, 6)
+    assert out[0].amount == Decimal("100.00")
+    assert out[1].booking_date == date(2025, 11, 19)
+    assert out[1].amount == Decimal("-119.99")

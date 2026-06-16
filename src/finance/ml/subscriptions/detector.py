@@ -49,6 +49,7 @@ DEFAULT_WHITELIST: tuple[str, ...] = (
 @dataclass
 class Subscription:
     merchant: str
+    merchant_key: str
     cadence: str
     median_amount: float
     occurrences: int
@@ -65,6 +66,27 @@ EXCLUDED_CATEGORIES: set[str] = {"savings", "income", "salary", "transfer"}
 
 def _normalise(name: str | None) -> str:
     return normalize_merchant(name)
+
+
+def _compact_repeated_descriptor(value: str) -> str:
+    """Collapse exact repeated descriptors while preserving punctuation."""
+    tokens = value.split()
+    if len(tokens) < 2 or len(tokens) % 2 != 0:
+        return value
+    mid = len(tokens) // 2
+    left = " ".join(tokens[:mid])
+    right = " ".join(tokens[mid:])
+    return left if _normalise(left) == _normalise(right) else value
+
+
+def _representative_merchant(group: pd.DataFrame, fallback: str) -> str:
+    """Pick a display label from raw transactions, not the normalized key."""
+    ordered = group.sort_values("booking_date", ascending=False)
+    for raw in ordered["merchant"].fillna("").astype(str):
+        label = " ".join(raw.split())
+        if label:
+            return _compact_repeated_descriptor(label)
+    return fallback
 
 
 def _classify_cadence(median_days: float, *, day_tol: int = DAY_TOL) -> str | None:
@@ -165,7 +187,8 @@ def detect_subscriptions(
 
         out.append(
             Subscription(
-                merchant=merch,
+                merchant=_representative_merchant(group, merch),
+                merchant_key=merch,
                 cadence=cadence,
                 median_amount=round(med, 2),
                 occurrences=len(group),

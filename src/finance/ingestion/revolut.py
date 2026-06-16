@@ -36,6 +36,17 @@ _EXPECTED_HEADER = {
 _COMPLETED = "ZAKOŃCZONO"
 
 
+def _normalize_header(raw: str | None) -> str:
+    if not raw:
+        return ""
+    return raw.replace("\ufeff", "").replace("\xa0", " ").strip()
+
+
+def _detect_delimiter(text: str) -> str:
+    first_line = text.splitlines()[0] if text.splitlines() else ""
+    return "," if first_line.count(",") > first_line.count(";") else ";"
+
+
 def _parse_decimal(raw: str) -> Decimal:
     raw = raw.strip().replace(" ", "").replace(",", ".")
     if not raw:
@@ -50,7 +61,14 @@ def _parse_dt(raw: str) -> datetime | None:
     raw = raw.strip()
     if not raw:
         return None
-    for fmt in ("%d.%m.%Y %H:%M:%S", "%d.%m.%Y %H:%M", "%d.%m.%Y"):
+    for fmt in (
+        "%Y-%m-%d %H:%M:%S",
+        "%Y-%m-%d %H:%M",
+        "%Y-%m-%d",
+        "%d.%m.%Y %H:%M:%S",
+        "%d.%m.%Y %H:%M",
+        "%d.%m.%Y",
+    ):
         try:
             return datetime.strptime(raw, fmt)
         except ValueError:
@@ -65,10 +83,13 @@ class RevolutParser(BankParser):
 
     def parse(self, stream: IO[bytes], filename: str = "") -> list[TransactionDTO]:
         text = stream.read().decode("utf-8-sig", errors="replace")
-        reader = csv.DictReader(io.StringIO(text), delimiter=";")
+        delimiter = _detect_delimiter(text)
+        reader = csv.DictReader(io.StringIO(text), delimiter=delimiter)
         if reader.fieldnames is None:
             raise ParseError("Empty Revolut CSV")
-        missing = _EXPECTED_HEADER - set(reader.fieldnames)
+
+        reader.fieldnames = [_normalize_header(h) for h in reader.fieldnames]
+        missing = _EXPECTED_HEADER - {h for h in reader.fieldnames if h}
         if missing:
             raise ParseError(f"Revolut CSV missing columns: {sorted(missing)}")
 

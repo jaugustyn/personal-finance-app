@@ -25,6 +25,7 @@ SubscriptionFeedbackAction = Literal["confirm", "hide"]
 @dataclass(frozen=True)
 class SubscriptionReviewRow:
     merchant: str
+    merchant_key: str
     cadence: str
     median_amount: float
     occurrences: int
@@ -65,6 +66,7 @@ def _to_row(sub) -> SubscriptionReviewRow:
     last_seen = sub.last_seen.date() if hasattr(sub.last_seen, "date") else sub.last_seen
     return SubscriptionReviewRow(
         merchant=sub.merchant,
+        merchant_key=sub.merchant_key,
         cadence=sub.cadence,
         median_amount=float(sub.median_amount),
         occurrences=int(sub.occurrences),
@@ -97,6 +99,7 @@ def list_subscription_rows(
         _to_row(sub)
         for sub in subs
         if sub.confidence >= min_confidence
+        and sub.merchant_key not in hidden
         and normalize_merchant(sub.merchant) not in hidden
     ]
 

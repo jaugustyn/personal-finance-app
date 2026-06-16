@@ -18,6 +18,7 @@ router = APIRouter(prefix="/subscriptions", tags=["subscriptions"])
 
 class SubscriptionRow(BaseModel):
     merchant: str
+    merchant_key: str
     cadence: str
     median_amount: float
     occurrences: int
@@ -39,6 +40,7 @@ class FeedbackResponse(BaseModel):
 def _to_response(row: SubscriptionReviewRow) -> SubscriptionRow:
     return SubscriptionRow(
         merchant=row.merchant,
+        merchant_key=row.merchant_key,
         cadence=row.cadence,
         median_amount=row.median_amount,
         occurrences=row.occurrences,
