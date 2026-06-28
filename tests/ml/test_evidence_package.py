@@ -8,8 +8,8 @@ import pandas as pd
 import scripts.build_ml_evidence as build_ml_evidence
 import scripts.inspect_report as inspect_report
 from finance.ml.evidence import (
-    AnomalyReview,
     EVIDENCE_SCHEMA_VERSION,
+    AnomalyReview,
     build_evidence_package,
     validate_evidence_package,
 )

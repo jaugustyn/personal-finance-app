@@ -13,6 +13,8 @@ from finance.ml.anomaly.service import (
     AnomalyMode,
     AnomalyReviewRow,
     list_anomaly_rows,
+)
+from finance.ml.anomaly.service import (
     record_anomaly_feedback as record_anomaly_feedback_event,
 )
 

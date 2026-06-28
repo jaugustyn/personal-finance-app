@@ -1,9 +1,4 @@
-"""Category catalog endpoints — system + user-defined categories.
-
-System categories are seeded on first read so
-the table is populated even when migrations were skipped (e.g. SQLite tests
-that use ``Base.metadata.create_all``).
-"""
+"""Category catalog endpoints — system + user-defined categories."""
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException

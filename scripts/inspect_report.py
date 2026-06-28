@@ -136,7 +136,9 @@ def _validate_package_sections(package: dict[str, Any]) -> list[str]:
         if not isinstance(section, dict):
             errors.append(f"evidence_package.sections.{section_name} must be an object")
             continue
-        errors.extend(validators[section_name](section, f"evidence_package.sections.{section_name}"))
+        errors.extend(
+            validators[section_name](section, f"evidence_package.sections.{section_name}")
+        )
     return errors
 
 
