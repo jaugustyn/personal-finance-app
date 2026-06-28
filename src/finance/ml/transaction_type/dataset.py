@@ -7,6 +7,7 @@ import pandas as pd
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from finance.currencies import amount_base_expr
 from finance.domain.enums import TransactionType
 from finance.domain.models import Transaction
 
@@ -80,7 +81,7 @@ def load_training_set(session: Session) -> pd.DataFrame:
     """Load transaction-type silver labels from the database."""
     rows = session.execute(
         select(
-            Transaction.amount,
+            amount_base_expr().label("amount"),
             Transaction.direction,
             Transaction.merchant,
             Transaction.title,

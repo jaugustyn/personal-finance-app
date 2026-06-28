@@ -25,6 +25,7 @@ class Overview(BaseModel):
     net_cashflow: Decimal
     savings_rate: float  # 0..1, fraction of income saved
     tx_count: int
+    base_currency: str
 
 
 class CashflowBucket(BaseModel):
