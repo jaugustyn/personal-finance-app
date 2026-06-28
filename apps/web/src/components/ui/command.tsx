@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { Command as CommandPrimitive } from "cmdk";
-import { Search } from "lucide-react";
+import { Search, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 
@@ -41,22 +41,56 @@ export function CommandDialog({
   );
 }
 
+type CommandInputProps = React.ComponentPropsWithoutRef<
+  typeof CommandPrimitive.Input
+> & {
+  clearLabel?: string;
+};
+
 export const CommandInput = React.forwardRef<
   React.ComponentRef<typeof CommandPrimitive.Input>,
-  React.ComponentPropsWithoutRef<typeof CommandPrimitive.Input>
->(({ className, ...props }, ref) => (
-  <div className="flex items-center border-b px-3" cmdk-input-wrapper="">
-    <Search className="mr-2 h-4 w-4 shrink-0 opacity-50" />
-    <CommandPrimitive.Input
-      ref={ref}
-      className={cn(
-        "flex h-11 w-full rounded-md bg-transparent py-3 text-sm outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50",
-        className,
-      )}
-      {...props}
-    />
-  </div>
-));
+  CommandInputProps
+>(
+  (
+    { className, value, onValueChange, disabled, clearLabel = "Clear", ...props },
+    ref,
+  ) => {
+    const [internalValue, setInternalValue] = React.useState("");
+    const inputValue = String(value ?? internalValue);
+
+    const setValue = (nextValue: string) => {
+      setInternalValue(nextValue);
+      onValueChange?.(nextValue);
+    };
+
+    return (
+      <div className="flex items-center border-b px-3" cmdk-input-wrapper="">
+        <Search className="mr-2 h-4 w-4 shrink-0 opacity-50" />
+        <CommandPrimitive.Input
+          ref={ref}
+          value={inputValue}
+          onValueChange={setValue}
+          disabled={disabled}
+          className={cn(
+            "flex h-11 w-full rounded-md bg-transparent py-3 text-sm outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50",
+            className,
+          )}
+          {...props}
+        />
+        {inputValue && !disabled ? (
+          <button
+            type="button"
+            className="ml-2 rounded-sm p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+            onClick={() => setValue("")}
+            aria-label={clearLabel}
+          >
+            <X className="h-4 w-4" />
+          </button>
+        ) : null}
+      </div>
+    );
+  },
+);
 CommandInput.displayName = CommandPrimitive.Input.displayName;
 
 export const CommandList = React.forwardRef<

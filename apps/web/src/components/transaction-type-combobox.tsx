@@ -152,7 +152,10 @@ export function TransactionTypeCombobox({
             itemValue.toLowerCase().includes(query.toLowerCase()) ? 1 : 0
           }
         >
-          <CommandInput placeholder={t("transactions.typeSearch")} />
+          <CommandInput
+            placeholder={t("transactions.typeSearch")}
+            clearLabel={t("common.clear")}
+          />
           <CommandList>
             <CommandEmpty>{t("common.empty")}</CommandEmpty>
             {includeEmpty && (

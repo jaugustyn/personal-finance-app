@@ -10,14 +10,16 @@ export function Toaster(props: ToasterProps) {
       theme={theme as ToasterProps["theme"]}
       className="toaster group"
       position="top-right"
+      duration={5_000}
       richColors
       toastOptions={{
         classNames: {
           toast:
-            "group toast group-[.toaster]:shadow-lg group-[.toaster]:rounded-lg",
-          description: "group-[.toast]:opacity-85",
+            "group toast group-[.toaster]:min-w-80 group-[.toaster]:max-w-md group-[.toaster]:rounded-lg group-[.toaster]:px-4 group-[.toaster]:py-3 group-[.toaster]:text-sm group-[.toaster]:shadow-lg",
+          title: "group-[.toast]:text-sm group-[.toast]:font-medium",
+          description: "group-[.toast]:text-sm group-[.toast]:opacity-85",
           actionButton:
-            "group-[.toast]:bg-primary group-[.toast]:text-primary-foreground",
+            "group-[.toast]:border group-[.toast]:border-border group-[.toast]:bg-background group-[.toast]:text-foreground group-[.toast]:shadow-sm group-[.toast]:hover:bg-muted",
           cancelButton:
             "group-[.toast]:bg-muted group-[.toast]:text-muted-foreground",
         },

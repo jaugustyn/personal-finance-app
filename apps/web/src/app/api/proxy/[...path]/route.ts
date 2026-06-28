@@ -42,6 +42,12 @@ async function forward(req: NextRequest, path: string[]): Promise<NextResponse> 
     if (upstreamCt) respHeaders.set("content-type", upstreamCt);
     const upstreamCd = upstream.headers.get("content-disposition");
     if (upstreamCd) respHeaders.set("content-disposition", upstreamCd);
+    if (upstream.status === 204 || upstream.status === 304) {
+      return new NextResponse(null, {
+        status: upstream.status,
+        headers: respHeaders,
+      });
+    }
     return new NextResponse(body, { status: upstream.status, headers: respHeaders });
   } catch (error) {
     const aborted = error instanceof Error && error.name === "AbortError";

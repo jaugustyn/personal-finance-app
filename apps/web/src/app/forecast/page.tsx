@@ -6,8 +6,8 @@ import { api, type ForecastPoint } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
 import { CategorySelect } from "@/components/category-select";
-import { FilterField } from "@/components/filter-panel";
 import { ForecastChart } from "@/components/charts";
 import { PageHeader } from "@/components/page-header";
 import { ErrorState } from "@/components/error-state";
@@ -83,13 +83,16 @@ export default function ForecastPage() {
         </CardHeader>
         <CardContent>
           <form
-            className="grid gap-3 sm:grid-cols-[16rem_8rem_auto] sm:items-start"
+            className="grid gap-3 sm:grid-cols-[16rem_8rem_auto]"
             onSubmit={(e) => {
               e.preventDefault();
               setSubmitted({ category: category || null, horizon });
             }}
           >
-            <FilterField label={t("forecast.category")}>
+            <div className="grid gap-1.5 sm:grid-rows-[1rem_2.25rem]">
+              <Label className="text-xs font-medium text-muted-foreground">
+                {t("forecast.category")}
+              </Label>
               <CategorySelect
                 value={category}
                 onChange={setCategory}
@@ -97,8 +100,11 @@ export default function ForecastPage() {
                 ariaLabel={t("forecast.category")}
                 className="h-9 w-full"
               />
-            </FilterField>
-            <FilterField label={t("forecast.horizon")}>
+            </div>
+            <div className="grid gap-1.5 sm:grid-rows-[1rem_2.25rem]">
+              <Label className="text-xs font-medium text-muted-foreground">
+                {t("forecast.horizon")}
+              </Label>
               <Input
                 type="number"
                 min={1}
@@ -107,13 +113,10 @@ export default function ForecastPage() {
                 onChange={(e) => setHorizon(Number(e.target.value))}
                 className="h-9 w-full"
               />
-            </FilterField>
-            <div className="grid grid-rows-[1rem_2.25rem] gap-1 justify-self-start">
-              <span
-                className="block h-4 select-none"
-                aria-hidden
-              />
-              <Button type="submit" className="h-9 w-fit min-w-28 px-4">
+            </div>
+            <div className="grid gap-1.5 sm:grid-rows-[1rem_2.25rem] sm:justify-start">
+              <span className="hidden h-4 sm:block" aria-hidden />
+              <Button type="submit" className="h-9 px-3">
                 {t("forecast.run")}
               </Button>
             </div>

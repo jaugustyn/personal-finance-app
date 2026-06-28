@@ -189,6 +189,7 @@ export function CategoryCombobox({
             placeholder={t("categories.searchPlaceholder")}
             value={search}
             onValueChange={setSearch}
+            clearLabel={t("common.clear")}
           />
           <CommandList>
             <CommandEmpty>

@@ -33,7 +33,10 @@ export function CommandPalette({
 
   return (
     <CommandDialog open={open} onOpenChange={onOpenChange}>
-      <CommandInput placeholder={t("command.placeholder")} />
+      <CommandInput
+        placeholder={t("command.placeholder")}
+        clearLabel={t("common.clear")}
+      />
       <CommandList>
         <CommandEmpty>{t("command.empty")}</CommandEmpty>
         <CommandGroup heading={t("command.navigation")}>

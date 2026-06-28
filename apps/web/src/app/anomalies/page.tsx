@@ -31,7 +31,6 @@ import { useLocalStorageState } from "@/hooks/use-local-storage-state";
 import { transactionsHref } from "@/lib/transaction-links";
 import { HelpCircle } from "lucide-react";
 
-type AnomalyMode = "review" | "suspicious" | "all";
 type AnomalyFeedbackAction = "relevant" | "not_relevant" | "ignore_merchant";
 
 function priorityVariant(
@@ -107,20 +106,15 @@ export default function AnomaliesPage() {
     "debit",
   );
   const mode = "review";
-  const [includeModelOnly, setIncludeModelOnly] = useLocalStorageState(
-    "finance.anomalies.includeModelOnly",
-    false,
-  );
   const [feedbackById, setFeedbackById] = useState<
     Record<number, AnomalyFeedbackAction>
   >({});
   const query = useQuery({
-    queryKey: ["anomalies", direction, mode, includeModelOnly],
+    queryKey: ["anomalies", direction, mode],
     queryFn: () =>
       api.anomalies({
         direction,
         mode,
-        include_model_only: includeModelOnly,
       }),
   });
   const feedback = useMutation({
@@ -276,7 +270,7 @@ export default function AnomaliesPage() {
         description={t("anomalies.subtitle")}
       />
 
-      <FilterPanel gridClassName="md:grid-cols-2 xl:grid-cols-2">
+      <FilterPanel gridClassName="sm:grid-cols-[minmax(12rem,16rem)]">
         <FilterField label={t("transactions.filterDirection")}>
           <Select
             value={direction}
@@ -295,20 +289,6 @@ export default function AnomaliesPage() {
               <SelectItem value="all">
                 {t("transactions.filterDirection.all")}
               </SelectItem>
-            </SelectContent>
-          </Select>
-        </FilterField>
-        <FilterField label={t("anomalies.modelOnly")}>
-          <Select
-            value={includeModelOnly ? "show" : "hide"}
-            onValueChange={(v) => setIncludeModelOnly(v === "show")}
-          >
-            <SelectTrigger className="w-full">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="hide">{t("anomalies.modelOnly.hide")}</SelectItem>
-              <SelectItem value="show">{t("anomalies.modelOnly.show")}</SelectItem>
             </SelectContent>
           </Select>
         </FilterField>
