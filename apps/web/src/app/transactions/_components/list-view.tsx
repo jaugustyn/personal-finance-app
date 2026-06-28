@@ -321,10 +321,12 @@ export function ListView({ reviewMode, initialFilters }: ListViewProps) {
     mutationFn: ({
       ids,
       minConfidence,
+      manual,
     }: {
       ids: number[];
       minConfidence: number;
-    }) => api.acceptSuggestions({ ids, min_confidence: minConfidence }),
+      manual?: boolean;
+    }) => api.acceptSuggestions({ ids, min_confidence: minConfidence, manual }),
     onSuccess: () => {
       invalidateAll();
       setSelected(new Set());
@@ -537,7 +539,7 @@ export function ListView({ reviewMode, initialFilters }: ListViewProps) {
           }
           onPatchType={(id, value) => patchType.mutate({ id, value })}
           onAcceptSuggestion={(id) =>
-            acceptSuggestions.mutate({ ids: [id], minConfidence: 0 })
+            acceptSuggestions.mutate({ ids: [id], minConfidence: 0, manual: true })
           }
           onRejectSuggestion={(id) => rejectSuggestions.mutate([id])}
           onRestoreSuggestion={(id) => restoreSuggestions.mutate([id])}

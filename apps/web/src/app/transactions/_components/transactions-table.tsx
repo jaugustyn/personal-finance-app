@@ -54,7 +54,6 @@ import {
   hasCategorySuggestion,
   hasRejectedCategorySuggestion,
   isCategoryCandidate,
-  isSuggestionReadyToAccept,
 } from "../_lib/constants";
 
 type TransactionSortId = "date" | "merchant" | "type" | "category" | "amount";
@@ -406,7 +405,6 @@ function TransactionRow({
   const hasRejectedMarker =
     !tx.category && tx.category_suggestion_rejected && isCategoryCandidate(tx);
   const canEditCategory = isCategoryCandidate(tx) || Boolean(tx.category);
-  const canAcceptSuggestion = isSuggestionReadyToAccept(tx);
   const decisionAction = tx.classification_decision?.action;
   const [rememberRule, setRememberRule] = useState(false);
 
@@ -573,7 +571,7 @@ function TransactionRow({
                 size="icon"
                 variant="ghost"
                 className="h-7 w-7 text-positive hover:text-positive"
-                disabled={acceptPending || !canAcceptSuggestion}
+                disabled={acceptPending}
                 onClick={onAcceptSuggestion}
                 title={t("transactions.acceptOne")}
                 aria-label={t("transactions.acceptOne")}

@@ -1,6 +1,7 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
+import { ClearableInput } from "@/components/ui/clearable-input";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -163,10 +164,11 @@ export function TransactionFilters({
         label={t("transactions.filterSearch")}
         className="md:col-span-2 xl:col-span-2"
       >
-        <Input
+        <ClearableInput
           placeholder={t("transactions.search")}
           value={search}
-          onChange={(e) => onSearchChange(e.target.value)}
+          onValueChange={onSearchChange}
+          clearLabel={t("common.clear")}
           className="w-full"
         />
       </FilterField>

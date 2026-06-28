@@ -277,7 +277,10 @@ def accept_suggestions(
     ids: list[int] | None,
     min_confidence: float,
     policy: ClassificationPolicy = DEFAULT_POLICY,
+    manual: bool = False,
 ) -> int:
+    if manual and not ids:
+        return 0
     stmt = select(Transaction).where(Transaction.category.is_(None))
     stmt = stmt.where(Transaction.category_predicted.is_not(None))
     stmt = stmt.where(Transaction.category_suggestion_rejected.is_(False))
@@ -298,10 +301,11 @@ def accept_suggestions(
             transaction_type=tx.transaction_type,
             policy=policy,
         )
-        if decision.action != "accept":
+        if decision.action != "accept" and not manual:
             continue
         if (
-            tx.category_confidence is not None
+            not manual
+            and tx.category_confidence is not None
             and min_confidence > decision.threshold_used
             and tx.category_confidence < min_confidence
         ):

@@ -167,7 +167,7 @@ export const transactionsApi = {
       method: "POST",
       body: JSON.stringify(payload),
     }),
-  acceptSuggestions: (payload: { ids?: number[]; min_confidence?: number }) =>
+  acceptSuggestions: (payload: { ids?: number[]; min_confidence?: number; manual?: boolean }) =>
     request<{ affected: number }>("/transactions/bulk/accept-suggestions", {
       method: "POST",
       body: JSON.stringify(payload),

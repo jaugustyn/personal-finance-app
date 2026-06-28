@@ -476,6 +476,7 @@ def bulk_categorize(
 class AcceptSuggestions(BaseModel):
     ids: list[int] | None = None
     min_confidence: float = Field(default=0.75, ge=0.0, le=1.0)
+    manual: bool = False
 
 
 class RejectSuggestions(BaseModel):
@@ -493,6 +494,7 @@ def accept_suggestions(
         ids=payload.ids,
         min_confidence=payload.min_confidence,
         policy=policy,
+        manual=payload.manual,
     )
     return BulkResult(affected=affected)
 

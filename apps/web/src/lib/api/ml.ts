@@ -75,8 +75,11 @@ export const mlApi = {
         body: JSON.stringify({ action }),
       },
     ),
-  subscriptions: (minConfidence = 0.0) =>
-    request<Subscription[]>(`/subscriptions?min_confidence=${minConfidence}`),
+  subscriptions: (minConfidence = 0.0, includeRejected = false) => {
+    const q = new URLSearchParams({ min_confidence: String(minConfidence) });
+    if (includeRejected) q.set("include_rejected", "true");
+    return request<Subscription[]>(`/subscriptions?${q.toString()}`);
+  },
   subscriptionsOverview: () =>
     request<SubscriptionOverview>("/subscriptions/overview"),
   saveSubscriptionPreference: (payload: SubscriptionPreferenceInput) =>
@@ -86,10 +89,11 @@ export const mlApi = {
     }),
   recordSubscriptionFeedback: (
     merchant: string,
-    action: "confirm" | "hide",
+    action: "confirm",
+    subscriptionKey?: string,
   ) =>
     request<{ id: number | null; status: string }>("/subscriptions/feedback", {
       method: "POST",
-      body: JSON.stringify({ merchant, action }),
+      body: JSON.stringify({ merchant, action, subscription_key: subscriptionKey }),
     }),
 };

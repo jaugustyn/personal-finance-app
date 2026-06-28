@@ -252,7 +252,7 @@ def test_review_summary_buckets_and_recurring(client, db_session) -> None:
     assert body["feedback_quality"]["total_events"] == 0
     assert body["confusion_hotspots"] == []
     assert body["anomaly_feedback"]["reviewed"] == 0
-    assert body["subscription_feedback"]["hidden"] == 0
+    assert body["subscription_feedback"]["rejected"] == 0
 
 
 def test_patch_category_updates(client, db_session) -> None:
@@ -473,7 +473,30 @@ def test_accept_suggestions_endpoint_does_not_override_policy_manual(
     assert r.json()["affected"] == 0
     db_session.refresh(tx)
     assert tx.category is None
-    assert tx.category_source is None
+
+
+def test_accept_suggestions_endpoint_manual_accepts_explicit_review_suggestion(
+    client, db_session
+) -> None:
+    tx = _seed(
+        db_session,
+        category=None,
+        category_predicted="shopping",
+        category_confidence=0.18,
+        category_predicted_source="model",
+        dedup_hash="h-suggest-low-manual",
+    )
+
+    r = client.post(
+        "/transactions/bulk/accept-suggestions",
+        json={"ids": [tx.id], "min_confidence": 0, "manual": True},
+    )
+
+    assert r.status_code == 200
+    assert r.json()["affected"] == 1
+    db_session.refresh(tx)
+    assert tx.category == "shopping"
+    assert tx.category_source == "model"
 
 
 def test_reject_suggestions_endpoint(client, db_session) -> None:
