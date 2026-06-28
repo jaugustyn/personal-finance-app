@@ -6,14 +6,21 @@ from decimal import Decimal
 from finance.domain.models import Transaction
 
 
-def _tx(db_session, *, merchant: str, amount: Decimal, dedup_hash: str) -> Transaction:
+def _tx(
+    db_session,
+    *,
+    merchant: str,
+    amount: Decimal,
+    dedup_hash: str,
+    title: str = "",
+) -> Transaction:
     tx = Transaction(
         booking_date=date(2026, 4, 15),
         amount=amount,
         currency="PLN",
         direction="debit",
         merchant=merchant,
-        title="",
+        title=title,
         category="food",
         source="pekao",
         dedup_hash=dedup_hash,
@@ -45,6 +52,83 @@ def test_merchant_candidates_group_variants(client, db_session) -> None:
     }
     assert sum(row["count"] for row in biedronka["variants"]) == 2
     assert Decimal(str(sum(Decimal(row["total_debit"]) for row in biedronka["variants"]))) == Decimal("30")
+
+
+def test_merchant_candidates_use_title_for_generic_bank_merchant(client, db_session) -> None:
+    _tx(
+        db_session,
+        merchant="CARD PAYMENT",
+        title="CARD PAYMENT NETFLIX.COM",
+        amount=Decimal("-49.99"),
+        dedup_hash="generic-netflix-merchant",
+    )
+    _tx(
+        db_session,
+        merchant="CARD PAYMENT",
+        title="CARD PAYMENT NETFLIX AMSTERDAM",
+        amount=Decimal("-49.99"),
+        dedup_hash="generic-netflix-title",
+    )
+
+    response = client.get("/merchants/candidates")
+
+    assert response.status_code == 200
+    netflix = next(row for row in response.json() if row["canonical_key"] == "netflix")
+    assert netflix["count"] == 2
+    assert {row["alias_key"] for row in netflix["variants"]} == {
+        "card payment netflix com",
+        "card payment netflix amsterdam",
+    }
+
+
+def test_merchant_alias_suggestions_search_existing_transaction_variants(
+    client,
+    db_session,
+) -> None:
+    _tx(
+        db_session,
+        merchant="CARD PAYMENT",
+        title="CARD PAYMENT NETFLIX.COM",
+        amount=Decimal("-49.99"),
+        dedup_hash="suggest-netflix-1",
+    )
+    _tx(
+        db_session,
+        merchant="NETFLIX.COM AMSTERDAM",
+        amount=Decimal("-59.99"),
+        dedup_hash="suggest-netflix-2",
+    )
+
+    response = client.get("/merchants/suggestions", params={"q": "net"})
+
+    assert response.status_code == 200
+    rows = response.json()
+    assert {row["alias_key"] for row in rows} >= {
+        "card payment netflix com",
+        "netflix com amsterdam",
+    }
+    first = next(row for row in rows if row["alias_key"] == "card payment netflix com")
+    assert first["count"] == 1
+    assert first["canonical_key"] == "netflix"
+
+
+def test_merchant_alias_suggestions_skip_saved_aliases(client, db_session) -> None:
+    _tx(
+        db_session,
+        merchant="NETFLIX.COM AMSTERDAM",
+        amount=Decimal("-59.99"),
+        dedup_hash="suggest-saved-netflix",
+    )
+    created = client.post(
+        "/merchants/aliases",
+        json={"canonical_label": "Netflix", "aliases": ["NETFLIX.COM AMSTERDAM"]},
+    )
+    assert created.status_code == 201
+
+    response = client.get("/merchants/suggestions", params={"q": "netflix"})
+
+    assert response.status_code == 200
+    assert all(row["alias_key"] != "netflix com amsterdam" for row in response.json())
 
 
 def test_merchant_alias_crud(client) -> None:

@@ -50,6 +50,19 @@ LOCATION_TOKENS = {
     "wroclaw",
 }
 CANONICAL_STOPWORDS = MERCHANT_GROUP_STOPWORDS | LEGAL_SUFFIXES | LOCATION_TOKENS
+GENERIC_MERCHANT_KEYS = {
+    "blik",
+    "card",
+    "card payment",
+    "payment",
+    "pos",
+    "visa",
+    "visa payment",
+    "zakup",
+    "platnosc",
+    "platnosc karta",
+    "transakcja",
+}
 
 
 @dataclass(frozen=True)
@@ -68,6 +81,16 @@ class MerchantCandidateVariant:
 
 
 @dataclass(frozen=True)
+class MerchantAliasSuggestion:
+    alias_key: str
+    alias_label: str
+    canonical_key: str
+    canonical_label: str
+    count: int
+    total_amount: Decimal
+
+
+@dataclass(frozen=True)
 class MerchantCandidate:
     canonical_key: str
     suggested_label: str
@@ -79,7 +102,16 @@ class MerchantCandidate:
 
 def merchant_display_label(merchant: str | None, title: str | None = None) -> str:
     """Return the best raw label for UI display."""
-    return (merchant or "").strip() or (title or "").strip()
+    merchant_label = (merchant or "").strip()
+    title_label = (title or "").strip()
+    if (
+        merchant_label
+        and title_label
+        and _is_generic_merchant_key(normalize_merchant(merchant_label))
+        and not _is_generic_merchant_key(normalize_merchant(title_label))
+    ):
+        return title_label
+    return merchant_label or title_label
 
 
 def merchant_key(merchant: str | None, title: str | None = None) -> str:
@@ -233,6 +265,54 @@ def delete_alias(session: Session, alias_id: int) -> bool:
     return True
 
 
+def alias_suggestions(
+    session: Session,
+    *,
+    q: str,
+    limit: int = 10,
+) -> list[MerchantAliasSuggestion]:
+    query = normalize_merchant(q)
+    if not query:
+        return []
+    alias_map, label_map = load_merchant_alias_maps(session)
+    rows = session.execute(
+        select(Transaction.merchant, Transaction.title, amount_base_expr())
+    ).all()
+    variants: dict[str, dict[str, object]] = defaultdict(
+        lambda: {"labels": Counter(), "count": 0, "total": Decimal(0), "canonical": ""}
+    )
+    for merchant, title, amount in rows:
+        alias_key = merchant_key(merchant, title)
+        if not alias_key or alias_key in alias_map:
+            continue
+        label = merchant_display_label(merchant, title)
+        if query not in alias_key and query not in normalize_merchant(label):
+            continue
+        canonical_key = merchant_canonical_key(merchant, title, alias_map=alias_map)
+        variant = variants[alias_key]
+        variant["labels"][label] += 1  # type: ignore[index]
+        variant["count"] = int(variant["count"]) + 1
+        variant["total"] = Decimal(variant["total"]) + abs(Decimal(amount or 0))
+        variant["canonical"] = canonical_key
+
+    out: list[MerchantAliasSuggestion] = []
+    for alias_key, variant in variants.items():
+        labels: Counter[str] = variant["labels"]  # type: ignore[assignment]
+        canonical_key = str(variant["canonical"] or "")
+        out.append(
+            MerchantAliasSuggestion(
+                alias_key=alias_key,
+                alias_label=labels.most_common(1)[0][0] if labels else alias_key,
+                canonical_key=canonical_key,
+                canonical_label=label_map.get(canonical_key, canonical_key),
+                count=int(variant["count"]),
+                total_amount=Decimal(variant["total"]),
+            )
+        )
+    out.sort(key=lambda item: (item.count, item.total_amount), reverse=True)
+    return out[:limit]
+
+
 def alias_candidates(
     session: Session,
     *,
@@ -333,3 +413,10 @@ def _looks_like_person_name(tokens: list[str]) -> bool:
     if tokens[0] == tokens[1]:
         return False
     return all(2 <= len(token) <= 14 for token in tokens)
+
+
+def _is_generic_merchant_key(key: str) -> bool:
+    tokens = key.split()
+    if not tokens:
+        return True
+    return key in GENERIC_MERCHANT_KEYS or all(token in MERCHANT_GROUP_STOPWORDS for token in tokens)

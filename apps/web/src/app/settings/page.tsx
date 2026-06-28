@@ -1,10 +1,9 @@
 "use client";
 
-import Link from "next/link";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Loader2, Plus, Store, Trash2 } from "lucide-react";
+import { Loader2, Plus, Trash2 } from "lucide-react";
 import {
   api,
   type PersonalRule,
@@ -317,22 +316,6 @@ export default function SettingsPage() {
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Store className="h-4 w-4 text-muted-foreground" />
-            {t("settings.merchantAliasesTitle")}
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <p className="max-w-2xl text-sm text-muted-foreground">
-            {t("settings.merchantAliasesHelp")}
-          </p>
-          <Button asChild>
-            <Link href="/merchants">{t("settings.openMerchants")}</Link>
-          </Button>
-        </CardContent>
-      </Card>
     </div>
   );
 }

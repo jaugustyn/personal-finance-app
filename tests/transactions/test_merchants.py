@@ -23,6 +23,11 @@ def test_merchant_key_uses_title_fallback() -> None:
     assert merchant_canonical_key("", "LIDL zakupy karta") == "lidl"
 
 
+def test_merchant_key_prefers_title_for_generic_bank_label() -> None:
+    assert merchant_key("CARD PAYMENT", "CARD PAYMENT NETFLIX.COM") == "card payment netflix com"
+    assert merchant_canonical_key("CARD PAYMENT", "CARD PAYMENT NETFLIX.COM") == "netflix"
+
+
 def test_person_like_merchants_are_not_reduced_to_first_name() -> None:
     assert merchant_canonical_key("Jan Kowalski") == "jan kowalski"
     assert merchant_canonical_key("Anna Nowak") == "anna nowak"

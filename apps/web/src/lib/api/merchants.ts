@@ -3,6 +3,7 @@ import type {
   MerchantAlias,
   MerchantAliasGroupLabelInput,
   MerchantAliasInput,
+  MerchantAliasSuggestion,
   MerchantCandidate,
 } from "./types";
 
@@ -10,6 +11,10 @@ export const merchantsApi = {
   merchantAliases: () => request<MerchantAlias[]>("/merchants/aliases"),
   merchantAliasCandidates: () =>
     request<MerchantCandidate[]>("/merchants/candidates"),
+  merchantAliasSuggestions: (q: string) =>
+    request<MerchantAliasSuggestion[]>(
+      `/merchants/suggestions?q=${encodeURIComponent(q)}`,
+    ),
   createMerchantAliases: (payload: MerchantAliasInput) =>
     request<MerchantAlias[]>("/merchants/aliases", {
       method: "POST",

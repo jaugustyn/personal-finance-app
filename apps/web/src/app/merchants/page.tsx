@@ -8,6 +8,7 @@ import {
   Loader2,
   Plus,
   Save,
+  Search,
   Store,
   Trash2,
 } from "lucide-react";
@@ -15,6 +16,7 @@ import {
   api,
   type MerchantAlias,
   type MerchantAliasGroup,
+  type MerchantAliasSuggestion,
   type MerchantCandidate,
   type MerchantCandidateVariant,
 } from "@/lib/api";
@@ -35,6 +37,7 @@ import {
 } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/empty-state";
 import { ErrorState } from "@/components/error-state";
+import { ClearableInput } from "@/components/ui/clearable-input";
 import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/page-header";
 import {
@@ -94,6 +97,7 @@ function candidateVariants(
 function invalidateMerchantQueries(qc: ReturnType<typeof useQueryClient>) {
   qc.invalidateQueries({ queryKey: ALIASES_KEY });
   qc.invalidateQueries({ queryKey: CANDIDATES_KEY });
+  qc.invalidateQueries({ queryKey: ["merchantAliasSuggestions"] });
   qc.invalidateQueries({ queryKey: ["overview"] });
   qc.invalidateQueries({ queryKey: ["topMerchants"] });
   qc.invalidateQueries({ queryKey: ["transactions"] });
@@ -109,9 +113,14 @@ export default function MerchantsPage() {
   const { t } = useT();
   const qc = useQueryClient();
   const confirm = useConfirm();
+  const [search, setSearch] = useState("");
   const [mergeCandidate, setMergeCandidate] = useState<MerchantCandidate | null>(
     null,
   );
+
+  useEffect(() => {
+    setSearch(new URLSearchParams(window.location.search).get("search") ?? "");
+  }, []);
 
   const aliasesQuery = useQuery<MerchantAlias[]>({
     queryKey: ALIASES_KEY,
@@ -126,8 +135,42 @@ export default function MerchantsPage() {
     () => groupAliases(aliasesQuery.data ?? []),
     [aliasesQuery.data],
   );
-  const aliasCount = aliasesQuery.data?.length ?? 0;
-  const candidateCount = candidatesQuery.data?.length ?? 0;
+  const normalizedSearch = search.trim().toLowerCase();
+  const filteredGroups = useMemo(() => {
+    if (!normalizedSearch) return groups;
+    return groups.filter((group) => {
+      const haystack = [
+        group.canonical_key,
+        group.canonical_label,
+        ...group.aliases.flatMap((alias) => [alias.alias_key, alias.alias_label]),
+      ]
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(normalizedSearch);
+    });
+  }, [groups, normalizedSearch]);
+  const filteredCandidates = useMemo(() => {
+    const candidates = candidatesQuery.data ?? [];
+    if (!normalizedSearch) return candidates;
+    return candidates.filter((candidate) => {
+      const haystack = [
+        candidate.canonical_key,
+        candidate.suggested_label,
+        ...candidateVariants(candidate).flatMap((variant) => [
+          variant.alias_key,
+          variant.alias_label,
+        ]),
+      ]
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(normalizedSearch);
+    });
+  }, [candidatesQuery.data, normalizedSearch]);
+  const aliasCount = filteredGroups.reduce(
+    (sum, group) => sum + group.aliases.length,
+    0,
+  );
+  const candidateCount = filteredCandidates.length;
 
   const createAliases = useMutation({
     mutationFn: (payload: {
@@ -195,12 +238,21 @@ export default function MerchantsPage() {
         />
       ) : (
         <>
-          <div className="grid gap-3 sm:grid-cols-3">
+          <div className="grid items-stretch gap-3 sm:grid-cols-3 lg:grid-cols-[minmax(18rem,2fr)_repeat(3,minmax(7rem,1fr))]">
+            <ClearableInput
+              value={search}
+              onValueChange={setSearch}
+              placeholder={t("common.search")}
+              clearLabel={t("common.clear")}
+              className="h-14 sm:col-span-3 lg:col-span-1"
+              inputClassName="h-full"
+              leftIcon={<Search className="h-4 w-4" />}
+            />
             <MetricCard
               label={t("merchants.metricCandidates")}
               value={candidateCount}
             />
-            <MetricCard label={t("merchants.metricGroups")} value={groups.length} />
+            <MetricCard label={t("merchants.metricGroups")} value={filteredGroups.length} />
             <MetricCard label={t("merchants.metricAliases")} value={aliasCount} />
           </div>
 
@@ -211,7 +263,7 @@ export default function MerchantsPage() {
           />
 
           <CandidateTable
-            candidates={candidatesQuery.data ?? []}
+            candidates={filteredCandidates}
             pendingKey={
               createAliases.isPending
                 ? createAliases.variables?.canonical_key ?? mergeCandidate?.canonical_key ?? null
@@ -228,7 +280,7 @@ export default function MerchantsPage() {
           />
 
           <AliasGroupsPanel
-            groups={groups}
+            groups={filteredGroups}
             labelPendingKey={
               updateLabel.isPending
                 ? updateLabel.variables?.canonical_key ?? null
@@ -270,10 +322,10 @@ export default function MerchantsPage() {
 
 function MetricCard({ label, value }: { label: string; value: number }) {
   return (
-    <Card>
-      <CardContent className="p-4">
-        <div className="text-xs text-muted-foreground">{label}</div>
-        <div className="mt-1 text-2xl font-semibold tabular-nums">{value}</div>
+    <Card className="h-14">
+      <CardContent className="flex h-full flex-col justify-center px-3 py-2">
+        <div className="truncate text-[11px] leading-4 text-muted-foreground">{label}</div>
+        <div className="text-lg font-semibold leading-6 tabular-nums">{value}</div>
       </CardContent>
     </Card>
   );
@@ -632,15 +684,27 @@ function AliasGroupsPanel({
               </div>
 
               <div className="mt-3 grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
-                <Input
+                <AliasSuggestionInput
                   value={newAlias}
-                  onChange={(event) =>
+                  onChange={(value) =>
                     setNewAliases((prev) => ({
                       ...prev,
-                      [group.canonical_key]: event.target.value,
+                      [group.canonical_key]: value,
                     }))
                   }
-                  placeholder={t("merchants.aliasPlaceholder")}
+                  onSelectSuggestion={(suggestion) => {
+                    onAddAlias(
+                      group.canonical_key,
+                      labelValue.trim() || group.canonical_label,
+                      suggestion.alias_label,
+                    );
+                    setNewAliases((prev) => ({
+                      ...prev,
+                      [group.canonical_key]: "",
+                    }));
+                  }}
+                  disabled={addPendingKey === group.canonical_key}
+                  placement="top"
                 />
                 <Button
                   variant="outline"
@@ -674,6 +738,91 @@ function AliasGroupsPanel({
   );
 }
 
+function AliasSuggestionInput({
+  value,
+  onChange,
+  onSelectSuggestion,
+  disabled,
+  excludeKeys,
+  placement = "bottom",
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  onSelectSuggestion?: (suggestion: MerchantAliasSuggestion) => void;
+  disabled?: boolean;
+  excludeKeys?: Set<string>;
+  placement?: "top" | "bottom";
+}) {
+  const { t } = useT();
+  const query = value.trim();
+  const suggestionsQuery = useQuery<MerchantAliasSuggestion[]>({
+    queryKey: ["merchantAliasSuggestions", query],
+    queryFn: () => api.merchantAliasSuggestions(query),
+    enabled: query.length > 0,
+  });
+  const suggestions = (suggestionsQuery.data ?? []).filter(
+    (suggestion) => !excludeKeys?.has(suggestion.alias_key),
+  );
+
+  return (
+    <div className="relative">
+      <ClearableInput
+        value={value}
+        onValueChange={onChange}
+        placeholder={t("merchants.aliasPlaceholder")}
+        clearLabel={t("common.clear")}
+        disabled={disabled}
+      />
+      {query.length > 0 && !disabled ? (
+        <div
+          className={cn(
+            "absolute z-20 max-h-64 w-full overflow-auto rounded-md border bg-popover p-1 shadow-md",
+            placement === "top" ? "bottom-full mb-1" : "mt-1",
+          )}
+        >
+          {suggestionsQuery.isLoading ? (
+            <div className="px-2 py-2 text-xs text-muted-foreground">
+              {t("common.loading")}
+            </div>
+          ) : suggestions.length === 0 ? (
+            <div className="px-2 py-2 text-xs text-muted-foreground">
+              {t("merchants.aliasSuggestionsEmpty")}
+            </div>
+          ) : (
+            suggestions.map((suggestion) => (
+              <button
+                key={suggestion.alias_key}
+                type="button"
+                className="flex w-full min-w-0 items-center justify-between gap-3 rounded-sm px-2 py-2 text-left text-sm hover:bg-muted"
+                onClick={() =>
+                  onSelectSuggestion
+                    ? onSelectSuggestion(suggestion)
+                    : onChange(suggestion.alias_label)
+                }
+              >
+                <span className="min-w-0">
+                  <span className="block truncate font-medium">
+                    {suggestion.alias_label}
+                  </span>
+                  <span className="block truncate text-xs text-muted-foreground">
+                    {suggestion.alias_key}
+                  </span>
+                </span>
+                <span className="shrink-0 text-right text-xs text-muted-foreground">
+                  {t("merchants.aliasSuggestionMeta", {
+                    count: suggestion.count,
+                    amount: formatCurrency(Number(suggestion.total_amount), "PLN"),
+                  })}
+                </span>
+              </button>
+            ))
+          )}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function MergeCandidateDialog({
   candidate,
   open,
@@ -694,6 +843,8 @@ function MergeCandidateDialog({
   const { t } = useT();
   const [label, setLabel] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [extraAliasInput, setExtraAliasInput] = useState("");
+  const [extraAliases, setExtraAliases] = useState<MerchantAliasSuggestion[]>([]);
   const variants = useMemo(
     () => (candidate ? candidateVariants(candidate) : []),
     [candidate],
@@ -703,14 +854,24 @@ function MergeCandidateDialog({
     if (!candidate || !open) return;
     setLabel(candidate.suggested_label);
     setSelected(new Set(candidateVariants(candidate).map((variant) => variant.alias_key)));
+    setExtraAliasInput("");
+    setExtraAliases([]);
   }, [candidate, open]);
 
   const selectedVariants = variants.filter((variant) => selected.has(variant.alias_key));
+  const excludedAliasKeys = new Set([
+    ...variants.map((variant) => variant.alias_key),
+    ...extraAliases.map((alias) => alias.alias_key),
+  ]);
   const total = selectedVariants.reduce(
     (sum, variant) => sum + Number(variant.total_debit || 0),
     0,
+  ) + extraAliases.reduce(
+    (sum, alias) => sum + Number(alias.total_amount || 0),
+    0,
   );
-  const canSave = Boolean(candidate && label.trim() && selectedVariants.length > 0);
+  const selectedCount = selectedVariants.length + extraAliases.length;
+  const canSave = Boolean(candidate && label.trim() && selectedCount > 0);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -773,9 +934,53 @@ function MergeCandidateDialog({
               })}
             </div>
 
+            <div className="space-y-2">
+              <div className="text-sm font-medium">
+                {t("merchants.mergeAdditionalAliases")}
+              </div>
+              <AliasSuggestionInput
+                value={extraAliasInput}
+                onChange={setExtraAliasInput}
+                excludeKeys={excludedAliasKeys}
+                onSelectSuggestion={(suggestion) => {
+                  setExtraAliases((prev) =>
+                    prev.some((alias) => alias.alias_key === suggestion.alias_key)
+                      ? prev
+                      : [...prev, suggestion],
+                  );
+                  setExtraAliasInput("");
+                }}
+              />
+              {extraAliases.length > 0 ? (
+                <div className="flex flex-wrap gap-2">
+                  {extraAliases.map((alias) => (
+                    <Badge
+                      key={alias.alias_key}
+                      variant="secondary"
+                      className="gap-2 pr-1"
+                    >
+                      <span className="max-w-52 truncate">{alias.alias_label}</span>
+                      <button
+                        type="button"
+                        className="rounded-sm px-1 text-muted-foreground hover:text-foreground"
+                        onClick={() =>
+                          setExtraAliases((prev) =>
+                            prev.filter((item) => item.alias_key !== alias.alias_key),
+                          )
+                        }
+                        aria-label={t("common.delete")}
+                      >
+                        x
+                      </button>
+                    </Badge>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+
             <div className="rounded-md bg-muted px-3 py-2 text-sm text-muted-foreground">
               {t("merchants.mergeSummary", {
-                count: selectedVariants.length,
+                count: selectedCount,
                 amount: formatCurrency(total),
               })}
             </div>
@@ -793,7 +998,10 @@ function MergeCandidateDialog({
               onSave({
                 canonical_key: candidate.canonical_key,
                 canonical_label: label.trim(),
-                aliases: selectedVariants.map((variant) => variant.alias_label),
+                aliases: [
+                  ...selectedVariants.map((variant) => variant.alias_label),
+                  ...extraAliases.map((alias) => alias.alias_label),
+                ],
               })
             }
           >

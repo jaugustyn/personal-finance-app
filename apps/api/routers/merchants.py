@@ -52,6 +52,15 @@ class MerchantCandidateRow(BaseModel):
     total_debit: Decimal
 
 
+class MerchantAliasSuggestionRow(BaseModel):
+    alias_key: str
+    alias_label: str
+    canonical_key: str
+    canonical_label: str
+    count: int
+    total_amount: Decimal
+
+
 @router.get("/aliases", response_model=list[MerchantAliasRow])
 def list_aliases(session: Session = Depends(get_session)) -> list[MerchantAliasRow]:
     return [
@@ -99,6 +108,25 @@ def update_alias_group_label(
 def delete_alias(alias_id: int, session: Session = Depends(get_session)) -> None:
     if not merchant_service.delete_alias(session, alias_id):
         raise HTTPException(status_code=404, detail="Merchant alias not found.")
+
+
+@router.get("/suggestions", response_model=list[MerchantAliasSuggestionRow])
+def alias_suggestions(
+    q: str = Query(min_length=1, max_length=128),
+    limit: int = Query(default=10, ge=1, le=30),
+    session: Session = Depends(get_session),
+) -> list[MerchantAliasSuggestionRow]:
+    return [
+        MerchantAliasSuggestionRow(
+            alias_key=row.alias_key,
+            alias_label=row.alias_label,
+            canonical_key=row.canonical_key,
+            canonical_label=row.canonical_label,
+            count=row.count,
+            total_amount=row.total_amount,
+        )
+        for row in merchant_service.alias_suggestions(session, q=q, limit=limit)
+    ]
 
 
 @router.get("/candidates", response_model=list[MerchantCandidateRow])
