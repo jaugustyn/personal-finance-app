@@ -5,16 +5,23 @@ import type {
   ForecastResponse,
   MlComparison,
   MlDashboard,
+  FeedbackReport,
   MlFeedbackInput,
   MlFeedbackResponse,
   MlReclassifyResponse,
   MlRetrainResponse,
+  ReviewQueueItem,
   Subscription,
+  SubscriptionOverview,
+  SubscriptionPreferenceInput,
 } from "./types";
 
 export const mlApi = {
   mlDashboard: () => request<MlDashboard>("/ml/dashboard"),
   mlComparison: () => request<MlComparison>("/ml/comparison"),
+  reviewQueue: (limit = 20) =>
+    request<ReviewQueueItem[]>(`/ml/review-queue?limit=${limit}`),
+  feedbackReport: () => request<FeedbackReport>("/ml/feedback-report"),
   recordMlFeedback: (payload: MlFeedbackInput) =>
     request<MlFeedbackResponse>("/ml/feedback", {
       method: "POST",
@@ -70,6 +77,13 @@ export const mlApi = {
     ),
   subscriptions: (minConfidence = 0.0) =>
     request<Subscription[]>(`/subscriptions?min_confidence=${minConfidence}`),
+  subscriptionsOverview: () =>
+    request<SubscriptionOverview>("/subscriptions/overview"),
+  saveSubscriptionPreference: (payload: SubscriptionPreferenceInput) =>
+    request<{ id: number; status: string }>("/subscriptions/preference", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
   recordSubscriptionFeedback: (
     merchant: string,
     action: "confirm" | "hide",

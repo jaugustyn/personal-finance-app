@@ -7,10 +7,12 @@ import {
   PiggyBank,
   Upload,
   Tag,
+  Store,
   Settings,
   Sparkles,
   ClipboardCheck,
   CalendarRange,
+  CircleDollarSign,
   BrainCircuit,
   type LucideIcon,
 } from "lucide-react";
@@ -41,6 +43,8 @@ export const NAV_SECTIONS: NavSection[] = [
     items: [
       { href: "/imports", labelKey: "nav.imports", icon: Upload },
       { href: "/categories", labelKey: "nav.categories", icon: Tag },
+      { href: "/merchants", labelKey: "nav.merchants", icon: Store },
+      { href: "/currencies", labelKey: "nav.currencies", icon: CircleDollarSign },
       { href: "/review", labelKey: "nav.review", icon: ClipboardCheck },
       { href: "/ml", labelKey: "nav.ml", icon: BrainCircuit },
     ],

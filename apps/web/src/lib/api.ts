@@ -4,7 +4,9 @@
 import { assetsApi } from "./api/assets";
 import { categoriesApi } from "./api/categories";
 import { chatApi } from "./api/chat";
+import { currenciesApi } from "./api/currencies";
 import { importsApi } from "./api/imports";
+import { merchantsApi } from "./api/merchants";
 import { mlApi } from "./api/ml";
 import { profileApi } from "./api/profile";
 import { statsApi } from "./api/stats";
@@ -16,7 +18,9 @@ export const api = {
   ...statsApi,
   ...transactionsApi,
   ...categoriesApi,
+  ...currenciesApi,
   ...importsApi,
+  ...merchantsApi,
   ...mlApi,
   ...assetsApi,
   ...profileApi,

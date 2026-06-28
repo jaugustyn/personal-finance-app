@@ -1,5 +1,5 @@
 """Subscription detector — recurring debits with stable amount + cadence."""
-from .detector import Subscription, detect_subscriptions, normalize_merchant
+from .detector import Subscription, detect_subscriptions
 from .service import (
     SubscriptionReviewRow,
     list_subscription_rows,
@@ -11,6 +11,5 @@ __all__ = [
     "SubscriptionReviewRow",
     "detect_subscriptions",
     "list_subscription_rows",
-    "normalize_merchant",
     "record_subscription_feedback",
 ]

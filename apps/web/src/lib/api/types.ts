@@ -4,6 +4,7 @@ export type CategoryState =
   | "categorized"
   | "uncategorized"
   | "suggested"
+  | "assignable"
   | "needs_review"
   | "rejected";
 
@@ -15,6 +16,7 @@ export interface OverviewStats {
   net_cashflow: number;
   savings_rate: number;
   tx_count: number;
+  base_currency: string;
 }
 
 export interface CashflowPoint {
@@ -54,8 +56,13 @@ export interface Transaction {
   booking_date: string;
   merchant: string;
   title: string;
-  amount: number;
+  amount: number | string;
   currency: string;
+  amount_base?: number | string | null;
+  base_currency?: string | null;
+  fx_rate?: number | string | null;
+  fx_rate_date?: string | null;
+  fx_rate_source?: string | null;
   direction: "debit" | "credit";
   category: string | null;
   subcategory: string | null;
@@ -70,6 +77,58 @@ export interface Transaction {
   notes?: string | null;
   tags?: string[];
   import_id?: number | null;
+  classification_decision?: ClassificationDecision | null;
+}
+
+export interface FxRate {
+  id: number;
+  currency: string;
+  base_currency: string;
+  rate_date: string;
+  rate: number | string;
+  source: string;
+  created_at: string | null;
+}
+
+export interface CurrencyStatus {
+  base_currency: string;
+  currencies: {
+    currency: string;
+    count: number;
+    total_income: number | string;
+    total_expenses: number | string;
+    net: number | string;
+  }[];
+  missing_rates: {
+    currency: string;
+    base_currency: string;
+    rate_date: string;
+    count: number;
+  }[];
+  missing_rate_count: number;
+}
+
+export type ClassificationDecisionAction =
+  | "accept"
+  | "review"
+  | "manual"
+  | "not_applicable";
+
+export interface ClassificationDecision {
+  action: ClassificationDecisionAction;
+  reason_code: string;
+  threshold_used: number;
+  review_floor: number;
+  category: string | null;
+  confidence: number | null;
+  category_candidate: boolean;
+}
+
+export interface FilterSummary {
+  count: number;
+  total_income: number;
+  total_expenses: number;
+  net: number;
 }
 
 export interface CategoryDef {
@@ -108,6 +167,23 @@ export interface ReviewSummary {
   subscription_feedback: Record<string, unknown>;
   confidence_threshold: number;
   rare_class_threshold: number;
+}
+
+export interface ReviewQueueItem {
+  transaction_id: number;
+  booking_date: string;
+  merchant: string;
+  title: string;
+  amount: number;
+  currency: string;
+  direction: "debit" | "credit";
+  predicted_category: string | null;
+  confidence: number | null;
+  decision_action: ClassificationDecisionAction;
+  decision_reason: string;
+  priority_score: number;
+  priority_components: Record<string, number>;
+  reason_codes: string[];
 }
 
 export interface Recap {
@@ -192,12 +268,70 @@ export interface Anomaly {
 export interface Subscription {
   merchant: string;
   merchant_key: string;
+  display_name: string;
+  currency: string;
+  base_currency: string;
   cadence: string;
   median_amount: number;
   occurrences: number;
   last_seen: string;
+  next_expected_date: string | null;
+  estimated_monthly_cost_original: number;
   estimated_monthly_cost: number;
   confidence: number;
+  status:
+    | "active"
+    | "new"
+    | "price_increased"
+    | "price_decreased"
+    | "probably_cancelled"
+    | "paused_or_missing"
+    | "annual_renewal"
+    | "needs_review"
+    | "ignored";
+  source: "detected" | "category" | "confirmed" | "preference";
+  previous_amount: number | null;
+  current_amount: number | null;
+  price_change_pct: number | null;
+  price_change_annual_impact: number | null;
+  evidence: {
+    source?: string;
+    occurrences?: number;
+    cadence?: string;
+    confidence?: number;
+    amount_stability?: number | null;
+    recent_dates?: string[];
+    manual_category_count?: number;
+  };
+  is_confirmed: boolean;
+  is_ignored: boolean;
+}
+
+export interface SubscriptionUpcomingPayment {
+  subscription_key: string;
+  display_name: string;
+  due_date: string;
+  amount: number;
+  currency: string;
+  amount_base: number;
+  base_currency: string;
+  status: Subscription["status"];
+}
+
+export interface SubscriptionOverview {
+  monthly_total: number;
+  yearly_total: number;
+  next_30_days_count: number;
+  next_30_days_total: number;
+  base_currency: string;
+  upcoming: SubscriptionUpcomingPayment[];
+}
+
+export interface SubscriptionPreferenceInput {
+  subscription_key: string;
+  action: "confirm" | "ignore" | "not_subscription" | "update";
+  display_name?: string | null;
+  cadence_override?: "weekly" | "biweekly" | "monthly" | "yearly" | "unknown" | null;
 }
 
 export interface Asset {
@@ -268,7 +402,23 @@ export interface ImportPreview {
     description: string;
   }[];
   quality_warnings: string[];
+  quality_report: ImportQualityReport;
   supported_extensions: string[];
+}
+
+export interface ImportQualityIssue {
+  code: string;
+  severity: "error" | "warning";
+  count: number;
+  sample_rows: number[];
+}
+
+export interface ImportQualityReport {
+  total_rows: number;
+  valid_rows: number;
+  blocking_issues: number;
+  warnings: number;
+  issues: ImportQualityIssue[];
 }
 
 export interface ImportSummary {
@@ -320,6 +470,48 @@ export interface PersonalRuleInput {
   active?: boolean;
   mode?: "suggest_only" | "auto_apply";
   confidence?: number;
+}
+
+export interface MerchantAlias {
+  id: number;
+  alias_key: string;
+  alias_label: string;
+  canonical_key: string;
+  canonical_label: string;
+  created_at: string | null;
+}
+
+export interface MerchantAliasInput {
+  canonical_label: string;
+  canonical_key?: string | null;
+  aliases: string[];
+}
+
+export interface MerchantAliasGroupLabelInput {
+  canonical_key: string;
+  canonical_label: string;
+}
+
+export interface MerchantCandidateVariant {
+  alias_key: string;
+  alias_label: string;
+  count: number;
+  total_debit: number | string;
+}
+
+export interface MerchantCandidate {
+  canonical_key: string;
+  suggested_label: string;
+  aliases: string[];
+  variants: MerchantCandidateVariant[];
+  count: number;
+  total_debit: number | string;
+}
+
+export interface MerchantAliasGroup {
+  canonical_key: string;
+  canonical_label: string;
+  aliases: MerchantAlias[];
 }
 
 export interface MlMetricSummary {
@@ -379,6 +571,9 @@ export interface MlModelStatus {
   report_updated_at: string | null;
   best_model: MlMetricSummary | null;
   load_error: string | null;
+  artifact_metadata: Record<string, unknown>;
+  compatibility_warnings: string[];
+  retrain_signal: Record<string, unknown> | null;
 }
 
 export interface MlReadiness {
@@ -415,7 +610,25 @@ export interface MlDashboard {
   validation_slices: Record<string, unknown>;
   confidence_policy: Record<string, unknown>;
   feedback_quality: Record<string, unknown>;
+  feedback_report: FeedbackReport;
+  retrain_signal: Record<string, unknown>;
   confusion_hotspots: Record<string, unknown>[];
+}
+
+export interface FeedbackReport {
+  quality: Record<string, unknown>;
+  feedback_events_since_model: number;
+  feedback_events_used_in_training: number | null;
+  feedback_events_not_yet_in_model: number | null;
+  feedback_coverage: number | null;
+  coverage_basis: string;
+  labels_used_in_current_model: number | null;
+  current_label_count: number | null;
+  new_labels_since_training: number | null;
+  new_labels_since_training_ratio: number | null;
+  top_corrected_merchants: Record<string, unknown>[];
+  category_corrections: Record<string, unknown>[];
+  rejection_by_category: Record<string, unknown>[];
 }
 
 export interface MlComparison {

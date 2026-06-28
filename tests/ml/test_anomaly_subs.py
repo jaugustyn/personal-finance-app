@@ -186,6 +186,7 @@ def test_subscription_detected_for_monthly_payment() -> None:
     assert s.cadence == "monthly"
     assert s.occurrences == 6
     assert abs(s.median_amount - 29.99) < 0.01
+    assert abs(s.estimated_monthly_cost - 29.99) < 0.01
     assert s.confidence >= 0.8  # whitelisted Spotify with regular amount
 
 
@@ -207,7 +208,7 @@ def test_subscription_uses_raw_merchant_for_display() -> None:
 
     assert len(subs) == 1
     assert subs[0].merchant == "NETFLIX.COM AMSTERDAM"
-    assert subs[0].merchant_key == "netflix com amsterdam"
+    assert subs[0].merchant_key == "netflix"
 
 
 def test_subscription_display_compacts_repeated_descriptor() -> None:
@@ -224,7 +225,59 @@ def test_subscription_display_compacts_repeated_descriptor() -> None:
 
     assert len(subs) == 1
     assert subs[0].merchant == "NETFLIX.COM"
-    assert subs[0].merchant_key == "netflix com netflix com"
+    assert subs[0].merchant_key == "netflix"
+
+
+def test_subscription_whitelist_uses_raw_merchant_key() -> None:
+    dates = pd.date_range("2025-09-15", periods=3, freq="30D")
+    df = pd.DataFrame({
+        "booking_date": dates,
+        "amount": [-9.99, -11.99, -15.99],
+        "direction": ["debit"] * 3,
+        "merchant": ["APPLE.COM/BILL"] * 3,
+        "category": ["subscriptions"] * 3,
+    })
+
+    subs = detect_subscriptions(df)
+
+    assert len(subs) == 1
+    assert subs[0].merchant_key == "apple bill"
+
+
+def test_subscription_key_does_not_merge_different_products_same_brand() -> None:
+    dates = pd.date_range("2025-09-15", periods=4, freq="30D")
+    df = pd.DataFrame({
+        "booking_date": list(dates) + list(dates),
+        "amount": [-29.99] * 4 + [-9.99] * 4,
+        "direction": ["debit"] * 8,
+        "merchant": ["Amazon Prime Video"] * 4 + ["Amazon Music Unlimited"] * 4,
+        "category": ["subscriptions"] * 8,
+    })
+
+    subs = detect_subscriptions(df)
+
+    assert {sub.merchant_key for sub in subs} == {
+        "amazon prime video",
+        "amazon music unlimited",
+    }
+
+
+def test_subscription_uses_title_when_merchant_is_missing() -> None:
+    dates = pd.date_range("2025-09-15", periods=4, freq="30D")
+    df = pd.DataFrame({
+        "booking_date": dates,
+        "amount": [-19.99] * 4,
+        "direction": ["debit"] * 4,
+        "merchant": [""] * 4,
+        "title": ["Spotify Premium"] * 4,
+        "category": ["subscriptions"] * 4,
+    })
+
+    subs = detect_subscriptions(df)
+
+    assert len(subs) == 1
+    assert subs[0].merchant == "Spotify Premium"
+    assert subs[0].merchant_key == "spotify premium"
 
 
 def test_subscription_blacklist_rejects_grocery() -> None:
@@ -270,15 +323,16 @@ def test_subscription_handles_empty_frame() -> None:
     )) == []
 
 
-def test_subscription_excludes_transfers_and_savings() -> None:
+def test_subscription_excludes_transfers_and_savings_investments() -> None:
     dates = pd.date_range("2025-09-15", periods=6, freq="30D")
     df = pd.DataFrame({
         "booking_date": list(dates) + list(dates),
         "amount": [-500.0] * 12,
         "direction": ["debit"] * 12,
         "merchant": ["Own transfer"] * 6 + ["Savings account"] * 6,
-        "category": ["subscriptions"] * 6 + ["savings"] * 6,
+        "category": ["subscriptions"] * 12,
         "is_transfer": [True] * 6 + [False] * 6,
+        "transaction_type": ["purchase"] * 6 + ["savings_investment"] * 6,
     })
     assert detect_subscriptions(df) == []
 

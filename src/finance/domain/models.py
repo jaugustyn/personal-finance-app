@@ -100,6 +100,31 @@ class UserProfile(Base):
     )
 
 
+class FxRate(Base):
+    """Historical exchange rate used to convert transaction amounts."""
+
+    __tablename__ = "fx_rates"
+    __table_args__ = (
+        UniqueConstraint(
+            "currency",
+            "base_currency",
+            "rate_date",
+            name="uq_fx_rates_currency_base_date",
+        ),
+        Index("ix_fx_rates_currency_base_date", "currency", "base_currency", "rate_date"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    currency: Mapped[str] = mapped_column(String(3))
+    base_currency: Mapped[str] = mapped_column(String(3))
+    rate_date: Mapped[date] = mapped_column()
+    rate: Mapped[Decimal] = mapped_column(Numeric(18, 8))
+    source: Mapped[str] = mapped_column(String(32), default="manual", server_default="manual")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
 class PersonalRule(Base):
     """User-defined merchant/title rule used before ML suggestions."""
 
@@ -126,6 +151,25 @@ class PersonalRule(Base):
     )
 
 
+class MerchantAlias(Base):
+    """User-curated merchant alias mapped to a canonical display merchant."""
+
+    __tablename__ = "merchant_aliases"
+    __table_args__ = (
+        UniqueConstraint("alias_key", name="uq_merchant_aliases_alias_key"),
+        Index("ix_merchant_aliases_canonical_key", "canonical_key"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    alias_key: Mapped[str] = mapped_column(String(256))
+    alias_label: Mapped[str] = mapped_column(String(256))
+    canonical_key: Mapped[str] = mapped_column(String(256))
+    canonical_label: Mapped[str] = mapped_column(String(256))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
 class Transaction(Base):
     __tablename__ = "transactions"
     __table_args__ = (
@@ -142,6 +186,11 @@ class Transaction(Base):
     booking_datetime: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     amount: Mapped[Decimal] = mapped_column(Numeric(14, 2))
     currency: Mapped[str] = mapped_column(String(3))
+    amount_base: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
+    base_currency: Mapped[str | None] = mapped_column(String(3), nullable=True)
+    fx_rate: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
+    fx_rate_date: Mapped[date | None] = mapped_column(nullable=True)
+    fx_rate_source: Mapped[str | None] = mapped_column(String(32), nullable=True)
     direction: Mapped[TransactionDirection] = mapped_column(String(8))
 
     merchant: Mapped[str] = mapped_column(String(256), default="")
@@ -205,6 +254,29 @@ class MlFeedbackEvent(Base):
     model_artifact: Mapped[str | None] = mapped_column(String(256), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class SubscriptionPreference(Base):
+    """User decision layer for recurring subscription groups."""
+
+    __tablename__ = "subscription_preferences"
+    __table_args__ = (
+        UniqueConstraint("subscription_key", name="uq_subscription_preferences_key"),
+        Index("ix_subscription_preferences_key", "subscription_key"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    subscription_key: Mapped[str] = mapped_column(String(320), nullable=False)
+    display_name: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    cadence_override: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    confirmed: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    ignored: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
 
 

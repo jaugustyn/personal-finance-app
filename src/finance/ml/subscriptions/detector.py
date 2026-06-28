@@ -15,7 +15,11 @@ import numpy as np
 import pandas as pd
 
 from finance.analytics.filters import expense_category_candidate_mask
-from finance.transactions.normalization import normalize_merchant
+from finance.transactions.merchants import (
+    CANONICAL_STOPWORDS,
+    merchant_display_label,
+    merchant_key,
+)
 
 CADENCES: dict[str, int] = {
     "weekly": 7,
@@ -40,16 +44,18 @@ DEFAULT_BLACKLIST: tuple[str, ...] = (
 # Substrings (lowercased) of well-known subscription providers that should be
 # flagged even if they fail amount-stability (e.g. annual price hike).
 DEFAULT_WHITELIST: tuple[str, ...] = (
-    "spotify", "netflix", "hbo", "disney", "apple.com/bill", "icloud",
+    "spotify", "netflix", "hbo", "disney", "apple com bill", "icloud",
     "google one", "google storage", "youtube premium", "openai", "chatgpt",
     "github", "jetbrains", "anthropic",
 )
+SUBSCRIPTION_EXCLUDED_TRANSACTION_TYPES: set[str] = {"savings_investment"}
 
 
 @dataclass
 class Subscription:
     merchant: str
     merchant_key: str
+    currency: str
     cadence: str
     median_amount: float
     occurrences: int
@@ -59,13 +65,28 @@ class Subscription:
     samples: pd.DataFrame
 
 
-# Legacy/non-expense category labels from older imports; current data should
-# represent these via transaction_type/is_transfer instead.
-EXCLUDED_CATEGORIES: set[str] = {"savings", "income", "salary", "transfer"}
-
-
-def _normalise(name: str | None) -> str:
-    return normalize_merchant(name)
+def normalize_subscription_merchant(
+    merchant: str | None,
+    title: str | None = None,
+) -> str:
+    """Subscription-specific key: normalized, but not collapsed to one brand token."""
+    key = merchant_key(merchant, title)
+    tokens = [
+        token
+        for token in key.split()
+        if len(token) > 1 and not token.isdigit() and token not in CANONICAL_STOPWORDS
+    ]
+    if not tokens:
+        return key
+    compacted: list[str] = []
+    for token in tokens:
+        if not compacted or compacted[-1] != token:
+            compacted.append(token)
+    if len(compacted) % 2 == 0:
+        mid = len(compacted) // 2
+        if compacted[:mid] == compacted[mid:]:
+            compacted = compacted[:mid]
+    return " ".join(compacted)
 
 
 def _compact_repeated_descriptor(value: str) -> str:
@@ -76,14 +97,28 @@ def _compact_repeated_descriptor(value: str) -> str:
     mid = len(tokens) // 2
     left = " ".join(tokens[:mid])
     right = " ".join(tokens[mid:])
-    return left if _normalise(left) == _normalise(right) else value
+    if normalize_subscription_merchant(left) == normalize_subscription_merchant(right):
+        return left
+    return value
 
 
 def _representative_merchant(group: pd.DataFrame, fallback: str) -> str:
     """Pick a display label from raw transactions, not the normalized key."""
     ordered = group.sort_values("booking_date", ascending=False)
-    for raw in ordered["merchant"].fillna("").astype(str):
-        label = " ".join(raw.split())
+    if "merchant_display" in ordered.columns:
+        displays = ordered["merchant_display"].fillna("").astype(str)
+        for display in displays:
+            label = " ".join(display.split())
+            if label:
+                return _compact_repeated_descriptor(label)
+    merchants = ordered["merchant"].fillna("").astype(str)
+    titles = (
+        ordered["title"].fillna("").astype(str)
+        if "title" in ordered.columns
+        else [""] * len(ordered)
+    )
+    for raw, title in zip(merchants, titles, strict=False):
+        label = " ".join(merchant_display_label(raw, title).split())
         if label:
             return _compact_repeated_descriptor(label)
     return fallback
@@ -97,6 +132,14 @@ def _classify_cadence(median_days: float, *, day_tol: int = DAY_TOL) -> str | No
 
 
 def _monthly_cost(amount: float, cadence: str) -> float:
+    if cadence == "monthly":
+        return float(amount)
+    if cadence == "yearly":
+        return float(amount) / 12.0
+    if cadence == "weekly":
+        return float(amount) * (52.0 / 12.0)
+    if cadence == "biweekly":
+        return float(amount) * (26.0 / 12.0)
     days = CADENCES[cadence]
     return float(amount) * (30.4375 / days)
 
@@ -107,6 +150,13 @@ def _is_blacklisted(name: str, blacklist: tuple[str, ...]) -> bool:
 
 def _is_whitelisted(name: str, whitelist: tuple[str, ...]) -> bool:
     return any(w in name for w in whitelist)
+
+
+def _has_whitelisted_raw_merchant(group: pd.DataFrame, whitelist: tuple[str, ...]) -> bool:
+    return any(
+        _is_whitelisted(merchant_key(raw), whitelist)
+        for raw in group["merchant"].fillna("").astype(str)
+    )
 
 
 def detect_subscriptions(
@@ -130,20 +180,38 @@ def detect_subscriptions(
     d = df[expense_category_candidate_mask(df)].copy()
     if d.empty:
         return []
-    if "category" in d.columns:
-        category = d["category"].fillna("").astype(str).str.lower()
-        d = d[~category.isin(EXCLUDED_CATEGORIES)]
+    if "transaction_type" in d.columns:
+        tx_type = d["transaction_type"].fillna("purchase").astype(str)
+        d = d[~tx_type.isin(SUBSCRIPTION_EXCLUDED_TRANSACTION_TYPES)]
     if d.empty:
         return []
     d["booking_date"] = pd.to_datetime(d["booking_date"])
     if "abs_amount" not in d.columns:
         d["abs_amount"] = d["amount"].abs().astype(float)
-    d["merchant_norm"] = d["merchant"].fillna("").map(_normalise)
+    if "currency" not in d.columns:
+        d["currency"] = ""
+    if "title" not in d.columns:
+        d["title"] = ""
+    if "merchant_norm" in d.columns:
+        d["merchant_norm"] = d["merchant_norm"].fillna("").astype(str)
+    else:
+        d["merchant_norm"] = [
+            normalize_subscription_merchant(merchant, title)
+            for merchant, title in zip(
+                d["merchant"].fillna("").astype(str),
+                d["title"].fillna("").astype(str),
+                strict=False,
+            )
+        ]
     d = d[d["merchant_norm"].str.len() > 0]
 
     out: list[Subscription] = []
-    for merch, group in d.groupby("merchant_norm"):
-        whitelisted = _is_whitelisted(merch, whitelist)
+    for (merch, currency), group in d.groupby(["merchant_norm", "currency"], dropna=False):
+        currency = str(currency or "").upper()
+        whitelisted = _is_whitelisted(merch, whitelist) or _has_whitelisted_raw_merchant(
+            group,
+            whitelist,
+        )
         if _is_blacklisted(merch, blacklist) and not whitelisted:
             continue
         if len(group) < min_occurrences:
@@ -188,7 +256,8 @@ def detect_subscriptions(
         out.append(
             Subscription(
                 merchant=_representative_merchant(group, merch),
-                merchant_key=merch,
+                merchant_key=f"{merch}|{currency.lower()}" if currency else merch,
+                currency=currency,
                 cadence=cadence,
                 median_amount=round(med, 2),
                 occurrences=len(group),
