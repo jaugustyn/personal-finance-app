@@ -8,10 +8,8 @@ import pandas as pd
 from sklearn.ensemble import IsolationForest
 
 from finance.analytics.filters import expense_category_candidate_mask
+from finance.transactions.merchants import merchant_canonical_key
 
-# Legacy/non-expense category labels that may exist in older imports. Current
-# data should represent these via transaction_type/is_transfer instead.
-EXCLUDED_CATEGORIES: set[str] = {"salary", "income", "savings", "transfer"}
 ANOMALY_EXCLUDED_TRANSACTION_TYPES: set[str] = {"savings_investment"}
 MIN_RECURRING_MERCHANT_OCCURRENCES = 4
 NEW_MERCHANT_MIN_AMOUNT = 1000.0
@@ -47,7 +45,19 @@ def _merchant_freq(df: pd.DataFrame) -> pd.Series:
 
 
 def _merchant_key(df: pd.DataFrame) -> pd.Series:
-    return df["merchant"].fillna("").astype(str).str.lower().str.strip()
+    merchant = df["merchant"].fillna("").astype(str)
+    title = (
+        df["title"].fillna("").astype(str)
+        if "title" in df.columns
+        else pd.Series("", index=df.index)
+    )
+    return pd.Series(
+        [
+            merchant_canonical_key(merchant_value, title_value)
+            for merchant_value, title_value in zip(merchant, title, strict=False)
+        ],
+        index=df.index,
+    )
 
 
 def _amount_zscore_per_category(
@@ -161,7 +171,7 @@ def detect_anomalies(
 
     Args:
         direction: filter to 'debit'/'credit' before scoring; None = both.
-        excluded_categories: categories to never flag (defaults to salary/income/transfers).
+        excluded_categories: optional category labels to never flag.
     """
     if df.empty:
         return AnomalyResult(
@@ -189,9 +199,11 @@ def detect_anomalies(
     if "category" not in work.columns:
         work["category"] = None
 
-    excluded = excluded_categories if excluded_categories is not None else EXCLUDED_CATEGORIES
-    cat_lower = work["category"].fillna("").astype(str).str.lower()
-    mask_cat = ~cat_lower.isin(excluded)
+    if excluded_categories:
+        cat_lower = work["category"].fillna("").astype(str).str.lower()
+        mask_cat = ~cat_lower.isin(excluded_categories)
+    else:
+        mask_cat = pd.Series(True, index=work.index)
     candidate = expense_category_candidate_mask(work, direction=direction)
     tx_type = work["transaction_type"].fillna("purchase").astype(str)
     mask_tx_type = ~tx_type.isin(ANOMALY_EXCLUDED_TRANSACTION_TYPES)

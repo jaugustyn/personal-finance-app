@@ -9,9 +9,14 @@ from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
 
 from finance.analytics.filters import category_candidate_type_filter, non_transfer_filters
+from finance.currencies import amount_base_expr, resolve_base_currency
 from finance.domain.models import Transaction
 from finance.stats.recap import custom_recap, period_recap
-from finance.transactions.normalization import normalize_merchant
+from finance.transactions.merchants import (
+    load_merchant_alias_maps,
+    merchant_display_label,
+    merchant_identity,
+)
 
 __all__ = [
     "months_ago",
@@ -39,7 +44,7 @@ def months_ago(months: int) -> date:
 def _income_expr() -> Any:
     return func.coalesce(
         func.sum(
-            case((Transaction.direction == "credit", func.abs(Transaction.amount)), else_=0)
+            case((Transaction.direction == "credit", func.abs(amount_base_expr())), else_=0)
         ),
         0,
     )
@@ -48,14 +53,14 @@ def _income_expr() -> Any:
 def _expense_expr() -> Any:
     return func.coalesce(
         func.sum(
-            case((Transaction.direction == "debit", func.abs(Transaction.amount)), else_=0)
+            case((Transaction.direction == "debit", func.abs(amount_base_expr())), else_=0)
         ),
         0,
     )
 
 
 def _abs_amount_sum() -> Any:
-    return func.coalesce(func.sum(func.abs(Transaction.amount)), 0)
+    return func.coalesce(func.sum(func.abs(amount_base_expr())), 0)
 
 
 def _period_start(months: int | None) -> date | None:
@@ -67,47 +72,6 @@ def _base_filters(start: date | None, *, include_transfers: bool) -> list[Any]:
     if start is not None:
         filters.append(Transaction.booking_date >= start)
     return filters
-
-
-_MERCHANT_GROUP_STOPWORDS = {
-    "card",
-    "karta",
-    "mastercard",
-    "nr",
-    "platnosc",
-    "payment",
-    "pos",
-    "ref",
-    "terminal",
-    "transakcja",
-    "visa",
-    "zakup",
-}
-_LEGAL_SUFFIXES = {"sa", "s", "a", "sp", "z", "oo", "o", "pl"}
-
-
-def _merchant_label(merchant: str | None, title: str | None) -> str:
-    return (merchant or "").strip() or (title or "").strip()
-
-
-def _merchant_group_key(merchant: str | None, title: str | None) -> str:
-    """Stable display grouping for dashboard top merchants.
-
-    Bank exports often append terminal IDs, card-payment prefixes or legal
-    suffixes to the same merchant. For dashboard-level "top spend" we group by
-    the first meaningful normalized token, with title as a fallback when the
-    merchant field is empty.
-    """
-    normalized = normalize_merchant(_merchant_label(merchant, title))
-    tokens = [
-        token
-        for token in normalized.split()
-        if len(token) > 1
-        and not token.isdigit()
-        and token not in _MERCHANT_GROUP_STOPWORDS
-        and token not in _LEGAL_SUFFIXES
-    ]
-    return tokens[0] if tokens else normalized
 
 
 def _category_candidate_type_filter() -> Any:
@@ -141,6 +105,7 @@ def overview(
         "net_cashflow": net,
         "savings_rate": max(min(savings, 1.0), -10.0),
         "tx_count": int(row.cnt or 0),
+        "base_currency": resolve_base_currency(session),
     }
 
 
@@ -264,19 +229,26 @@ def top_merchants(
         select(
             Transaction.merchant,
             Transaction.title,
-            func.abs(Transaction.amount).label("amount"),
+            func.abs(amount_base_expr()).label("amount"),
             Transaction.category,
         )
         .where(*_base_filters(start, include_transfers=include_transfers))
         .where(Transaction.direction == direction)
     ).all()
 
+    alias_map, label_map = load_merchant_alias_maps(session)
     groups: dict[str, dict[str, Any]] = {}
     for row in rows:
-        key = _merchant_group_key(row.merchant, row.title)
+        identity = merchant_identity(
+            row.merchant,
+            row.title,
+            alias_map=alias_map,
+            label_map=label_map,
+        )
+        key = identity.canonical_key
         if not key:
             continue
-        label = _merchant_label(row.merchant, row.title)
+        label = identity.display_label or merchant_display_label(row.merchant, row.title)
         value = Decimal(row.amount or 0)
         group = groups.setdefault(
             key,
@@ -371,7 +343,7 @@ def category_trend(
         select(
             Transaction.booking_date,
             Transaction.category.label("category"),
-            func.abs(Transaction.amount).label("amount"),
+            func.abs(amount_base_expr()).label("amount"),
         ).where(*base, Transaction.category.in_(top_categories))
     ).all()
     sums: dict[tuple[str, str], Decimal] = {}
@@ -401,7 +373,7 @@ def spend_distribution(
     """
     start = _period_start(months)
     rows = session.execute(
-        select(func.abs(Transaction.amount))
+        select(func.abs(amount_base_expr()))
         .where(
             *_base_filters(start, include_transfers=include_transfers),
             Transaction.direction == direction,

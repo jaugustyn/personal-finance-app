@@ -7,6 +7,7 @@ from decimal import Decimal
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from finance.currencies import amount_base_expr
 from finance.domain.models import Transaction
 
 
@@ -24,12 +25,13 @@ def sankey(
         month += 12
         year -= 1
     start = date(year, month, 1)
+    amount_expr = amount_base_expr()
 
     expense_q = (
         select(
             func.coalesce(Transaction.category, "(brak)").label("cat"),
             Transaction.merchant.label("merchant"),
-            func.sum(func.abs(Transaction.amount)).label("amt"),
+            func.sum(func.abs(amount_expr)).label("amt"),
         )
         .where(
             Transaction.booking_date >= start,
@@ -54,7 +56,7 @@ def sankey(
     other_total = sum((value for _, value in sorted_cats[top_categories:]), Decimal("0"))
 
     income_total = session.execute(
-        select(func.coalesce(func.sum(func.abs(Transaction.amount)), 0)).where(
+        select(func.coalesce(func.sum(func.abs(amount_expr)), 0)).where(
             Transaction.booking_date >= start,
             Transaction.direction == "credit",
         )

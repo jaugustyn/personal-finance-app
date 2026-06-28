@@ -9,12 +9,18 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from finance.analytics.filters import debit_spending_filters, non_transfer_filters
+from finance.currencies import amount_base_expr
 from finance.domain.models import Transaction
 from finance.llm.periods import parse_period
 from finance.llm.tool_schemas import SavingsRecommendationsArgs
 from finance.ml.anomaly.service import list_anomaly_rows
 from finance.ml.subscriptions.service import list_subscription_rows
 from finance.profile.service import get_or_create_profile
+from finance.transactions.merchants import (
+    load_merchant_alias_maps,
+    merchant_display_label,
+    merchant_identity,
+)
 
 
 def _safe_float(value: object, *, default: float = 0.0) -> float:
@@ -33,8 +39,9 @@ def _previous_period(start: date, end: date) -> tuple[date, date]:
 
 
 def _category_totals(session: Session, start: date, end: date) -> dict[str, float]:
+    amount_expr = amount_base_expr()
     stmt = (
-        select(Transaction.category, func.sum(func.abs(Transaction.amount)))
+        select(Transaction.category, func.sum(func.abs(amount_expr)))
         .where(*debit_spending_filters(start, end))
         .where(Transaction.category.is_not(None))
         .group_by(Transaction.category)
@@ -49,30 +56,42 @@ def _top_merchants(
     *,
     limit: int,
 ) -> list[dict[str, Any]]:
-    stmt = (
-        select(
-            Transaction.merchant,
-            func.sum(func.abs(Transaction.amount)).label("total"),
-            func.count().label("tx_count"),
+    amount_expr = amount_base_expr()
+    rows = session.execute(
+        select(Transaction.merchant, Transaction.title, func.abs(amount_expr)).where(
+            *debit_spending_filters(start, end)
         )
-        .where(*debit_spending_filters(start, end))
-        .group_by(Transaction.merchant)
-        .order_by(func.sum(func.abs(Transaction.amount)).desc())
-        .limit(limit)
-    )
-    return [
-        {
-            "merchant": merchant or "(brak nazwy)",
-            "total": _safe_float(total),
-            "transactions": int(count or 0),
-        }
-        for merchant, total, count in session.execute(stmt)
-    ]
+    ).all()
+    alias_map, label_map = load_merchant_alias_maps(session)
+    groups: dict[str, dict[str, Any]] = {}
+    for merchant, title, amount in rows:
+        identity = merchant_identity(
+            merchant,
+            title,
+            alias_map=alias_map,
+            label_map=label_map,
+        )
+        if not identity.canonical_key:
+            continue
+        group = groups.setdefault(
+            identity.canonical_key,
+            {"merchant": identity.display_label, "total": 0.0, "transactions": 0},
+        )
+        if not group["merchant"]:
+            group["merchant"] = merchant_display_label(merchant, title)
+        group["total"] += _safe_float(amount)
+        group["transactions"] += 1
+    return sorted(
+        groups.values(),
+        key=lambda item: (item["total"], item["transactions"]),
+        reverse=True,
+    )[:limit]
 
 
 def _income_total(session: Session, start: date, end: date) -> float:
+    amount_expr = amount_base_expr()
     stmt = (
-        select(func.sum(func.abs(Transaction.amount)))
+        select(func.sum(func.abs(amount_expr)))
         .where(Transaction.direction == "credit")
         .where(*non_transfer_filters())
         .where(Transaction.booking_date >= start)

@@ -19,7 +19,7 @@ from finance.ml.feedback import (
     FeedbackEventInput,
     record_feedback_event,
 )
-from finance.transactions.normalization import normalize_merchant
+from finance.transactions.merchants import merchant_canonical_key
 
 AnomalyMode = Literal["review", "suspicious", "all"]
 AnomalyDirection = Literal["debit", "credit", "both"]
@@ -78,7 +78,7 @@ def _transaction_frame(
             {
                 "id": row.id,
                 "booking_date": row.booking_date,
-                "amount": float(row.amount),
+                "amount": float(row.amount_base if row.amount_base is not None else row.amount),
                 "direction": row.direction,
                 "merchant": row.merchant or "",
                 "title": row.title or "",
@@ -130,7 +130,7 @@ def anomaly_feedback_statuses(
     session: Session,
     merchants: list[str],
 ) -> dict[str, AnomalyFeedbackStatus]:
-    keys = {normalize_merchant(merchant) for merchant in merchants}
+    keys = {merchant_canonical_key(merchant) for merchant in merchants}
     keys.discard("")
     if not keys:
         return {}
@@ -163,7 +163,7 @@ def _apply_feedback(
         ignored = ignored_anomaly_merchants(session)
         if ignored:
             flagged = flagged[
-                ~flagged["merchant"].fillna("").map(normalize_merchant).isin(ignored)
+                ~flagged["merchant"].fillna("").map(merchant_canonical_key).isin(ignored)
             ]
     adjustments = anomaly_priority_adjustments(session)
     if adjustments and not flagged.empty:
@@ -174,7 +174,10 @@ def _apply_feedback(
                 min(
                     1.0,
                     float(row["priority_score"])
-                    + adjustments.get(normalize_merchant(row.get("merchant") or ""), 0.0),
+                    + adjustments.get(
+                        merchant_canonical_key(str(row.get("merchant") or "")),
+                        0.0,
+                    ),
                 ),
             ),
             axis=1,
@@ -254,7 +257,7 @@ def list_anomaly_rows(
         [str(value or "") for value in flagged["merchant"].tolist()],
     )
     return [
-        _to_row(raw, statuses.get(normalize_merchant(str(raw.get("merchant") or ""))))
+        _to_row(raw, statuses.get(merchant_canonical_key(str(raw.get("merchant") or ""))))
         for _, raw in flagged.iterrows()
     ]
 
@@ -279,7 +282,7 @@ def record_anomaly_feedback(
             event_type=event_type,
             transaction_id=transaction_id,
             entity_type="anomaly_merchant",
-            entity_key=normalize_merchant(tx.merchant),
+            entity_key=merchant_canonical_key(tx.merchant, tx.title),
             source="anomaly_detector",
         ),
     )

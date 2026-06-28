@@ -139,6 +139,32 @@ def test_debt_payments_count_in_cashflow_but_not_category_breakdown(
     assert all(row["category"] is not None for row in by_category_response.json())
 
 
+def test_overview_uses_base_amount_for_foreign_currency(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    _add_tx(
+        db_session,
+        amount=Decimal("-10.00"),
+        currency="USD",
+        amount_base=Decimal("-40.00"),
+        base_currency="PLN",
+        fx_rate=Decimal("4.00000000"),
+        fx_rate_date=date.today(),
+        fx_rate_source="manual",
+        merchant="Foreign Shop",
+        dedup_hash="stats-foreign-usd",
+    )
+    db_session.commit()
+
+    response = client.get("/stats/overview?months=120")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert Decimal(body["total_expenses"]) == Decimal("40.00")
+    assert body["base_currency"] == "PLN"
+
+
 def test_by_category_can_include_predictions_explicitly(
     client: TestClient,
     db_session: Session,

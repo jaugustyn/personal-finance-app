@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from finance.analytics.filters import transfer_mask
+from finance.currencies import amount_base_expr
 from finance.domain.models import Transaction
 
 
@@ -14,7 +15,8 @@ def load_transactions_df(session: Session) -> pd.DataFrame:
         select(
             Transaction.id,
             Transaction.booking_date,
-            Transaction.amount,
+            Transaction.amount.label("original_amount"),
+            amount_base_expr().label("amount"),
             Transaction.currency,
             Transaction.direction,
             Transaction.merchant,
@@ -30,6 +32,7 @@ def load_transactions_df(session: Session) -> pd.DataFrame:
         columns=[
             "id",
             "booking_date",
+            "original_amount",
             "amount",
             "currency",
             "direction",
@@ -43,6 +46,7 @@ def load_transactions_df(session: Session) -> pd.DataFrame:
     )
     if df.empty:
         return df
+    df["original_amount"] = df["original_amount"].astype(float)
     df["amount"] = df["amount"].astype(float)
     df["abs_amount"] = df["amount"].abs()
     df["is_transfer"] = transfer_mask(df)

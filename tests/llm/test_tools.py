@@ -93,6 +93,32 @@ def test_top_merchants_orders_by_total(session):
     assert "Lidl" in names
 
 
+def test_top_merchants_groups_canonical_variants(session):
+    _add_tx(
+        session,
+        booking_date=date(2026, 4, 1),
+        amount=Decimal("-20"),
+        merchant="BIEDRONKA 1234 WARSZAWA",
+        dedup_hash="llm-biedronka-1",
+    )
+    _add_tx(
+        session,
+        booking_date=date(2026, 4, 2),
+        amount=Decimal("-30"),
+        merchant="Biedronka PayU",
+        dedup_hash="llm-biedronka-2",
+    )
+    session.commit()
+
+    res = top_merchants(session, {"period": "2026-04", "limit": 5})
+
+    biedronka = next(
+        row for row in res["merchants"] if row["merchant"].lower().startswith("biedronka")
+    )
+    assert biedronka["transactions"] == 2
+    assert biedronka["total"] == pytest.approx(50.0)
+
+
 def test_top_categories_uses_confirmed_candidate_expenses_only(session):
     _add_tx(
         session,

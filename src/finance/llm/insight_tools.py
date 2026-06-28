@@ -29,7 +29,8 @@ def list_subscriptions(session: Session, args: dict[str, Any]) -> dict[str, Any]
     )
     out: list[dict[str, Any]] = [
         {
-            "merchant": sub.merchant,
+            "merchant": sub.display_name,
+            "status": sub.status,
             "cadence": sub.cadence,
             "median_amount": _safe_float(sub.median_amount),
             "occurrences": int(sub.occurrences),

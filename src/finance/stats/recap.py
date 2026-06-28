@@ -7,8 +7,8 @@ assistant may only describe these results, never invent them.
 """
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
 import calendar
+from dataclasses import asdict, dataclass
 from datetime import date, timedelta
 from decimal import Decimal
 from typing import Any
@@ -21,7 +21,13 @@ from finance.analytics.filters import (
     non_transfer_filters,
     period_filters,
 )
+from finance.currencies import amount_base_expr
 from finance.domain.models import Transaction, UserProfile
+from finance.transactions.merchants import (
+    load_merchant_alias_maps,
+    merchant_display_label,
+    merchant_identity,
+)
 
 PERIOD_WEEK = "week"
 PERIOD_MONTH = "month"
@@ -90,7 +96,7 @@ def _period_bounds(period: str, today: date) -> tuple[PeriodBounds, PeriodBounds
 def _expense_by_category(
     session: Session, bounds: PeriodBounds
 ) -> dict[str, Decimal]:
-    amount = func.coalesce(func.sum(func.abs(Transaction.amount)), 0)
+    amount = func.coalesce(func.sum(func.abs(amount_base_expr())), 0)
     rows = session.execute(
         select(Transaction.category, amount)
         .where(
@@ -108,13 +114,13 @@ def _expense_by_category(
 def _cashflow(session: Session, bounds: PeriodBounds) -> dict[str, Decimal]:
     income = func.coalesce(
         func.sum(
-            case((Transaction.direction == "credit", func.abs(Transaction.amount)), else_=0)
+            case((Transaction.direction == "credit", func.abs(amount_base_expr())), else_=0)
         ),
         0,
     )
     expense = func.coalesce(
         func.sum(
-            case((Transaction.direction == "debit", func.abs(Transaction.amount)), else_=0)
+            case((Transaction.direction == "debit", func.abs(amount_base_expr())), else_=0)
         ),
         0,
     )
@@ -132,24 +138,56 @@ def _cashflow(session: Session, bounds: PeriodBounds) -> dict[str, Decimal]:
 def _top_merchants(
     session: Session, bounds: PeriodBounds, *, limit: int
 ) -> list[MerchantSpend]:
-    amount = func.coalesce(func.sum(func.abs(Transaction.amount)), 0).label("amount")
-    count = func.count().label("cnt")
     rows = session.execute(
-        select(Transaction.merchant, amount, count)
+        select(Transaction.merchant, Transaction.title, func.abs(amount_base_expr()))
         .where(
             Transaction.direction == "debit",
             *period_filters(bounds.start, bounds.end),
             *non_transfer_filters(),
-            Transaction.merchant != "",
         )
-        .group_by(Transaction.merchant)
-        .order_by(amount.desc())
-        .limit(limit)
     ).all()
-    return [
-        MerchantSpend(merchant=row.merchant, amount=Decimal(row.amount or 0), count=int(row.cnt))
-        for row in rows
-    ]
+    alias_map, label_map = load_merchant_alias_maps(session)
+    groups: dict[str, dict[str, Any]] = {}
+    for merchant, title, amount in rows:
+        identity = merchant_identity(
+            merchant,
+            title,
+            alias_map=alias_map,
+            label_map=label_map,
+        )
+        if not identity.canonical_key:
+            continue
+        group = groups.setdefault(
+            identity.canonical_key,
+            {"amount": Decimal(0), "count": 0, "labels": {}},
+        )
+        value = Decimal(amount or 0)
+        group["amount"] += value
+        group["count"] += 1
+        label = identity.display_label or merchant_display_label(merchant, title)
+        labels = group["labels"]
+        label_stats = labels.setdefault(label, {"count": 0, "amount": Decimal(0)})
+        label_stats["count"] += 1
+        label_stats["amount"] += value
+
+    out: list[MerchantSpend] = []
+    for group in sorted(
+        groups.values(),
+        key=lambda item: (item["amount"], item["count"]),
+        reverse=True,
+    )[:limit]:
+        label = max(
+            group["labels"].items(),
+            key=lambda item: (item[1]["count"], item[1]["amount"], item[0]),
+        )[0]
+        out.append(
+            MerchantSpend(
+                merchant=label,
+                amount=Decimal(group["amount"]),
+                count=int(group["count"]),
+            )
+        )
+    return out
 
 
 def _category_changes(

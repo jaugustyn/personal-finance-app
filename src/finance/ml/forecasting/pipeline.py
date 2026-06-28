@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from finance.analytics.filters import expense_category_candidate_mask
+from finance.currencies import amount_base_expr
 from finance.domain.models import Transaction
 from finance.ml.forecasting.registry import FORECASTERS
 
@@ -63,7 +64,7 @@ def load_monthly_series(
 ) -> pd.Series:
     stmt = select(
         Transaction.booking_date,
-        Transaction.amount,
+        amount_base_expr().label("amount"),
         Transaction.direction,
         Transaction.category,
         Transaction.is_transfer,
