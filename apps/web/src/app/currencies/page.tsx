@@ -299,14 +299,20 @@ export default function CurrenciesPage() {
                   placeholder="4.0000"
                 />
               </label>
-              <Button type="submit" className="w-full" disabled={addRate.isPending}>
-                {addRate.isPending ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <Save className="mr-2 h-4 w-4" />
-                )}
-                {t("currencies.saveRate")}
-              </Button>
+              <div className="pt-1">
+                <Button
+                  type="submit"
+                  className="w-full sm:w-auto"
+                  disabled={addRate.isPending}
+                >
+                  {addRate.isPending ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Save className="mr-2 h-4 w-4" />
+                  )}
+                  {t("currencies.saveRate")}
+                </Button>
+              </div>
             </form>
           </CardContent>
         </Card>

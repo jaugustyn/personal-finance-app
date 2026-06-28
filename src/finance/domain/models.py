@@ -271,7 +271,6 @@ class SubscriptionPreference(Base):
     display_name: Mapped[str | None] = mapped_column(String(256), nullable=True)
     cadence_override: Mapped[str | None] = mapped_column(String(32), nullable=True)
     confirmed: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
-    ignored: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
