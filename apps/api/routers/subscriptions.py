@@ -41,17 +41,32 @@ class SubscriptionRow(BaseModel):
     price_change_annual_impact: float | None
     evidence: dict[str, object]
     is_confirmed: bool
-    is_ignored: bool
+    user_decision: Literal["suggested", "confirmed", "rejected"]
+    transactions: list["SubscriptionTransactionRow"]
+
+
+class SubscriptionTransactionRow(BaseModel):
+    id: int
+    booking_date: date
+    merchant: str
+    title: str
+    amount: float
+    currency: str
+    amount_base: float
+    base_currency: str
+    category: str | None
+    category_source: str | None
 
 
 class SubscriptionFeedbackRequest(BaseModel):
     merchant: str
-    action: Literal["confirm", "hide"]
+    action: Literal["confirm"]
+    subscription_key: str | None = None
 
 
 class SubscriptionPreferenceRequest(BaseModel):
     subscription_key: str
-    action: Literal["confirm", "ignore", "not_subscription", "update"] = "update"
+    action: Literal["confirm", "reject", "restore", "update"] = "update"
     display_name: str | None = None
     cadence_override: (
         Literal["weekly", "biweekly", "monthly", "yearly", "unknown"] | None
@@ -111,7 +126,22 @@ def _to_response(row: SubscriptionReviewRow) -> SubscriptionRow:
         price_change_annual_impact=row.price_change_annual_impact,
         evidence=row.evidence,
         is_confirmed=row.is_confirmed,
-        is_ignored=row.is_ignored,
+        user_decision=row.user_decision,
+        transactions=[
+            SubscriptionTransactionRow(
+                id=item.id,
+                booking_date=item.booking_date,
+                merchant=item.merchant,
+                title=item.title,
+                amount=item.amount,
+                currency=item.currency,
+                amount_base=item.amount_base,
+                base_currency=item.base_currency,
+                category=item.category,
+                category_source=item.category_source,
+            )
+            for item in row.transactions
+        ],
     )
 
 
@@ -145,6 +175,7 @@ def list_subscriptions(
     amount_tol: float = Query(default=0.10, ge=0.0, le=0.5),
     day_tol: int = Query(default=5, ge=1, le=15),
     min_confidence: float = Query(default=0.0, ge=0.0, le=1.0),
+    include_rejected: bool = Query(default=False),
 ) -> list[SubscriptionRow]:
     return [
         _to_response(row)
@@ -154,6 +185,7 @@ def list_subscriptions(
             amount_tol=amount_tol,
             day_tol=day_tol,
             min_confidence=min_confidence,
+            include_rejected=include_rejected,
         )
     ]
 
@@ -189,5 +221,6 @@ def record_subscription_feedback(
         session,
         merchant=req.merchant,
         action=req.action,
+        subscription_key=req.subscription_key,
     )
     return FeedbackResponse(id=event.id)

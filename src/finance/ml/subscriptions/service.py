@@ -13,7 +13,8 @@ from finance.domain.enums import Category, CategorySource
 from finance.domain.models import MlFeedbackEvent, SubscriptionPreference, Transaction
 from finance.ml.feedback import (
     EVENT_SUBSCRIPTION_CONFIRMED,
-    EVENT_SUBSCRIPTION_HIDDEN,
+    EVENT_SUBSCRIPTION_REJECTED,
+    EVENT_SUBSCRIPTION_RESTORED,
     FeedbackEventInput,
     record_feedback_event,
 )
@@ -26,21 +27,37 @@ from finance.transactions.merchants import (
     load_merchant_alias_maps,
     merchant_display_label,
     merchant_identity,
+    merchant_key,
 )
 
-SubscriptionFeedbackAction = Literal["confirm", "hide"]
+SubscriptionFeedbackAction = Literal["confirm"]
 SubscriptionPreferenceAction = Literal[
     "confirm",
-    "ignore",
-    "not_subscription",
+    "reject",
+    "restore",
     "update",
 ]
+SubscriptionUserDecision = Literal["suggested", "confirmed", "rejected"]
 
 PRICE_CHANGE_RELATIVE_THRESHOLD = 0.08
 PRICE_CHANGE_ABSOLUTE_THRESHOLD = 1.0
 REVIEW_CONFIDENCE_THRESHOLD = 0.65
 UPCOMING_WINDOW_DAYS = 30
 ANNUAL_RENEWAL_WINDOW_DAYS = 90
+
+
+@dataclass(frozen=True)
+class SubscriptionTransactionSample:
+    id: int
+    booking_date: date
+    merchant: str
+    title: str
+    amount: float
+    currency: str
+    amount_base: float
+    base_currency: str
+    category: str | None
+    category_source: str | None
 
 
 @dataclass(frozen=True)
@@ -65,8 +82,9 @@ class SubscriptionReviewRow:
     price_change_annual_impact: float | None
     evidence: dict[str, object]
     is_confirmed: bool
-    is_ignored: bool
+    user_decision: SubscriptionUserDecision
     display_name: str
+    transactions: list[SubscriptionTransactionSample]
 
 
 @dataclass(frozen=True)
@@ -89,17 +107,6 @@ class SubscriptionOverview:
     next_30_days_total: float
     base_currency: str
     upcoming: list[SubscriptionUpcomingPayment]
-
-
-def hidden_subscription_merchants(session: Session) -> set[str]:
-    rows = session.execute(
-        select(MlFeedbackEvent.entity_key).where(
-            MlFeedbackEvent.event_type == EVENT_SUBSCRIPTION_HIDDEN,
-            MlFeedbackEvent.entity_type == "subscription_merchant",
-            MlFeedbackEvent.entity_key.is_not(None),
-        )
-    ).scalars()
-    return {str(row) for row in rows if row}
 
 
 def _subscription_key(merchant_norm: str, currency: str | None) -> str:
@@ -129,6 +136,7 @@ def _transaction_frame(session: Session) -> pd.DataFrame:
         items.append(
             {
                 "booking_date": row.booking_date,
+                "transaction_id": row.id,
                 "amount": float(row.amount),
                 "amount_base": float(row.amount_base if row.amount_base is not None else row.amount),
                 "direction": row.direction,
@@ -152,6 +160,37 @@ def _transaction_frame(session: Session) -> pd.DataFrame:
 def _load_preferences(session: Session) -> dict[str, SubscriptionPreference]:
     prefs = session.execute(select(SubscriptionPreference)).scalars().all()
     return {pref.subscription_key: pref for pref in prefs}
+
+
+def _subscription_feedback_decisions(session: Session) -> dict[str, str]:
+    rows = session.execute(
+        select(MlFeedbackEvent.entity_key, MlFeedbackEvent.event_type).where(
+            MlFeedbackEvent.event_type.in_(
+                [
+                    EVENT_SUBSCRIPTION_CONFIRMED,
+                    EVENT_SUBSCRIPTION_REJECTED,
+                    EVENT_SUBSCRIPTION_RESTORED,
+                ]
+            ),
+            MlFeedbackEvent.entity_type == "subscription_merchant",
+            MlFeedbackEvent.entity_key.is_not(None),
+        ).order_by(MlFeedbackEvent.created_at.asc(), MlFeedbackEvent.id.asc())
+    ).all()
+    return {str(key): str(event_type) for key, event_type in rows if key}
+
+
+def _user_decision(
+    key: str,
+    *,
+    preferences: dict[str, SubscriptionPreference],
+    feedback_decisions: dict[str, str],
+) -> SubscriptionUserDecision:
+    pref = preferences.get(key)
+    if pref and pref.confirmed:
+        return "confirmed"
+    if feedback_decisions.get(key) == EVENT_SUBSCRIPTION_REJECTED:
+        return "rejected"
+    return "suggested"
 
 
 def _cadence_days(cadence: str) -> int | None:
@@ -202,15 +241,13 @@ def _status_for(
     cadence: str,
     confidence: float,
     is_confirmed: bool,
-    is_ignored: bool,
     source: str,
     occurrences: int,
     next_expected_date: date | None,
+    last_seen: date,
     price_change_pct: float | None,
     as_of: date,
 ) -> str:
-    if is_ignored:
-        return "ignored"
     cadence_days = _cadence_days(cadence)
     if next_expected_date and cadence_days:
         overdue_days = (as_of - next_expected_date).days
@@ -222,10 +259,15 @@ def _status_for(
             days=ANNUAL_RENEWAL_WINDOW_DAYS
         ):
             return "annual_renewal"
+    if cadence_days is None:
+        stale_days = (as_of - last_seen).days
+        if stale_days >= 180:
+            return "probably_cancelled"
+        if stale_days >= 60:
+            return "paused_or_missing"
     if price_change_pct is not None:
         if price_change_pct > 0:
             return "price_increased"
-        return "price_decreased"
     if not is_confirmed and confidence < REVIEW_CONFIDENCE_THRESHOLD:
         return "needs_review"
     if source == "category" and occurrences < 2:
@@ -291,6 +333,27 @@ def _sample_evidence(
     }
 
 
+def _transaction_samples(samples: pd.DataFrame) -> list[SubscriptionTransactionSample]:
+    out: list[SubscriptionTransactionSample] = []
+    for row in samples.sort_values("booking_date", ascending=False).head(12).itertuples():
+        booking_date = row.booking_date.date() if hasattr(row.booking_date, "date") else row.booking_date
+        out.append(
+            SubscriptionTransactionSample(
+                id=int(row.transaction_id),
+                booking_date=booking_date,
+                merchant=str(row.merchant or ""),
+                title=str(row.title or ""),
+                amount=round(float(row.amount), 2),
+                currency=str(row.currency or ""),
+                amount_base=round(float(row.amount_base), 2),
+                base_currency=str(row.base_currency or row.currency or ""),
+                category=str(row.category) if row.category else None,
+                category_source=str(row.category_source) if row.category_source else None,
+            )
+        )
+    return out
+
+
 def _base_currency(samples: pd.DataFrame, fallback: str) -> str:
     if "base_currency" in samples.columns:
         currencies = [
@@ -314,6 +377,7 @@ def _row_from_samples(
     source: str,
     preference: SubscriptionPreference | None,
     as_of: date,
+    user_decision: SubscriptionUserDecision = "suggested",
 ) -> SubscriptionReviewRow:
     ordered = samples.sort_values("booking_date")
     last_seen_raw = ordered["booking_date"].max()
@@ -332,7 +396,6 @@ def _row_from_samples(
     )
     next_expected_date = _next_expected(last_seen, cadence)
     is_confirmed = bool(preference and preference.confirmed) or source == "category"
-    is_ignored = bool(preference and preference.ignored)
     display_name = (
         (preference.display_name if preference else None)
         or merchant
@@ -342,10 +405,10 @@ def _row_from_samples(
         cadence=cadence,
         confidence=confidence,
         is_confirmed=is_confirmed,
-        is_ignored=is_ignored,
         source=source,
         occurrences=len(samples),
         next_expected_date=next_expected_date,
+        last_seen=last_seen,
         price_change_pct=price_change_pct,
         as_of=as_of,
     )
@@ -375,8 +438,9 @@ def _row_from_samples(
             confidence=confidence,
         ),
         is_confirmed=is_confirmed,
-        is_ignored=is_ignored,
+        user_decision=user_decision,
         display_name=display_name,
+        transactions=_transaction_samples(samples),
     )
 
 
@@ -384,6 +448,7 @@ def _to_row(
     sub,
     *,
     preference: SubscriptionPreference | None,
+    user_decision: SubscriptionUserDecision = "suggested",
     as_of: date,
 ) -> SubscriptionReviewRow:
     cadence = preference.cadence_override if preference and preference.cadence_override else sub.cadence
@@ -394,8 +459,9 @@ def _to_row(
         samples=sub.samples,
         cadence=cadence,
         confidence=float(sub.confidence),
-        source="confirmed" if preference and preference.confirmed else "detected",
+        source="detected",
         preference=preference,
+        user_decision=user_decision,
         as_of=as_of,
     )
 
@@ -404,6 +470,7 @@ def _category_subscription_rows(
     df: pd.DataFrame,
     *,
     preferences: dict[str, SubscriptionPreference],
+    feedback_decisions: dict[str, str],
     detected_keys: set[str],
     as_of: date,
 ) -> list[SubscriptionReviewRow]:
@@ -434,6 +501,13 @@ def _category_subscription_rows(
         pref = preferences.get(key)
         if pref and pref.cadence_override:
             cadence = pref.cadence_override
+        user_decision = _user_decision(
+            key,
+            preferences=preferences,
+            feedback_decisions=feedback_decisions,
+        )
+        if user_decision == "suggested":
+            user_decision = "confirmed"
         rows.append(
             _row_from_samples(
                 merchant=display or str(merchant_norm),
@@ -444,6 +518,7 @@ def _category_subscription_rows(
                 confidence=1.0,
                 source="category",
                 preference=pref,
+                user_decision=user_decision,
                 as_of=as_of,
             )
         )
@@ -454,6 +529,7 @@ def _preference_only_rows(
     df: pd.DataFrame,
     *,
     preferences: dict[str, SubscriptionPreference],
+    feedback_decisions: dict[str, str],
     existing_keys: set[str],
     as_of: date,
 ) -> list[SubscriptionReviewRow]:
@@ -462,8 +538,6 @@ def _preference_only_rows(
     rows: list[SubscriptionReviewRow] = []
     for key, pref in preferences.items():
         if key in existing_keys:
-            continue
-        if pref.ignored:
             continue
         if "|" in key:
             merchant_norm, currency = key.rsplit("|", 1)
@@ -487,6 +561,11 @@ def _preference_only_rows(
                 confidence=1.0 if pref.confirmed else 0.5,
                 source="confirmed" if pref.confirmed else "preference",
                 preference=pref,
+                user_decision=_user_decision(
+                    key,
+                    preferences=preferences,
+                    feedback_decisions=feedback_decisions,
+                ),
                 as_of=as_of,
             )
         )
@@ -500,7 +579,7 @@ def list_subscription_rows(
     amount_tol: float = 0.10,
     day_tol: int = 5,
     min_confidence: float = 0.0,
-    include_hidden: bool = False,
+    include_rejected: bool = False,
     as_of: date | None = None,
 ) -> list[SubscriptionReviewRow]:
     as_of = as_of or date.today()
@@ -508,26 +587,48 @@ def list_subscription_rows(
     if df.empty:
         return []
     preferences = _load_preferences(session)
+    feedback_decisions = _subscription_feedback_decisions(session)
+    def is_rejected(key: str) -> bool:
+        return (
+            _user_decision(
+                key,
+                preferences=preferences,
+                feedback_decisions=feedback_decisions,
+            )
+            == "rejected"
+        )
+
+    active_preferences = {
+        key: pref
+        for key, pref in preferences.items()
+        if include_rejected or not is_rejected(key)
+    }
     subs = detect_subscriptions(
         df,
         min_occurrences=min_occurrences,
         amount_tol=amount_tol,
         day_tol=day_tol,
     )
-    hidden = set() if include_hidden else hidden_subscription_merchants(session)
     rows: list[SubscriptionReviewRow] = []
     for sub in subs:
         pref = preferences.get(sub.merchant_key)
-        row = _to_row(sub, preference=pref, as_of=as_of)
-        if not include_hidden and row.is_ignored:
+        rejected = is_rejected(sub.merchant_key)
+        if rejected and not include_rejected:
             continue
-        if not include_hidden and (
-            sub.merchant_key in hidden or normalize_subscription_merchant(sub.merchant) in hidden
-        ):
-            continue
+        row = _to_row(
+            sub,
+            preference=pref,
+            user_decision="rejected" if rejected else _user_decision(
+                sub.merchant_key,
+                preferences=preferences,
+                feedback_decisions=feedback_decisions,
+            ),
+            as_of=as_of,
+        )
         if (
             row.source == "detected"
             and not row.is_confirmed
+            and row.user_decision != "rejected"
             and row.confidence < min_confidence
         ):
             continue
@@ -537,22 +638,19 @@ def list_subscription_rows(
         row
         for row in _category_subscription_rows(
             df,
-            preferences=preferences,
+            preferences=active_preferences,
+            feedback_decisions=feedback_decisions,
             detected_keys=detected_keys,
             as_of=as_of,
         )
-        if include_hidden
-        or (
-            not row.is_ignored
-            and row.merchant_key not in hidden
-            and normalize_subscription_merchant(row.merchant) not in hidden
-        )
+        if include_rejected or not is_rejected(row.merchant_key)
     )
     existing_keys = {row.merchant_key for row in rows}
     rows.extend(
         _preference_only_rows(
             df,
-            preferences=preferences,
+            preferences=active_preferences,
+            feedback_decisions=feedback_decisions,
             existing_keys=existing_keys,
             as_of=as_of,
         )
@@ -570,7 +668,7 @@ def subscription_overview(
     rows = [
         row
         for row in list_subscription_rows(session, min_confidence=0.0, as_of=as_of)
-        if row.status not in {"ignored", "probably_cancelled", "paused_or_missing"}
+        if row.status not in {"probably_cancelled", "paused_or_missing"}
     ]
     base_currency = rows[0].base_currency if rows else "PLN"
     monthly_total = round(sum(row.estimated_monthly_cost for row in rows), 2)
@@ -628,10 +726,28 @@ def upsert_subscription_preference(
         pref.cadence_override = cadence_override or None
     if action == "confirm":
         pref.confirmed = True
-        pref.ignored = False
-    elif action in {"ignore", "not_subscription"}:
-        pref.ignored = True
+    elif action == "reject":
         pref.confirmed = False
+        record_feedback_event(
+            session,
+            FeedbackEventInput(
+                event_type=EVENT_SUBSCRIPTION_REJECTED,
+                entity_type="subscription_merchant",
+                entity_key=subscription_key,
+                source="subscription_management",
+            ),
+        )
+    elif action == "restore":
+        pref.confirmed = False
+        record_feedback_event(
+            session,
+            FeedbackEventInput(
+                event_type=EVENT_SUBSCRIPTION_RESTORED,
+                entity_type="subscription_merchant",
+                entity_key=subscription_key,
+                source="subscription_management",
+            ),
+        )
     elif action == "update":
         pass
     session.commit()
@@ -644,26 +760,52 @@ def record_subscription_feedback(
     *,
     merchant: str,
     action: SubscriptionFeedbackAction,
+    subscription_key: str | None = None,
 ) -> MlFeedbackEvent:
-    event_type = (
-        EVENT_SUBSCRIPTION_CONFIRMED if action == "confirm" else EVENT_SUBSCRIPTION_HIDDEN
-    )
+    normalized = normalize_subscription_merchant(merchant)
     event = record_feedback_event(
         session,
         FeedbackEventInput(
-            event_type=event_type,
+            event_type=EVENT_SUBSCRIPTION_CONFIRMED,
             entity_type="subscription_merchant",
-            entity_key=normalize_subscription_merchant(merchant),
+            entity_key=subscription_key or normalized,
             source="subscription_detector",
         ),
     )
-    normalized = normalize_subscription_merchant(merchant)
-    upsert_subscription_preference(
-        session,
-        subscription_key=normalized,
-        action="confirm" if action == "confirm" else "ignore",
-        display_name=merchant if action == "confirm" else None,
-    )
+    if action == "confirm":
+        keys = {subscription_key} if subscription_key else set()
+        if not keys:
+            alias_map, label_map = load_merchant_alias_maps(session)
+            identity = merchant_identity(merchant, alias_map=alias_map, label_map=label_map)
+            candidate_keys = {
+                value
+                for value in {
+                    normalized,
+                    identity.canonical_key,
+                    merchant_key(merchant),
+                }
+                if value
+            }
+            df = _transaction_frame(session)
+            if not df.empty and candidate_keys:
+                display_keys = df["merchant_display"].fillna("").astype(str).map(
+                    normalize_subscription_merchant
+                )
+                matches = df[
+                    df["merchant_norm"].isin(candidate_keys)
+                    | display_keys.isin(candidate_keys)
+                ]
+                for row in matches.itertuples():
+                    keys.add(_subscription_key(str(row.merchant_norm), str(row.currency or "")))
+            if not keys:
+                keys.add(normalized)
+        for key in keys:
+            upsert_subscription_preference(
+                session,
+                subscription_key=key,
+                action="confirm",
+                display_name=merchant,
+            )
     session.commit()
     session.refresh(event)
     return event

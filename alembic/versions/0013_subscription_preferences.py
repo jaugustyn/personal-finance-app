@@ -25,7 +25,6 @@ def upgrade() -> None:
         sa.Column("display_name", sa.String(length=256), nullable=True),
         sa.Column("cadence_override", sa.String(length=32), nullable=True),
         sa.Column("confirmed", sa.Boolean(), server_default="false", nullable=False),
-        sa.Column("ignored", sa.Boolean(), server_default="false", nullable=False),
         sa.Column(
             "created_at",
             sa.DateTime(timezone=True),

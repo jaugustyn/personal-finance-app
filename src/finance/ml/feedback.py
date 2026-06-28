@@ -23,7 +23,8 @@ EVENT_ANOMALY_RELEVANT = "anomaly_relevant"
 EVENT_ANOMALY_NOT_RELEVANT = "anomaly_not_relevant"
 EVENT_ANOMALY_IGNORE_MERCHANT = "anomaly_ignore_merchant"
 EVENT_SUBSCRIPTION_CONFIRMED = "subscription_confirmed"
-EVENT_SUBSCRIPTION_HIDDEN = "subscription_hidden"
+EVENT_SUBSCRIPTION_REJECTED = "subscription_rejected"
+EVENT_SUBSCRIPTION_RESTORED = "subscription_restored"
 
 
 @dataclass(frozen=True)
@@ -363,13 +364,19 @@ def subscription_feedback_summary(session: Session) -> dict[str, Any]:
             MlFeedbackEvent.event_type == EVENT_SUBSCRIPTION_CONFIRMED
         )
     ).scalar_one()
-    hidden = session.execute(
+    rejected = session.execute(
         select(func.count()).where(
-            MlFeedbackEvent.event_type == EVENT_SUBSCRIPTION_HIDDEN
+            MlFeedbackEvent.event_type == EVENT_SUBSCRIPTION_REJECTED
+        )
+    ).scalar_one()
+    restored = session.execute(
+        select(func.count()).where(
+            MlFeedbackEvent.event_type == EVENT_SUBSCRIPTION_RESTORED
         )
     ).scalar_one()
     return {
         "confirmed": int(confirmed or 0),
-        "hidden": int(hidden or 0),
-        "reviewed": int(confirmed or 0) + int(hidden or 0),
+        "rejected": int(rejected or 0),
+        "restored": int(restored or 0),
+        "reviewed": int(confirmed or 0) + int(rejected or 0),
     }

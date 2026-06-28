@@ -246,7 +246,7 @@ def test_list_subscriptions_picks_whitelisted(session):
     assert any(s["merchant"].lower() == "spotify" for s in res["subscriptions"])
 
 
-def test_list_subscriptions_honors_hidden_feedback(session):
+def test_list_subscriptions_confirm_feedback_keeps_subscription_visible(session):
     from finance.ml.subscriptions.service import record_subscription_feedback
 
     for i in range(4):
@@ -255,14 +255,14 @@ def test_list_subscriptions_honors_hidden_feedback(session):
             booking_date=date(2026, i + 1, 5),
             amount=Decimal("-19.99"),
             merchant="Spotify",
-            dedup_hash=f"hidden-spotify-{i}",
+            dedup_hash=f"confirmed-spotify-{i}",
         )
     session.commit()
 
-    record_subscription_feedback(session, merchant="Spotify", action="hide")
+    record_subscription_feedback(session, merchant="Spotify", action="confirm")
 
     res = list_subscriptions(session, {"min_confidence": 0.0})
-    assert all(s["merchant"].lower() != "spotify" for s in res["subscriptions"])
+    assert any(s["merchant"].lower() == "spotify" for s in res["subscriptions"])
 
 
 def test_list_anomalies_empty_db(session):
