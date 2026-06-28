@@ -2,7 +2,18 @@
 from datetime import date
 from decimal import Decimal
 
+import pytest
+
+from apps.api.routers import transactions as transactions_router
 from finance.domain.models import Transaction
+
+
+@pytest.fixture(autouse=True)
+def _isolated_reports_dir(monkeypatch, tmp_path):
+    reports_dir = tmp_path / "reports"
+    reports_dir.mkdir()
+    monkeypatch.setattr(transactions_router, "REPORTS_DIR", reports_dir)
+    return reports_dir
 
 
 def _seed(session, **overrides) -> Transaction:
@@ -43,6 +54,7 @@ def test_list_transactions_returns_seeded(client, db_session) -> None:
     assert body[0]["category"] == "food"
     assert body[0]["category_suggestion_rejected"] is False
     assert body[0]["transaction_type"] == "purchase"
+    assert body[0]["classification_decision"]["action"] == "manual"
 
 
 def test_list_transactions_date_filter(client, db_session) -> None:
@@ -64,8 +76,8 @@ def test_list_transactions_filters_suggestions_and_type(client, db_session) -> N
         category_predicted_source="model",
         dedup_hash="h-suggested",
     )
-    _seed(db_session, category=None, category_predicted=None, dedup_hash="h-empty")
-    _seed(
+    empty = _seed(db_session, category=None, category_predicted=None, dedup_hash="h-empty")
+    low = _seed(
         db_session,
         category=None,
         category_predicted="transport",
@@ -90,6 +102,15 @@ def test_list_transactions_filters_suggestions_and_type(client, db_session) -> N
     assert r2.status_code == 200
     assert len(r2.json()) == 1
     assert r2.json()[0]["category_suggestion_rejected"] is True
+
+    r3 = client.get("/transactions?category_state=assignable")
+    assert r3.status_code == 200
+    assert {row["id"] for row in r3.json()} == {
+        empty.id,
+        low.id,
+        r2.json()[0]["id"],
+        suggested.id,
+    }
 
 
 def test_list_transactions_search_direction_and_category_filters(
@@ -431,7 +452,7 @@ def test_accept_suggestions_endpoint(client, db_session) -> None:
     assert tx.category_source == "model"
 
 
-def test_accept_suggestions_endpoint_allows_low_confidence_override(
+def test_accept_suggestions_endpoint_does_not_override_policy_manual(
     client, db_session
 ) -> None:
     tx = _seed(
@@ -449,10 +470,10 @@ def test_accept_suggestions_endpoint_allows_low_confidence_override(
     )
 
     assert r.status_code == 200
-    assert r.json()["affected"] == 1
+    assert r.json()["affected"] == 0
     db_session.refresh(tx)
-    assert tx.category == "shopping"
-    assert tx.category_source == "model"
+    assert tx.category is None
+    assert tx.category_source is None
 
 
 def test_reject_suggestions_endpoint(client, db_session) -> None:

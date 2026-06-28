@@ -17,14 +17,16 @@ export function transactionsHref(
 ): string {
   const q = new URLSearchParams();
   if (params.view && params.view !== "list") q.set("view", params.view);
+  const categoryState =
+    params.category_state ?? (params.view === "review" ? "assignable" : null);
   if (params.search?.trim()) q.set("search", params.search.trim());
   if (params.category) q.set("category", params.category);
   if (params.direction && params.direction !== "all") {
     q.set("direction", params.direction);
   }
   if (params.transaction_type) q.set("transaction_type", params.transaction_type);
-  if (params.category_state && params.category_state !== "all") {
-    q.set("category_state", params.category_state);
+  if (categoryState && categoryState !== "all") {
+    q.set("category_state", categoryState);
   }
   if (params.date_from) q.set("date_from", params.date_from);
   if (params.date_to) q.set("date_to", params.date_to);

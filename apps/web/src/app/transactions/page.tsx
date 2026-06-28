@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/set-state-in-effect */
 "use client";
 
 import { useEffect, useState } from "react";
@@ -33,7 +34,9 @@ export default function TransactionsPage() {
       dateFrom: valueOrUndefined(params.get("date_from")),
       dateTo: valueOrUndefined(params.get("date_to")),
       importId: parseNumber(params.get("import_id")),
-      reviewState: parseReviewState(params.get("category_state")),
+      reviewState:
+        parseReviewState(params.get("category_state")) ??
+        (urlView === "review" ? "assignable" : undefined),
       includeTransfers: parseIncludeTransfers(params.get("include_transfers")),
     });
   }, [setView]);
@@ -93,6 +96,7 @@ function parseReviewState(value: string | null): CategoryState | undefined {
     value === "categorized" ||
     value === "uncategorized" ||
     value === "suggested" ||
+    value === "assignable" ||
     value === "needs_review" ||
     value === "rejected"
     ? value

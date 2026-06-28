@@ -13,9 +13,10 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { CategorySelect } from "@/components/category-select";
 import { TransactionTypeCombobox } from "@/components/transaction-type-combobox";
 import { FilterField, FilterPanel } from "@/components/filter-panel";
-import { api, type CategoryState, type Direction } from "@/lib/api";
+import { api, type CategoryState, type Direction, type FilterSummary } from "@/lib/api";
 import { useT } from "@/lib/i18n";
-import { Download } from "lucide-react";
+import { formatCurrency } from "@/lib/utils";
+import { ArrowDownRight, ArrowUpRight, Download, RotateCcw, Scale } from "lucide-react";
 
 interface TransactionFiltersProps {
   reviewMode: boolean;
@@ -31,6 +32,8 @@ interface TransactionFiltersProps {
   includeTransfers: boolean;
   suggestionCount: number;
   acceptPending: boolean;
+  hasActiveFilters: boolean;
+  filterSummary?: FilterSummary;
   onSearchChange: (value: string) => void;
   onCategoryChange: (value: string) => void;
   onDirectionChange: (value: Direction) => void;
@@ -41,6 +44,7 @@ interface TransactionFiltersProps {
   onReviewStateChange: (value: CategoryState) => void;
   onIncludeTransfersChange: (value: boolean) => void;
   onAcceptSuggestions: () => void;
+  onClearFilters: () => void;
 }
 
 export function TransactionFilters({
@@ -57,6 +61,8 @@ export function TransactionFilters({
   includeTransfers,
   suggestionCount,
   acceptPending,
+  hasActiveFilters,
+  filterSummary,
   onSearchChange,
   onCategoryChange,
   onDirectionChange,
@@ -67,6 +73,7 @@ export function TransactionFilters({
   onReviewStateChange,
   onIncludeTransfersChange,
   onAcceptSuggestions,
+  onClearFilters,
 }: TransactionFiltersProps) {
   const { t } = useT();
   const confidenceFilter = minConfidence ? Number(minConfidence) : undefined;
@@ -87,6 +94,16 @@ export function TransactionFilters({
             {t("transactions.includeTransfers")}
           </label>
           <div className="ml-auto flex flex-wrap items-center gap-2">
+            {hasActiveFilters && (
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={onClearFilters}
+              >
+                <RotateCcw className="mr-2 h-4 w-4" />
+                {t("transactions.clearFilters")}
+              </Button>
+            )}
             <Button size="sm" variant="outline" asChild>
               <a
                 href={api.exportTransactionsUrl({
@@ -118,6 +135,29 @@ export function TransactionFilters({
           </div>
         </>
       }
+      summary={
+        filterSummary ? (
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
+            <span className="font-medium text-muted-foreground">
+              {t("transactions.filterSummary.count", { n: filterSummary.count })}
+            </span>
+            <span className="inline-flex items-center gap-1 text-positive">
+              <ArrowUpRight className="h-3.5 w-3.5" />
+              {formatCurrency(filterSummary.total_income, "PLN")}
+            </span>
+            <span className="inline-flex items-center gap-1 text-negative">
+              <ArrowDownRight className="h-3.5 w-3.5" />
+              {formatCurrency(filterSummary.total_expenses, "PLN")}
+            </span>
+            <span className="inline-flex items-center gap-1 font-medium">
+              <Scale className="h-3.5 w-3.5" />
+              <span className={filterSummary.net >= 0 ? "text-positive" : "text-negative"}>
+                {filterSummary.net >= 0 ? "+" : "−"}{formatCurrency(Math.abs(filterSummary.net), "PLN")}
+              </span>
+            </span>
+          </div>
+        ) : undefined
+      }
     >
       <FilterField
         label={t("transactions.filterSearch")}
@@ -143,6 +183,9 @@ export function TransactionFilters({
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
+              <SelectItem value="assignable">
+                {t("transactions.reviewQueue.assignable")}
+              </SelectItem>
               <SelectItem value="needs_review">
                 {t("transactions.reviewQueue.needsReview")}
               </SelectItem>

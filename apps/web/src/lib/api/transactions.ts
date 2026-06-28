@@ -1,5 +1,5 @@
 import { request } from "./client";
-import type { CategoryState, MerchantGroup, ReviewSummary, Transaction } from "./types";
+import type { CategoryState, FilterSummary, MerchantGroup, ReviewSummary, Transaction } from "./types";
 
 export const transactionsApi = {
   transactions: (
@@ -49,6 +49,40 @@ export const transactionsApi = {
     if (params.review_priority) q.set("review_priority", "true");
     const qs = q.toString();
     return request<Transaction[]>(`/transactions${qs ? `?${qs}` : ""}`);
+  },
+  filterSummary: (
+    params: {
+      date_from?: string;
+      date_to?: string;
+      include_transfers?: boolean;
+      import_id?: number;
+      search?: string;
+      direction?: "debit" | "credit";
+      category?: string;
+      category_state?: CategoryState;
+      min_confidence?: number;
+      transaction_type?: string;
+      review_priority?: boolean;
+    } = {},
+  ) => {
+    const q = new URLSearchParams();
+    if (params.date_from) q.set("date_from", params.date_from);
+    if (params.date_to) q.set("date_to", params.date_to);
+    if (params.include_transfers === false) q.set("include_transfers", "false");
+    if (params.import_id !== undefined) q.set("import_id", String(params.import_id));
+    if (params.search) q.set("search", params.search);
+    if (params.direction) q.set("direction", params.direction);
+    if (params.category) q.set("category", params.category);
+    if (params.category_state && params.category_state !== "all") {
+      q.set("category_state", params.category_state);
+    }
+    if (params.min_confidence !== undefined) {
+      q.set("min_confidence", String(params.min_confidence));
+    }
+    if (params.transaction_type) q.set("transaction_type", params.transaction_type);
+    if (params.review_priority) q.set("review_priority", "true");
+    const qs = q.toString();
+    return request<FilterSummary>(`/transactions/filter-summary${qs ? `?${qs}` : ""}`);
   },
   exportTransactionsUrl: (
     params: {

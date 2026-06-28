@@ -10,6 +10,11 @@ from finance.analytics.filters import is_expense_category_candidate
 from finance.domain.category_mapping import subcategory_parent_value
 from finance.domain.enums import CategorySource, TransactionType
 from finance.domain.models import CategoryDef, MlFeedbackEvent, Transaction
+from finance.ml.classification.policy import (
+    DEFAULT_POLICY,
+    ClassificationPolicy,
+    decide_classification,
+)
 from finance.ml.feedback import (
     EVENT_ACCEPT_SUGGESTION,
     EVENT_MANUAL_CATEGORY,
@@ -271,6 +276,7 @@ def accept_suggestions(
     *,
     ids: list[int] | None,
     min_confidence: float,
+    policy: ClassificationPolicy = DEFAULT_POLICY,
 ) -> int:
     stmt = select(Transaction).where(Transaction.category.is_(None))
     stmt = stmt.where(Transaction.category_predicted.is_not(None))
@@ -284,8 +290,21 @@ def accept_suggestions(
     for tx in rows:
         if not _can_assign_expense_category(tx):
             continue
-        confidence = tx.category_confidence
-        if confidence is not None and confidence < min_confidence:
+        decision = decide_classification(
+            category=tx.category_predicted,
+            confidence=tx.category_confidence,
+            direction=tx.direction,
+            is_transfer=tx.is_transfer,
+            transaction_type=tx.transaction_type,
+            policy=policy,
+        )
+        if decision.action != "accept":
+            continue
+        if (
+            tx.category_confidence is not None
+            and min_confidence > decision.threshold_used
+            and tx.category_confidence < min_confidence
+        ):
             continue
         tx_model = cast(Any, tx)
         record_transaction_feedback(

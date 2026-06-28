@@ -6,6 +6,7 @@ from decimal import Decimal
 from sqlalchemy import select
 
 from finance.domain.models import MlFeedbackEvent, Transaction
+from finance.ml.classification.policy import ClassificationPolicy
 from finance.transactions import service
 
 
@@ -61,6 +62,47 @@ def test_transaction_filters_needs_review_excludes_rejected(db_session) -> None:
     )
 
     assert [row.id for row in rows] == [keep.id]
+
+
+def test_transaction_filters_assignable_includes_rejected_expense_candidates(
+    db_session,
+) -> None:
+    active = _tx(db_session, dedup_hash="assignable-active", category=None)
+    rejected = _tx(
+        db_session,
+        dedup_hash="assignable-rejected",
+        category=None,
+        category_predicted="shopping",
+        category_suggestion_rejected=True,
+    )
+    _tx(
+        db_session,
+        dedup_hash="assignable-income",
+        amount=Decimal("1220"),
+        direction="credit",
+        category=None,
+        category_predicted="food",
+        category_suggestion_rejected=True,
+        transaction_type="income",
+    )
+    _tx(
+        db_session,
+        dedup_hash="assignable-transfer",
+        category=None,
+        category_predicted="food",
+        category_suggestion_rejected=True,
+        is_transfer=True,
+    )
+    _tx(db_session, dedup_hash="assignable-done", category="food")
+
+    rows = service.list_transactions(
+        db_session,
+        service.TransactionFilters(category_state="assignable"),
+        limit=10,
+        offset=0,
+    )
+
+    assert {row.id for row in rows} == {active.id, rejected.id}
 
 
 def test_transaction_filters_rejected_only_expense_candidates(db_session) -> None:
@@ -493,6 +535,52 @@ def test_accept_suggestions_promotes_only_expense_candidates(db_session) -> None
     assert credit.category is None
     assert transfer.category is None
     assert debt.category is None
+
+
+def test_accept_suggestions_uses_policy_and_skips_other(db_session) -> None:
+    food = _tx(
+        db_session,
+        dedup_hash="sug-policy-food",
+        category=None,
+        category_predicted="food",
+        category_confidence=0.80,
+        category_predicted_source="model",
+    )
+    other = _tx(
+        db_session,
+        dedup_hash="sug-policy-other",
+        category=None,
+        category_predicted="other",
+        category_confidence=0.99,
+        category_predicted_source="model",
+    )
+    high_threshold = _tx(
+        db_session,
+        dedup_hash="sug-policy-threshold",
+        category=None,
+        category_predicted="transport",
+        category_confidence=0.80,
+        category_predicted_source="model",
+    )
+    policy = ClassificationPolicy(
+        default_threshold=0.55,
+        per_category_thresholds={"transport": 0.90},
+    )
+
+    affected = service.accept_suggestions(
+        db_session,
+        ids=None,
+        min_confidence=0,
+        policy=policy,
+    )
+
+    assert affected == 1
+    db_session.refresh(food)
+    db_session.refresh(other)
+    db_session.refresh(high_threshold)
+    assert food.category == "food"
+    assert other.category is None
+    assert high_threshold.category is None
 
 
 def test_accept_suggestions_skips_rejected_predictions(db_session) -> None:

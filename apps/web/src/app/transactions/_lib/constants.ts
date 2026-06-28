@@ -29,6 +29,17 @@ export function hasCategorySuggestion(tx: Transaction): boolean {
   );
 }
 
+export function classificationDecisionAction(tx: Transaction) {
+  return tx.classification_decision?.action;
+}
+
+export function isSuggestionReadyToAccept(tx: Transaction): boolean {
+  if (!hasCategorySuggestion(tx)) return false;
+  const action = classificationDecisionAction(tx);
+  if (action) return action === "accept";
+  return (tx.category_confidence ?? 0) >= 0.75;
+}
+
 export function hasRejectedCategorySuggestion(tx: Transaction): boolean {
   return Boolean(
     !tx.category &&

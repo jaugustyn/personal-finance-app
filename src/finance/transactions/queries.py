@@ -4,13 +4,25 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
-from typing import Literal
+from typing import Any, Literal
 
 from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.orm import Session
 
 from finance.analytics.filters import expense_category_candidate_filters
+from finance.currencies import amount_base_expr
 from finance.domain.models import Transaction
+from finance.ml.classification.policy import (
+    DEFAULT_POLICY,
+    ClassificationPolicy,
+    decide_classification,
+    review_priority_for_decision,
+)
+from finance.transactions.merchants import (
+    load_merchant_alias_maps,
+    merchant_display_label,
+    merchant_identity,
+)
 from finance.transactions.normalization import normalize_text
 
 CategoryState = Literal[
@@ -18,6 +30,7 @@ CategoryState = Literal[
     "categorized",
     "uncategorized",
     "suggested",
+    "assignable",
     "needs_review",
     "rejected",
 ]
@@ -63,34 +76,20 @@ def _category_candidate_conditions():
     return tuple(expense_category_candidate_filters())
 
 
-def _review_priority_expr():
-    return case(
-        (
-            Transaction.category.is_not(None),
-            90,
-        ),
-        (
-            Transaction.category_suggestion_rejected.is_(True),
-            80,
-        ),
-        (
-            Transaction.category_predicted.is_(None),
-            0,
-        ),
-        (
-            Transaction.category_confidence.is_(None),
-            10,
-        ),
-        (
-            Transaction.category_confidence < 0.55,
-            20,
-        ),
-        (
-            Transaction.category_confidence < 0.75,
-            30,
-        ),
-        else_=40,
+def _review_priority(tx: Transaction, policy: ClassificationPolicy) -> int:
+    if tx.category is not None:
+        return 90
+    if tx.category_suggestion_rejected:
+        return 80
+    decision = decide_classification(
+        category=tx.category_predicted,
+        confidence=tx.category_confidence,
+        direction=tx.direction,
+        is_transfer=tx.is_transfer,
+        transaction_type=tx.transaction_type,
+        policy=policy,
     )
+    return review_priority_for_decision(decision)
 
 
 def filtered_transactions_stmt(filters: TransactionFilters):
@@ -108,7 +107,7 @@ def filtered_transactions_stmt(filters: TransactionFilters):
     if filters.search:
         search = filters.search.strip().lower()
         pattern = f"%{search}%"
-        search_conditions = [
+        search_conditions: list[Any] = [
             func.lower(Transaction.merchant).like(pattern),
             func.lower(Transaction.title).like(pattern),
         ]
@@ -136,7 +135,7 @@ def filtered_transactions_stmt(filters: TransactionFilters):
             Transaction.category_predicted == filters.category,
             *_category_candidate_conditions(),
         )
-        if filters.category_state != "rejected":
+        if filters.category_state not in {"assignable", "rejected"}:
             predicted_match = and_(
                 predicted_match,
                 Transaction.category_suggestion_rejected.is_(False),
@@ -155,6 +154,9 @@ def filtered_transactions_stmt(filters: TransactionFilters):
         stmt = stmt.where(*_category_candidate_conditions())
         stmt = stmt.where(Transaction.category_predicted.is_not(None))
         stmt = stmt.where(Transaction.category_suggestion_rejected.is_(False))
+    elif filters.category_state == "assignable":
+        stmt = stmt.where(Transaction.category.is_(None))
+        stmt = stmt.where(*_category_candidate_conditions())
     elif filters.category_state == "needs_review":
         stmt = stmt.where(Transaction.category.is_(None))
         stmt = stmt.where(*_category_candidate_conditions())
@@ -172,11 +174,48 @@ def filtered_transactions_stmt(filters: TransactionFilters):
         stmt = stmt.where(Transaction.category_confidence >= filters.min_confidence)
     if filters.max_confidence is not None:
         stmt = stmt.where(Transaction.category_confidence <= filters.max_confidence)
-    if filters.review_priority:
-        stmt = stmt.order_by(_review_priority_expr().asc(), Transaction.booking_date.desc())
-    else:
-        stmt = stmt.order_by(Transaction.booking_date.desc())
+    stmt = stmt.order_by(Transaction.booking_date.desc())
     return stmt
+
+
+@dataclass(frozen=True)
+class FilterSummaryResult:
+    count: int
+    total_income: Decimal
+    total_expenses: Decimal
+    net: Decimal
+
+
+def filter_summary(
+    session: Session,
+    filters: TransactionFilters,
+) -> FilterSummaryResult:
+    """Aggregate count + income/expenses/net for the given filter set."""
+    base = filtered_transactions_stmt(filters).subquery()
+    base_amount = func.coalesce(base.c.amount_base, base.c.amount)
+    income_expr = func.coalesce(
+        func.sum(case((base.c.direction == "credit", func.abs(base_amount)), else_=0)),
+        0,
+    )
+    expense_expr = func.coalesce(
+        func.sum(case((base.c.direction == "debit", func.abs(base_amount)), else_=0)),
+        0,
+    )
+    row = session.execute(
+        select(
+            func.count().label("cnt"),
+            income_expr.label("inc"),
+            expense_expr.label("exp"),
+        ).select_from(base)
+    ).one()
+    income = Decimal(str(row.inc or 0))
+    expenses = Decimal(str(row.exp or 0))
+    return FilterSummaryResult(
+        count=int(row.cnt or 0),
+        total_income=income,
+        total_expenses=expenses,
+        net=income - expenses,
+    )
 
 
 def list_transactions(
@@ -185,7 +224,18 @@ def list_transactions(
     *,
     limit: int,
     offset: int,
+    policy: ClassificationPolicy = DEFAULT_POLICY,
 ) -> list[Transaction]:
+    if filters.review_priority:
+        rows = list(session.execute(filtered_transactions_stmt(filters)).scalars().all())
+        rows.sort(
+            key=lambda row: (
+                _review_priority(row, policy),
+                -row.booking_date.toordinal(),
+                -int(row.id or 0),
+            )
+        )
+        return rows[offset : offset + limit]
     stmt = filtered_transactions_stmt(filters).offset(offset).limit(limit)
     return list(session.execute(stmt).scalars().all())
 
@@ -197,10 +247,10 @@ def summary_by_category(
     date_to: date | None = None,
 ) -> list[CategorySummary]:
     debit = func.sum(
-        case((Transaction.direction == "debit", Transaction.amount), else_=0)
+        case((Transaction.direction == "debit", amount_base_expr()), else_=0)
     ).label("total_debit")
     credit = func.sum(
-        case((Transaction.direction == "credit", Transaction.amount), else_=0)
+        case((Transaction.direction == "credit", amount_base_expr()), else_=0)
     ).label("total_credit")
     tx_count = func.count().label("tx_count")
 
@@ -231,41 +281,66 @@ def merchant_groups(
     min_count: int,
     limit: int,
 ) -> list[MerchantGroupSummary]:
-    debit = func.sum(
-        case((Transaction.direction == "debit", Transaction.amount), else_=0)
-    ).label("total_debit")
-    credit = func.sum(
-        case((Transaction.direction == "credit", Transaction.amount), else_=0)
-    ).label("total_credit")
-    tx_count = func.count().label("tx_count")
-
-    stmt = select(Transaction.merchant, debit, credit, tx_count).where(
-        Transaction.merchant != ""
-    )
+    stmt = select(Transaction).where(Transaction.merchant != "")
     if only_uncategorized:
         stmt = stmt.where(Transaction.category.is_(None))
         stmt = stmt.where(*_category_candidate_conditions())
-    stmt = stmt.group_by(Transaction.merchant).having(tx_count >= min_count)
-    stmt = stmt.order_by(tx_count.desc()).limit(limit)
-    rows = session.execute(stmt).all()
+    rows = session.execute(stmt).scalars().all()
 
+    alias_map, label_map = load_merchant_alias_maps(session)
+    grouped: dict[str, dict[str, Any]] = {}
+    for tx in rows:
+        identity = merchant_identity(
+            tx.merchant,
+            tx.title,
+            alias_map=alias_map,
+            label_map=label_map,
+        )
+        if not identity.canonical_key:
+            continue
+        label = identity.display_label or merchant_display_label(tx.merchant, tx.title)
+        group = grouped.setdefault(
+            identity.canonical_key,
+            {
+                "merchant": label,
+                "count": 0,
+                "total_debit": Decimal(0),
+                "total_credit": Decimal(0),
+                "titles": [],
+                "categories": [],
+            },
+        )
+        group["count"] += 1
+        amount = tx.amount_base if tx.amount_base is not None else tx.amount
+        if tx.direction == "debit":
+            group["total_debit"] += amount or Decimal(0)
+        elif tx.direction == "credit":
+            group["total_credit"] += amount or Decimal(0)
+        if tx.title:
+            group["titles"].append(tx.title)
+        if tx.category:
+            group["categories"].append(tx.category)
+
+    sorted_groups = sorted(
+        (
+            group
+            for group in grouped.values()
+            if int(group["count"]) >= min_count
+        ),
+        key=lambda group: int(group["count"]),
+        reverse=True,
+    )[:limit]
     out: list[MerchantGroupSummary] = []
-    for row in rows:
-        samples = session.execute(
-            select(Transaction.title, Transaction.category)
-            .where(Transaction.merchant == row.merchant)
-            .order_by(Transaction.booking_date.desc())
-            .limit(20)
-        ).all()
-        titles = list({sample.title for sample in samples if sample.title})[:3]
-        cats = [sample.category for sample in samples if sample.category]
+    for group in sorted_groups:
+        titles = list(dict.fromkeys(str(title) for title in group["titles"] if title))[:3]
+        cats = [str(category) for category in group["categories"] if category]
         common_cat = max(set(cats), key=cats.count) if cats else None
         out.append(
             MerchantGroupSummary(
-                merchant=row.merchant,
-                count=int(row.tx_count),
-                total_debit=row.total_debit or Decimal(0),
-                total_credit=row.total_credit or Decimal(0),
+                merchant=str(group["merchant"]),
+                count=int(group["count"]),
+                total_debit=Decimal(group["total_debit"]),
+                total_credit=Decimal(group["total_credit"]),
                 common_category=common_cat,
                 sample_titles=titles,
             )

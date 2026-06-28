@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/set-state-in-effect */
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -7,6 +8,7 @@ import {
   api,
   type CategoryState,
   type Direction,
+  type FilterSummary,
   type Transaction,
 } from "@/lib/api";
 import { useT } from "@/lib/i18n";
@@ -17,6 +19,7 @@ import {
   PAGE_SIZE,
   hasCategorySuggestion,
   hasRejectedCategorySuggestion,
+  isSuggestionReadyToAccept,
 } from "../_lib/constants";
 import { BulkActionsBar } from "./bulk-actions-bar";
 import { TransactionFilters } from "./transaction-filters";
@@ -85,7 +88,7 @@ export function ListView({ reviewMode, initialFilters }: ListViewProps) {
   );
   const [reviewState, setReviewState] = useLocalStorageState<CategoryState>(
     `${storagePrefix}.reviewState`,
-    "needs_review",
+    "assignable",
   );
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [bulkCat, setBulkCat] = useState<string | null>(null);
@@ -134,40 +137,39 @@ export function ListView({ reviewMode, initialFilters }: ListViewProps) {
     setTransactionType,
   ]);
 
+  const filterParams = {
+    search: searchFilter,
+    direction: directionFilter,
+    category: categoryFilter,
+    date_from: dateFrom || undefined,
+    date_to: dateTo || undefined,
+    import_id: importId,
+    include_transfers: includeTransfers,
+    category_state: (reviewMode ? reviewState : "all") as CategoryState,
+    min_confidence: confidenceFilter,
+    transaction_type: transactionType || undefined,
+    review_priority: reviewMode,
+  };
+
   const query = useQuery({
     queryKey: [
       "transactions",
       {
         page,
-        search: searchFilter,
-        direction: directionFilter,
-        category: categoryFilter,
-        dateFrom,
-        dateTo,
-        importId,
-        includeTransfers,
-        reviewMode,
-        reviewState,
-        transactionType,
-        minConfidence,
+        ...filterParams,
       },
     ],
     queryFn: () =>
       api.transactions({
         limit: PAGE_SIZE,
         offset: page * PAGE_SIZE,
-        search: searchFilter,
-        direction: directionFilter,
-        category: categoryFilter,
-        date_from: dateFrom || undefined,
-        date_to: dateTo || undefined,
-        import_id: importId,
-        include_transfers: includeTransfers,
-        category_state: reviewMode ? reviewState : "all",
-        min_confidence: confidenceFilter,
-        transaction_type: transactionType || undefined,
-        review_priority: reviewMode,
+        ...filterParams,
       }),
+  });
+
+  const summaryQuery = useQuery<FilterSummary>({
+    queryKey: ["transactions", "filter-summary", filterParams],
+    queryFn: () => api.filterSummary(filterParams),
   });
 
   const filtered = useMemo<Transaction[]>(() => {
@@ -177,10 +179,7 @@ export function ListView({ reviewMode, initialFilters }: ListViewProps) {
   const suggestionIds = useMemo(
     () =>
       filtered
-        .filter(
-          (tx) =>
-            hasCategorySuggestion(tx) && (tx.category_confidence ?? 0) >= 0.75,
-        )
+        .filter(isSuggestionReadyToAccept)
         .map((tx) => tx.id),
     [filtered],
   );
@@ -354,6 +353,32 @@ export function ListView({ reviewMode, initialFilters }: ListViewProps) {
     onError: () => toast.error(t("toast.error")),
   });
 
+  const hasActiveFilters =
+    search !== "" ||
+    direction !== "all" ||
+    category !== "" ||
+    transactionType !== "" ||
+    dateFrom !== "" ||
+    dateTo !== "" ||
+    minConfidence !== "" ||
+    includeTransfers !== !reviewMode ||
+    (reviewMode && reviewState !== "assignable") ||
+    importId !== undefined;
+
+  const clearFilters = () => {
+    setSearch("");
+    setDirection("all");
+    setCategory("");
+    setTransactionType("");
+    setDateFrom("");
+    setDateTo("");
+    setMinConfidence("");
+    setIncludeTransfers(!reviewMode);
+    setReviewState("assignable");
+    setImportId(undefined);
+    setPage(0);
+  };
+
   const resetPage = () => setPage(0);
   const toggleAll = () => {
     const allOnPageSelected =
@@ -401,6 +426,8 @@ export function ListView({ reviewMode, initialFilters }: ListViewProps) {
         includeTransfers={includeTransfers}
         suggestionCount={suggestionIds.length}
         acceptPending={acceptSuggestions.isPending}
+        hasActiveFilters={hasActiveFilters}
+        filterSummary={summaryQuery.data}
         onSearchChange={(value) => {
           setSearch(value);
           resetPage();
@@ -439,8 +466,9 @@ export function ListView({ reviewMode, initialFilters }: ListViewProps) {
           resetPage();
         }}
         onAcceptSuggestions={() =>
-          acceptSuggestions.mutate({ ids: suggestionIds, minConfidence: 0.75 })
+          acceptSuggestions.mutate({ ids: suggestionIds, minConfidence: 0 })
         }
+        onClearFilters={clearFilters}
       />
 
       <BulkActionsBar
@@ -495,6 +523,7 @@ export function ListView({ reviewMode, initialFilters }: ListViewProps) {
         <TransactionsTable
           rows={filtered}
           fetchedCount={query.data?.length ?? 0}
+          totalCount={summaryQuery.data?.count}
           isLoading={query.isLoading}
           page={page}
           selected={selected}

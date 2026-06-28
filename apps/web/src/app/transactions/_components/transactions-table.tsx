@@ -30,8 +30,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import type { Transaction } from "@/lib/api";
-import { tCategory, tTransactionType, useT } from "@/lib/i18n";
-import { cn, formatDate } from "@/lib/utils";
+import { tCategory, tTransactionType, type TranslationKey, useT } from "@/lib/i18n";
+import { cn, formatCurrency, formatDate } from "@/lib/utils";
 import {
   ArrowDown,
   ArrowLeftRight,
@@ -54,6 +54,7 @@ import {
   hasCategorySuggestion,
   hasRejectedCategorySuggestion,
   isCategoryCandidate,
+  isSuggestionReadyToAccept,
 } from "../_lib/constants";
 
 type TransactionSortId = "date" | "merchant" | "type" | "category" | "amount";
@@ -62,6 +63,7 @@ type TransactionSort = { id: TransactionSortId; dir: "asc" | "desc" } | null;
 interface TransactionsTableProps {
   rows: Transaction[];
   fetchedCount: number;
+  totalCount?: number;
   isLoading: boolean;
   page: number;
   selected: Set<number>;
@@ -93,6 +95,7 @@ interface TransactionsTableProps {
 export function TransactionsTable({
   rows,
   fetchedCount,
+  totalCount,
   isLoading,
   page,
   selected,
@@ -252,7 +255,7 @@ export function TransactionsTable({
             <div className="mt-4 flex items-center justify-between text-sm text-muted-foreground">
               <span>
                 {t("pagination.page", { n: page + 1 })} · {rows.length} /{" "}
-                {fetchedCount}
+                {totalCount ?? fetchedCount}
               </span>
               <div className="flex gap-2">
                 <Button
@@ -403,6 +406,8 @@ function TransactionRow({
   const hasRejectedMarker =
     !tx.category && tx.category_suggestion_rejected && isCategoryCandidate(tx);
   const canEditCategory = isCategoryCandidate(tx) || Boolean(tx.category);
+  const canAcceptSuggestion = isSuggestionReadyToAccept(tx);
+  const decisionAction = tx.classification_decision?.action;
   const [rememberRule, setRememberRule] = useState(false);
 
   return (
@@ -557,6 +562,9 @@ function TransactionRow({
                 <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
                   {t("transactions.suggestion")}
                   <ConfidenceBadge value={tx.category_confidence} />
+                  {decisionAction ? (
+                    <ClassificationDecisionBadge action={decisionAction} />
+                  ) : null}
                 </span>
               )}
             </button>
@@ -565,7 +573,7 @@ function TransactionRow({
                 size="icon"
                 variant="ghost"
                 className="h-7 w-7 text-positive hover:text-positive"
-                disabled={acceptPending}
+                disabled={acceptPending || !canAcceptSuggestion}
                 onClick={onAcceptSuggestion}
                 title={t("transactions.acceptOne")}
                 aria-label={t("transactions.acceptOne")}
@@ -594,11 +602,18 @@ function TransactionRow({
         )}
       </TableCell>
       <TableCell className="text-right">
-        <Money
-          amount={Number(tx.amount)}
-          currency={tx.currency}
-          direction={tx.direction}
-        />
+        <div className="space-y-0.5">
+          <Money
+            amount={Number(tx.amount)}
+            currency={tx.currency}
+            direction={tx.direction}
+          />
+          {tx.amount_base != null && tx.base_currency && tx.base_currency !== tx.currency ? (
+            <div className="text-xs text-muted-foreground">
+              {formatCurrency(Number(tx.amount_base), tx.base_currency)}
+            </div>
+          ) : null}
+        </div>
       </TableCell>
       <TableCell className="text-right">
         {editing ? (
@@ -668,6 +683,27 @@ function TransactionRow({
         )}
       </TableCell>
     </TableRow>
+  );
+}
+
+function ClassificationDecisionBadge({
+  action,
+}: {
+  action: NonNullable<Transaction["classification_decision"]>["action"];
+}) {
+  const { t } = useT();
+  const labelKey: Record<typeof action, TranslationKey> = {
+    accept: "transactions.classificationDecision.accept",
+    review: "transactions.classificationDecision.review",
+    manual: "transactions.classificationDecision.manual",
+    not_applicable: "transactions.classificationDecision.not_applicable",
+  };
+  const variant =
+    action === "accept" ? "success" : action === "review" ? "warning" : "muted";
+  return (
+    <Badge variant={variant} className="text-[10px]">
+      {t(labelKey[action])}
+    </Badge>
   );
 }
 
