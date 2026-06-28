@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import {
   api,
+  type ImportQualityReport,
   type ImportPreview,
   type ImportSummary,
   type ImportHistoryRow,
@@ -26,6 +27,7 @@ import { Badge } from "@/components/ui/badge";
 import { DataTable, type DataTableColumn } from "@/components/data-table";
 import { PageHeader } from "@/components/page-header";
 import { useConfirm } from "@/components/confirm-dialog";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
   SelectContent,
@@ -111,6 +113,7 @@ export default function ImportsPage() {
   const [mapping, setMapping] = useState<Record<FieldKey, string>>(
     {} as Record<FieldKey, string>,
   );
+  const [skipCategories, setSkipCategories] = useState(false);
 
   const previewMut = useMutation({
     mutationFn: (f: File) => api.previewImport(f),
@@ -131,10 +134,12 @@ export default function ImportsPage() {
       file: File;
       source: string | null;
       columnMap: Record<string, string> | null;
+      skipCategories?: boolean;
     }) =>
       api.uploadImport(args.file, {
         source: args.source,
         columnMap: args.columnMap,
+        skipCategories: args.skipCategories,
       }),
     onSuccess: () => {
       qc.invalidateQueries();
@@ -147,6 +152,7 @@ export default function ImportsPage() {
     setFile(f);
     setPreview(null);
     setMapping({} as Record<FieldKey, string>);
+    setSkipCategories(false);
     uploadMut.reset();
     if (f) previewMut.mutate(f);
   };
@@ -158,13 +164,19 @@ export default function ImportsPage() {
         file,
         source: preview.detected_source,
         columnMap: null,
+        skipCategories,
       });
     } else {
       const cleaned: Record<string, string> = {};
       for (const [k, v] of Object.entries(mapping)) {
         if (v) cleaned[k] = v;
       }
-      uploadMut.mutate({ file, source: "generic", columnMap: cleaned });
+      uploadMut.mutate({
+        file,
+        source: "generic",
+        columnMap: cleaned,
+        skipCategories,
+      });
     }
   };
 
@@ -175,6 +187,7 @@ export default function ImportsPage() {
   const canCommit =
     !!file &&
     !uploadMut.isPending &&
+    (preview?.quality_report.blocking_issues ?? 0) === 0 &&
     (preview?.detected_source ? true : requiredOk);
 
   return (
@@ -229,6 +242,8 @@ export default function ImportsPage() {
                 {preview.encoding} · &quot;{preview.delimiter}&quot;
               </span>
             </div>
+
+            <ImportQualityPanel report={preview.quality_report} />
 
             <div className="overflow-x-auto rounded-md border">
               <Table>
@@ -346,8 +361,26 @@ export default function ImportsPage() {
 
             {uploadMut.data && <SuccessBox summary={uploadMut.data} />}
 
-            <div className="flex justify-end">
-              <Button onClick={onCommit} disabled={!canCommit}>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-t pt-4">
+              <label className="flex items-start gap-2.5 text-sm cursor-pointer select-none text-muted-foreground hover:text-foreground transition-colors max-w-xl">
+                <Checkbox
+                  id="skip-categories-checkbox"
+                  checked={skipCategories}
+                  onCheckedChange={(c) => setSkipCategories(c === true)}
+                  disabled={uploadMut.isPending}
+                  className="mt-1"
+                />
+                <div className="grid gap-1">
+                  <span className="font-semibold text-foreground text-sm leading-none">
+                    {t("imports.skipCategories")}
+                  </span>
+                  <span className="text-xs text-muted-foreground leading-normal">
+                    {t("imports.skipCategoriesHelp")}
+                  </span>
+                </div>
+              </label>
+
+              <Button onClick={onCommit} disabled={!canCommit} className="sm:self-end">
                 {uploadMut.isPending ? (
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 ) : (
@@ -415,6 +448,90 @@ function SuccessBox({ summary }: { summary: ImportSummary }) {
       })}
     </div>
   );
+}
+
+function ImportQualityPanel({ report }: { report: ImportQualityReport }) {
+  const { t } = useT();
+  const statusVariant = report.blocking_issues > 0 ? "destructive" : "success";
+  const statusLabel =
+    report.blocking_issues > 0
+      ? t("imports.quality.statusIssues")
+      : t("imports.quality.statusOk");
+
+  return (
+    <div className="rounded-md border bg-muted/20 p-4">
+      <div className="flex flex-wrap items-center gap-2">
+        <h3 className="text-sm font-semibold">{t("imports.quality.title")}</h3>
+        <Badge variant={statusVariant}>{statusLabel}</Badge>
+      </div>
+      <div className="mt-3 grid gap-3 sm:grid-cols-3">
+        <QualityMetric
+          label={t("imports.quality.validRows")}
+          value={report.valid_rows}
+          variant="success"
+        />
+        <QualityMetric
+          label={t("imports.quality.blocking")}
+          value={report.blocking_issues}
+          variant={report.blocking_issues > 0 ? "destructive" : "muted"}
+        />
+        <QualityMetric
+          label={t("imports.quality.warnings")}
+          value={report.warnings}
+          variant={report.warnings > 0 ? "warning" : "muted"}
+        />
+      </div>
+      {report.issues.length > 0 ? (
+        <div className="mt-3 space-y-2">
+          {report.issues.slice(0, 6).map((issue) => (
+            <div
+              key={`${issue.severity}:${issue.code}`}
+              className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm"
+            >
+              <Badge variant={issue.severity === "error" ? "destructive" : "warning"}>
+                {issue.count}
+              </Badge>
+              <span>{t(importQualityIssueKey(issue.code))}</span>
+              {issue.sample_rows.length > 0 ? (
+                <span className="text-xs text-muted-foreground">
+                  {t("imports.quality.rows", {
+                    rows: issue.sample_rows.join(", "),
+                  })}
+                </span>
+              ) : null}
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="mt-3 text-sm text-muted-foreground">
+          {t("imports.quality.noIssues")}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function QualityMetric({
+  label,
+  value,
+  variant,
+}: {
+  label: string;
+  value: number;
+  variant: "success" | "warning" | "destructive" | "muted";
+}) {
+  return (
+    <div className="rounded-md border bg-background p-3">
+      <div className="text-xs text-muted-foreground">{label}</div>
+      <Badge variant={variant} className="mt-2 text-sm tabular-nums">
+        {value}
+      </Badge>
+    </div>
+  );
+}
+
+function importQualityIssueKey(code: string): TranslationKey {
+  return `imports.quality.issue.${code}` as TranslationKey;
 }
 
 const IMPORTS_QUERY_KEY = ["imports", "history"] as const;

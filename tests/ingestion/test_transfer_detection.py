@@ -1,5 +1,5 @@
 """Tests for transfer-detection heuristic in ingestion service."""
-from finance.ingestion.service import detect_transfer
+from finance.transactions.rules import detect_transfer
 
 
 def test_detects_polish_own_transfer() -> None:

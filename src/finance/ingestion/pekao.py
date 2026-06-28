@@ -39,7 +39,7 @@ _EXPECTED_HEADER = {
 
 
 def _decode_pekao_csv(raw: bytes) -> str:
-    """Decode Pekao export with UTF-8 BOM first, then legacy cp1250."""
+    """Decode Pekao export with UTF-8 BOM first, then Windows cp1250."""
     try:
         return raw.decode("utf-8-sig")
     except UnicodeDecodeError:

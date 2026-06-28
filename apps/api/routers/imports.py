@@ -2,12 +2,11 @@
 
 Three flows are supported:
 
-1. **Explicit source** (legacy) — ``source=pekao`` form field; uses the
-   registered vendor parser.
-2. **Auto-detect** — omit ``source`` (or pass ``auto``); the router peeks
+1. **Auto-detect** — omit ``source`` (or pass ``auto``); the router peeks
    headers and picks a parser via :func:`finance.ingestion.registry.detect_source`.
    Falls back to the generic parser with header-alias detection if no vendor
    matches.
+2. **Detected source** — pass a known bank source after preview.
 3. **Generic with column-map** — ``source=generic`` plus ``column_map`` JSON
    string mapping logical fields (date, amount, currency, merchant, title,
    category, external_id) to actual header names.
@@ -28,13 +27,15 @@ from pydantic import BaseModel
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
+from finance.currencies import MissingFxRate
 from finance.db import SessionLocal, get_session
 from finance.domain.dto import ImportSummary
 from finance.domain.enums import BankSource
 from finance.domain.models import Import, Transaction
 from finance.ingestion import ParseError
 from finance.ingestion.generic import GenericCsvParser, preview_csv
-from finance.ingestion.registry import detect_source
+from finance.ingestion.quality import ImportQualityReport, assess_import_quality
+from finance.ingestion.registry import detect_source, get_parser
 from finance.ingestion.schema import (
     clean_column_map,
     import_field_specs_payload,
@@ -100,6 +101,21 @@ def _suggest_import_categories(import_id: int) -> None:
         logger.exception("Category suggestion job failed for import %s", import_id)
 
 
+class ImportQualityIssueResponse(BaseModel):
+    code: str
+    severity: str
+    count: int
+    sample_rows: list[int]
+
+
+class ImportQualityReportResponse(BaseModel):
+    total_rows: int
+    valid_rows: int
+    blocking_issues: int
+    warnings: int
+    issues: list[ImportQualityIssueResponse]
+
+
 class PreviewResponse(BaseModel):
     headers: list[str]
     sample_rows: list[dict[str, str]]
@@ -109,27 +125,64 @@ class PreviewResponse(BaseModel):
     detected_mapping: dict[str, str | None]
     field_specs: list[dict[str, object]]
     quality_warnings: list[str]
+    quality_report: ImportQualityReportResponse
     supported_extensions: list[str]
 
 
+def _quality_report_response(report: ImportQualityReport) -> ImportQualityReportResponse:
+    return ImportQualityReportResponse(
+        total_rows=report.total_rows,
+        valid_rows=report.valid_rows,
+        blocking_issues=report.blocking_issues,
+        warnings=report.warnings,
+        issues=[
+            ImportQualityIssueResponse(
+                code=issue.code,
+                severity=issue.severity,
+                count=issue.count,
+                sample_rows=issue.sample_rows,
+            )
+            for issue in report.issues
+        ],
+    )
+
+
 @router.post("/preview", response_model=PreviewResponse)
-def preview_import(file: UploadFile = File(...)) -> PreviewResponse:
+def preview_import(
+    file: UploadFile = File(...),
+    session: Session = Depends(get_session),
+) -> PreviewResponse:
     raw = _read_validated(file)
     try:
         prev = preview_csv(io.BytesIO(raw))
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=422, detail=f"Cannot parse CSV: {exc}") from exc
+    detected_source = detect_source(prev.headers)
+    quality_source = detected_source or BankSource.UNKNOWN
+    quality_parser = (
+        get_parser(detected_source)
+        if detected_source is not None
+        else GenericCsvParser({k: v for k, v in prev.detected_mapping.items() if v})
+    )
+    quality_report = assess_import_quality(
+        session,
+        source=quality_source,
+        filename=file.filename or "uploaded.csv",
+        raw=raw,
+        parser=quality_parser,
+    )
     return PreviewResponse(
         headers=prev.headers,
         sample_rows=prev.sample_rows,
         delimiter=prev.delimiter,
         encoding=prev.encoding,
-        detected_source=detect_source(prev.headers),
+        detected_source=detected_source,
         detected_mapping=prev.detected_mapping,
         field_specs=import_field_specs_payload(),
         quality_warnings=import_quality_warnings(
             {k: v for k, v in prev.detected_mapping.items() if v}
         ),
+        quality_report=_quality_report_response(quality_report),
         supported_extensions=list(ALLOWED_EXTENSIONS),
     )
 
@@ -140,6 +193,7 @@ def upload_import(
     file: UploadFile = File(...),
     source: str | None = Form(None),
     column_map: str | None = Form(None),
+    skip_categories: bool = Form(False),
     session: Session = Depends(get_session),
 ) -> ImportSummary:
     raw = _read_validated(file)
@@ -194,11 +248,18 @@ def upload_import(
             filename=file.filename or "uploaded.csv",
             stream=io.BytesIO(raw),
             parser=parser,
+            skip_categories=skip_categories,
         )
         if summary.inserted > 0:
             background.add_task(_suggest_import_categories, summary.import_id)
         return summary
     except ParseError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except MissingFxRate as exc:
+        session.rollback()
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except ValueError as exc:
+        session.rollback()
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except NotImplementedError as exc:
         raise HTTPException(status_code=501, detail=str(exc)) from exc

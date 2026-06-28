@@ -8,6 +8,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
 from finance.analytics.filters import is_expense_category_candidate
+from finance.currencies import convert_amount
 from finance.domain.dto import ImportSummary, TransactionDTO
 from finance.domain.enums import BankSource, CategorySource, TransactionType
 from finance.domain.models import Import, Transaction
@@ -19,7 +20,6 @@ from finance.transactions.rules import (
     detect_transaction_type,
     rule_category_for_type,
 )
-from finance.transactions.rules import detect_transfer as _detect_transfer
 
 
 def compute_dedup_hash(dto: TransactionDTO) -> str:
@@ -43,19 +43,21 @@ def compute_dedup_hash(dto: TransactionDTO) -> str:
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
-def detect_transfer(merchant: str | None, title: str | None) -> bool:
-    """Backward-compatible import path for transfer detection tests/tools."""
-    return _detect_transfer(merchant, title)
-
-
 def transaction_values_for_dto(
     session: Session,
     dto: TransactionDTO,
     *,
     import_id: int | None,
     dedup_hash: str,
+    skip_categories: bool = False,
 ) -> dict[str, object]:
     """Build DB values for a parsed transaction, including personal rules."""
+    converted = convert_amount(
+        session,
+        amount=dto.amount,
+        currency=dto.currency,
+        rate_date=dto.booking_date,
+    )
     personal = effect_for_transaction(session, merchant=dto.merchant, title=dto.title)
     system_transaction_type = detect_transaction_type(
         dto.merchant,
@@ -82,7 +84,7 @@ def transaction_values_for_dto(
     rule_category = rule_category_for_type(TransactionType(transaction_type))
     category = (
         dto.category.value
-        if dto.category and can_assign_category
+        if dto.category and can_assign_category and not skip_categories
         else None
     )
     category_source = CategorySource.BANK.value if category is not None else None
@@ -107,6 +109,11 @@ def transaction_values_for_dto(
         "booking_datetime": dto.booking_datetime,
         "amount": dto.amount,
         "currency": dto.currency,
+        "amount_base": converted.amount_base,
+        "base_currency": converted.base_currency,
+        "fx_rate": converted.fx_rate,
+        "fx_rate_date": converted.fx_rate_date,
+        "fx_rate_source": converted.fx_rate_source,
         "direction": dto.direction.value,
         "merchant": dto.merchant,
         "title": dto.title,
@@ -132,6 +139,7 @@ def ingest_file(
     filename: str,
     stream: IO[bytes],
     parser: BankParser | None = None,
+    skip_categories: bool = False,
 ) -> ImportSummary:
     parser = parser or get_parser(source)
     dtos = parser.parse(stream, filename=filename)
@@ -149,6 +157,7 @@ def ingest_file(
             dto,
             import_id=import_row.id,
             dedup_hash=h,
+            skip_categories=skip_categories,
         )
         stmt = (
             pg_insert(Transaction)

@@ -18,13 +18,14 @@ from finance.ingestion import ParseError
 def _patch_ingest(monkeypatch):
     calls: list[dict] = []
 
-    def fake_ingest(session, *, source, filename, stream, parser=None):
+    def fake_ingest(session, *, source, filename, stream, parser=None, skip_categories=False):
         calls.append(
             {
                 "source": source,
                 "filename": filename,
                 "bytes": stream.read(),
                 "parser": parser,
+                "skip_categories": skip_categories,
             }
         )
         return ImportSummary(
@@ -54,6 +55,18 @@ def test_upload_returns_summary(client, _patch_ingest) -> None:
     assert body["total_rows"] == 3
     assert len(_patch_ingest) == 1
     assert _patch_ingest[0]["filename"] == "pekao.csv"
+    assert _patch_ingest[0]["skip_categories"] is False
+
+
+def test_upload_with_skip_categories(client, _patch_ingest) -> None:
+    r = client.post(
+        "/imports",
+        files={"file": ("pekao.csv", io.BytesIO(b"col1;col2\n1;2\n"), "text/csv")},
+        data={"source": "pekao", "skip_categories": "true"},
+    )
+    assert r.status_code == 200
+    assert len(_patch_ingest) == 1
+    assert _patch_ingest[0]["skip_categories"] is True
 
 
 def test_upload_invalid_source_400_or_422(client, _patch_ingest) -> None:
@@ -66,7 +79,7 @@ def test_upload_invalid_source_400_or_422(client, _patch_ingest) -> None:
 
 
 def test_upload_parse_error_returns_422(client, monkeypatch) -> None:
-    def boom(session, *, source, filename, stream, parser=None):
+    def boom(session, *, source, filename, stream, parser=None, skip_categories=False):
         raise ParseError("bad header")
 
     from apps.api.routers import imports as imports_router
@@ -82,7 +95,7 @@ def test_upload_parse_error_returns_422(client, monkeypatch) -> None:
 
 
 def test_upload_not_implemented_returns_501(client, monkeypatch) -> None:
-    def boom(session, *, source, filename, stream, parser=None):
+    def boom(session, *, source, filename, stream, parser=None, skip_categories=False):
         raise NotImplementedError("parser not wired")
 
     from apps.api.routers import imports as imports_router
@@ -130,8 +143,35 @@ def test_preview_returns_headers_and_detection(client) -> None:
     assert body["detected_mapping"]["currency"] == "Currency"
     assert body["field_specs"][0]["key"] == "date"
     assert body["field_specs"][0]["required"] is True
+    assert body["quality_report"]["total_rows"] == 2
+    assert body["quality_report"]["valid_rows"] == 2
+    assert body["quality_report"]["blocking_issues"] == 0
     assert body["supported_extensions"] == [".csv", ".tsv", ".txt"]
     assert len(body["sample_rows"]) == 2
+
+
+def test_preview_quality_report_flags_invalid_rows(client) -> None:
+    raw = (
+        b"Date,Amount,Currency,Description,Memo\n"
+        b"2026-04-01,-50.00,PLN,Carrefour,Groceries\n"
+        b",10.00,PLN,Shop,Missing date\n"
+        b"2026-04-03,not-a-number,PLN,Shop,Bad amount\n"
+        b"2026-04-04,0,,,\n"
+    )
+    r = client.post(
+        "/imports/preview",
+        files={"file": ("bad.csv", io.BytesIO(raw), "text/csv")},
+    )
+    assert r.status_code == 200
+    report = r.json()["quality_report"]
+    issues = {issue["code"]: issue for issue in report["issues"]}
+    assert report["total_rows"] == 4
+    assert report["valid_rows"] == 2
+    assert report["blocking_issues"] == 2
+    assert issues["missing_date"]["sample_rows"] == [3]
+    assert issues["invalid_amount"]["sample_rows"] == [4]
+    assert issues["zero_amount"]["sample_rows"] == [5]
+    assert issues["missing_counterparty"]["sample_rows"] == [5]
 
 
 def test_preview_detects_pekao(client) -> None:

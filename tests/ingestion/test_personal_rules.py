@@ -78,3 +78,29 @@ def test_rule_category_is_not_applied_to_credit_income(db_session) -> None:
     assert values["transaction_type"] == "income"
     assert values["category"] is None
     assert values["category_source"] is None
+
+
+def test_skip_categories_overrides_bank_category(db_session) -> None:
+    from finance.domain.enums import Category
+    values = transaction_values_for_dto(
+        db_session,
+        _dto(category=Category.FOOD),
+        import_id=1,
+        dedup_hash="hash",
+        skip_categories=True,
+    )
+    assert values["category"] is None
+    assert values["category_source"] is None
+
+
+def test_skip_categories_default_does_not_override(db_session) -> None:
+    from finance.domain.enums import Category
+    values = transaction_values_for_dto(
+        db_session,
+        _dto(category=Category.FOOD),
+        import_id=1,
+        dedup_hash="hash",
+        skip_categories=False,
+    )
+    assert values["category"] == "food"
+    assert values["category_source"] == "bank"
