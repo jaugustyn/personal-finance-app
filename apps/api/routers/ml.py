@@ -7,20 +7,18 @@ import logging
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import joblib
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from finance.db import SessionLocal, get_session
-from finance.domain.enums import Category
-from finance.ml.feedback import (
-    FeedbackEventInput,
-    confusion_hotspots,
-    feedback_quality,
-    record_feedback_event,
+from finance.ml.classification.artifacts import build_model_artifact
+from finance.ml.classification.policy import (
+    ClassificationPolicy,
+    policy_from_report,
 )
 from finance.ml.classification.predict import (
     ClassifierNotAvailable,
@@ -28,24 +26,42 @@ from finance.ml.classification.predict import (
     predict_transaction,
     reclassify_unlabelled,
 )
+from finance.ml.classification.status import (
+    CONFIDENCE_RECOMMENDATION_THRESHOLD,
+    DEFAULT_RECOMMENDED_ESTIMATOR,
+    DEFAULT_RECOMMENDED_FEATURE_SET,
+    comparison_summary,
+    dashboard_summary,
+    load_latest_report,
+    model_status_from_disk,
+    readiness_summary,
+    retrain_signal,
+)
+from finance.ml.classification.status import (
+    MODEL_PATH as DEFAULT_MODEL_PATH,
+)
+from finance.ml.classification.status import (
+    REPORTS_DIR as DEFAULT_REPORTS_DIR,
+)
 from finance.ml.classification.train import (
     ESTIMATORS,
-    build_label_readiness,
     build_evidence_report,
     fit_final,
     load_training_set,
 )
+from finance.ml.feedback import (
+    FeedbackEventInput,
+    feedback_report,
+    record_feedback_event,
+)
+from finance.ml.review_queue import review_queue
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/ml", tags=["ml"])
 
-MODEL_PATH = Path("data/models/classifier_latest.joblib")
-REPORTS_DIR = Path("data/reports")
-CONFIDENCE_RECOMMENDATION_THRESHOLD = 0.55
-DEFAULT_RECOMMENDED_ESTIMATOR = "linear_svc_calibrated"
-DEFAULT_RECOMMENDED_FEATURE_SET = "feature_v2"
-CALIBRATED_ESTIMATORS = {"linear_svc_calibrated", "logreg"}
+MODEL_PATH: Path = DEFAULT_MODEL_PATH
+REPORTS_DIR: Path = DEFAULT_REPORTS_DIR
 
 
 class ClassifyRequest(BaseModel):
@@ -55,8 +71,20 @@ class ClassifyRequest(BaseModel):
     booking_date: date
     source: str = "unknown"
     transaction_type: str = "purchase"
+    direction: Literal["debit", "credit"] | None = None
+    is_transfer: bool = False
     use_llm_fallback: bool = False
     threshold: float = Field(default=0.55, ge=0.0, le=1.0)
+
+
+class ClassificationDecisionResponse(BaseModel):
+    action: str
+    reason_code: str
+    threshold_used: float
+    review_floor: float
+    category: str | None = None
+    confidence: float | None = None
+    category_candidate: bool
 
 
 class ClassifyResponse(BaseModel):
@@ -69,6 +97,7 @@ class ClassifyResponse(BaseModel):
     fallback_used: bool = False
     top_predictions: list[dict[str, Any]] = Field(default_factory=list)
     recommended_action: str = "review"
+    classification_decision: ClassificationDecisionResponse
 
 
 class ReclassifyResponse(BaseModel):
@@ -154,6 +183,9 @@ class MlModelStatus(BaseModel):
     report_updated_at: str | None = None
     best_model: MlMetricSummary | None = None
     load_error: str | None = None
+    artifact_metadata: dict[str, Any] = Field(default_factory=dict)
+    compatibility_warnings: list[str] = Field(default_factory=list)
+    retrain_signal: dict[str, Any] | None = None
 
 
 class MlReadinessResponse(BaseModel):
@@ -195,429 +227,126 @@ class MlDashboardResponse(BaseModel):
     validation_slices: dict[str, Any] = Field(default_factory=dict)
     confidence_policy: dict[str, Any] = Field(default_factory=dict)
     feedback_quality: dict[str, Any] = Field(default_factory=dict)
+    feedback_report: dict[str, Any] = Field(default_factory=dict)
+    retrain_signal: dict[str, Any] = Field(default_factory=dict)
     confusion_hotspots: list[dict[str, Any]] = Field(default_factory=list)
 
 
-def _iso_mtime(path: Path) -> str | None:
-    if not path.exists():
-        return None
-    return datetime.fromtimestamp(path.stat().st_mtime, tz=UTC).isoformat()
+class ReviewQueueItemResponse(BaseModel):
+    transaction_id: int
+    booking_date: date
+    merchant: str
+    title: str
+    amount: Decimal
+    currency: str
+    direction: str
+    predicted_category: str | None = None
+    confidence: float | None = None
+    decision_action: str
+    decision_reason: str
+    priority_score: float
+    priority_components: dict[str, float]
+    reason_codes: list[str]
 
 
-def _latest_report_path() -> Path | None:
-    reports = sorted(REPORTS_DIR.glob("classification_*.json"))
-    if not reports:
-        return None
-    return max(reports, key=lambda path: path.stat().st_mtime)
+class FeedbackReportResponse(BaseModel):
+    quality: dict[str, Any]
+    feedback_events_since_model: int
+    feedback_events_used_in_training: int | None = None
+    feedback_events_not_yet_in_model: int | None = None
+    feedback_coverage: float | None = None
+    coverage_basis: str
+    labels_used_in_current_model: int | None = None
+    current_label_count: int | None = None
+    new_labels_since_training: int | None = None
+    new_labels_since_training_ratio: float | None = None
+    top_corrected_merchants: list[dict[str, Any]] = Field(default_factory=list)
+    category_corrections: list[dict[str, Any]] = Field(default_factory=list)
+    rejection_by_category: list[dict[str, Any]] = Field(default_factory=list)
 
 
-def _load_latest_report() -> MlLatestReportResponse:
-    path = _latest_report_path()
-    if path is None:
-        return MlLatestReportResponse()
-    try:
-        report = json.loads(path.read_text(encoding="utf-8"))
-    except Exception as exc:  # noqa: BLE001
-        report = {"error": str(exc)}
-    return MlLatestReportResponse(
-        path=str(path),
-        updated_at=_iso_mtime(path),
-        report=report,
-    )
-
-
-def _as_float(value: Any) -> float | None:
-    if value is None:
-        return None
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return None
-
-
-def _confidence_point(
-    model_report: dict[str, Any],
-    threshold: float = CONFIDENCE_RECOMMENDATION_THRESHOLD,
-) -> tuple[float | None, float | None]:
-    for point in model_report.get("confidence_curve") or []:
-        if abs(float(point.get("threshold", -1.0)) - threshold) < 1e-9:
-            return (
-                _as_float(point.get("coverage")),
-                _as_float(point.get("accuracy_on_covered")),
-            )
-    return None, None
-
-
-def _iter_model_reports(
-    report: dict[str, Any] | None,
-) -> list[tuple[str, str, dict[str, Any]]]:
-    if not report:
-        return []
-    out: list[tuple[str, str, dict[str, Any]]] = []
-    feature_variants = report.get("feature_variants")
-    if isinstance(feature_variants, dict):
-        for feature_set, feature_report in feature_variants.items():
-            if not isinstance(feature_report, dict):
-                continue
-            models = feature_report.get("models") or {}
-            if not isinstance(models, dict):
-                continue
-            for estimator, model_report in models.items():
-                if isinstance(model_report, dict):
-                    out.append((str(feature_set), str(estimator), model_report))
-    if out:
-        return out
-
-    models = report.get("models") or {}
-    if isinstance(models, dict):
-        for estimator, model_report in models.items():
-            if isinstance(model_report, dict):
-                out.append(("baseline", str(estimator), model_report))
-    return out
-
-
-def _recommended_feature_set(
-    report: dict[str, Any] | None,
-) -> tuple[str | None, str | None]:
-    if not report:
-        return None, None
-    decision = report.get("feature_decision")
-    if not isinstance(decision, dict):
-        return None, None
-    feature_set = decision.get("recommended_feature_set")
-    raw_reason = decision.get("reason")
-    reason = raw_reason if isinstance(raw_reason, str) else None
-    if feature_set not in {"baseline", "feature_v2"}:
-        return None, reason
-    return str(feature_set), reason
-
-
-def _slice_macro_f1(
-    report: dict[str, Any] | None,
-    slice_name: str,
-    estimator: str,
-) -> float | None:
-    if not report:
-        return None
-    validation = report.get("validation_slices")
-    if not isinstance(validation, dict):
-        return None
-    slice_report = validation.get(slice_name)
-    if not isinstance(slice_report, dict) or slice_report.get("skipped"):
-        return None
-    models = slice_report.get("models")
-    if not isinstance(models, dict):
-        return None
-    model = models.get(estimator)
-    if not isinstance(model, dict) or model.get("skipped"):
-        return None
-    return _as_float(model.get("macro_f1"))
-
-
-def _stability_score(
-    report: dict[str, Any] | None,
-    estimator: str,
-) -> tuple[float | None, float | None, float | None]:
-    time_macro = _slice_macro_f1(report, "time_holdout", estimator)
-    group_macro = _slice_macro_f1(report, "merchant_group_holdout", estimator)
-    values = [value for value in (time_macro, group_macro) if value is not None]
-    score = sum(values) / len(values) if values else None
-    return time_macro, group_macro, score
-
-
-def _model_comparison(
-    report: dict[str, Any] | None,
-    status: MlModelStatus | None = None,
-) -> list[MlModelComparison]:
-    current_estimator = status.estimator if status else None
-    current_feature_set = (status.feature_set or "baseline") if status else None
-    rows: list[MlModelComparison] = []
-    for feature_set, estimator, model_report in _iter_model_reports(report):
-        coverage, accuracy = _confidence_point(model_report)
-        time_macro, group_macro, stability = _stability_score(report, estimator)
-        rows.append(
-            MlModelComparison(
-                estimator=estimator,
-                feature_set=feature_set,
-                macro_f1=_as_float(model_report.get("macro_f1")),
-                weighted_f1=_as_float(model_report.get("weighted_f1")),
-                coverage_at_055=coverage,
-                accuracy_at_055=accuracy,
-                time_holdout_macro_f1=time_macro,
-                merchant_group_macro_f1=group_macro,
-                stability_score=stability,
-                confidence_note=model_report.get("confidence_note"),
-                skipped=bool(model_report.get("skipped")),
-                error=model_report.get("error"),
-                is_current=(
-                    estimator == current_estimator and feature_set == current_feature_set
-                ),
-            )
-        )
-
-    rows.sort(
-        key=lambda row: (
-            row.skipped,
-            -(row.stability_score or 0.0),
-            -(row.macro_f1 or 0.0),
-            -(row.weighted_f1 or 0.0),
-            row.feature_set,
-            row.estimator,
-        )
-    )
-    for idx, row in enumerate(rows, start=1):
-        row.rank = idx
-    return rows
-
-
-def _recommend_model(
-    report: dict[str, Any] | None,
-    comparison: list[MlModelComparison],
-    status: MlModelStatus,
-    readiness: MlReadinessResponse,
-) -> MlModelRecommendation:
-    actionable = [
-        row
-        for row in comparison
-        if not row.skipped and not row.estimator.startswith("dummy")
-    ]
-    target_feature_set, feature_reason = _recommended_feature_set(report)
-
-    if not actionable:
-        recommendation = MlModelRecommendation(
-            estimator=DEFAULT_RECOMMENDED_ESTIMATOR,
-            feature_set=target_feature_set or DEFAULT_RECOMMENDED_FEATURE_SET,
-            reason_code="no_report",
-            action_codes=["train_recommended"],
-            warning_codes=["no_report"],
-            based_on_report=False,
-            feature_decision_reason=feature_reason,
-        )
-    else:
-        if target_feature_set:
-            pool = [row for row in actionable if row.feature_set == target_feature_set]
-        else:
-            pool = []
-        if not pool:
-            pool = actionable
-
-        best = max(
-            pool,
-            key=lambda row: (
-                row.stability_score if row.stability_score is not None else -1.0,
-                row.macro_f1 or 0.0,
-            ),
-        )
-        best_macro = best.macro_f1 or 0.0
-        calibrated_pool = [
-            row
-            for row in pool
-            if row.estimator in CALIBRATED_ESTIMATORS
-            and (row.macro_f1 or 0.0) >= best_macro - 0.02
-        ]
-        if calibrated_pool:
-            selected = max(
-                calibrated_pool,
-                key=lambda row: (
-                    row.stability_score if row.stability_score is not None else -1.0,
-                    row.macro_f1 or 0.0,
-                ),
-            )
-            reason_code = (
-                "best_calibrated_macro_f1"
-                if selected.estimator == best.estimator
-                else "prefer_calibrated_close"
-            )
-        else:
-            selected = best
-            reason_code = "best_macro_f1"
-
-        recommendation = MlModelRecommendation(
-            estimator=selected.estimator,
-            feature_set=selected.feature_set,
-            reason_code=reason_code,
-            macro_f1=selected.macro_f1,
-            weighted_f1=selected.weighted_f1,
-            coverage_at_055=selected.coverage_at_055,
-            accuracy_at_055=selected.accuracy_at_055,
-            based_on_report=True,
-            feature_decision_reason=feature_reason,
-        )
-
-    for row in comparison:
-        row.is_recommended = (
-            row.estimator == recommendation.estimator
-            and row.feature_set == recommendation.feature_set
-        )
-
-    if not status.exists or status.load_error:
-        recommendation.action_codes.append("train_recommended")
-    elif (
-        status.estimator != recommendation.estimator
-        or (status.feature_set or "baseline") != recommendation.feature_set
-    ):
-        recommendation.action_codes.append("train_recommended")
-    else:
-        recommendation.action_codes.append("current_matches_recommended")
-
-    recommendation.action_codes.append("reclassify_after_training")
-
-    if readiness.below_recommended_per_category:
-        recommendation.action_codes.append("balance_categories")
-    if status.missing_categories:
-        recommendation.warning_codes.append("missing_categories")
-    if readiness.level in {"insufficient", "minimum"}:
-        recommendation.warning_codes.append("limited_labels")
-    if not report:
-        recommendation.warning_codes.append("no_report")
-
-    recommendation.action_codes = list(dict.fromkeys(recommendation.action_codes))
-    recommendation.warning_codes = list(dict.fromkeys(recommendation.warning_codes))
-    return recommendation
-
-
-def _best_metric_summary(report: dict[str, Any] | None) -> MlMetricSummary | None:
-    if not report:
-        return None
-    models = report.get("models") or {}
-    candidates = {
-        name: info
-        for name, info in models.items()
-        if not name.startswith("dummy") and not info.get("skipped")
-    }
-    if not candidates:
-        return None
-    best_name = max(
-        candidates,
-        key=lambda name: float(candidates[name].get("macro_f1") or 0.0),
-    )
-    best = candidates[best_name]
-    coverage, accuracy = _confidence_point(best)
-    return MlMetricSummary(
-        model=best_name,
-        macro_f1=best.get("macro_f1"),
-        weighted_f1=best.get("weighted_f1"),
-        coverage_at_055=coverage,
-        accuracy_at_055=accuracy,
-    )
-
-
-def _extract_model_classes(pipe: Any, report: dict[str, Any] | None) -> list[str]:
-    named_steps = getattr(pipe, "named_steps", {}) if pipe is not None else {}
-    clf = named_steps.get("clf") if isinstance(named_steps, dict) else None
-    raw_classes = getattr(clf, "classes_", None)
-    classes = list(raw_classes) if raw_classes is not None else []
-    if not classes and report:
-        classes = list(report.get("labels") or [])
-    return sorted(str(item) for item in classes)
-
-
-def _model_status_from_disk() -> MlModelStatus:
-    known_categories = sorted(category.value for category in Category)
-    status = MlModelStatus(
-        exists=MODEL_PATH.exists(),
-        path=str(MODEL_PATH),
-        updated_at=_iso_mtime(MODEL_PATH),
-        known_categories=known_categories,
-    )
-    latest_report = _load_latest_report()
-    latest_report_data = (
-        latest_report.report if isinstance(latest_report.report, dict) else None
-    )
-
-    if not MODEL_PATH.exists():
-        status.report_path = latest_report.path
-        status.report_updated_at = latest_report.updated_at
-        status.best_model = _best_metric_summary(latest_report_data)
-        status.missing_categories = known_categories
-        return status
-
-    try:
-        artifact = joblib.load(MODEL_PATH)
-        report = artifact.get("report") if isinstance(artifact, dict) else None
-        report = report if isinstance(report, dict) else latest_report_data
-        pipe = artifact.get("pipeline") if isinstance(artifact, dict) else artifact
-        status.estimator = artifact.get("estimator") if isinstance(artifact, dict) else None
-        status.feature_set = artifact.get("feature_set") if isinstance(artifact, dict) else None
-        status.classes = _extract_model_classes(pipe, report)
-        status.n_total_labelled = report.get("n_total_labelled") if report else None
-        status.n_classes = report.get("n_classes") if report else None
-        status.best_model = _best_metric_summary(report)
-    except Exception as exc:  # noqa: BLE001
-        status.load_error = str(exc)
-        if latest_report_data:
-            status.classes = sorted(str(item) for item in latest_report_data.get("labels") or [])
-            status.n_total_labelled = latest_report_data.get("n_total_labelled")
-            status.n_classes = latest_report_data.get("n_classes")
-        status.best_model = _best_metric_summary(latest_report_data)
-
-    observed = set(status.classes)
-    known = set(known_categories)
-    status.missing_categories = sorted(known - observed)
-    status.extra_classes = sorted(observed - known)
-    status.report_path = latest_report.path
-    status.report_updated_at = latest_report.updated_at
-    return status
-
-
-def _readiness(session: Session) -> MlReadinessResponse:
-    df = load_training_set(session)
-    data = build_label_readiness(df)
-    return MlReadinessResponse(**data)
+def _classification_policy() -> ClassificationPolicy:
+    latest = load_latest_report(REPORTS_DIR)
+    report = latest["report"] if isinstance(latest["report"], dict) else None
+    return policy_from_report(report)
 
 
 @router.get("/status", response_model=MlModelStatus)
-def model_status() -> MlModelStatus:
-    return _model_status_from_disk()
+def model_status(session: Session = Depends(get_session)) -> MlModelStatus:
+    status = model_status_from_disk(model_path=MODEL_PATH, reports_dir=REPORTS_DIR)
+    readiness_data = readiness_summary(session)
+    status["retrain_signal"] = retrain_signal(session, status, readiness_data)
+    return MlModelStatus(**status)
 
 
 @router.get("/readiness", response_model=MlReadinessResponse)
 def readiness(session: Session = Depends(get_session)) -> MlReadinessResponse:
-    return _readiness(session)
+    return MlReadinessResponse(**readiness_summary(session))
 
 
 @router.get("/report/latest", response_model=MlLatestReportResponse)
 def latest_report() -> MlLatestReportResponse:
-    return _load_latest_report()
+    return MlLatestReportResponse(**load_latest_report(REPORTS_DIR))
 
 
 @router.get("/comparison", response_model=MlComparisonResponse)
 def model_comparison(
     session: Session = Depends(get_session),
 ) -> MlComparisonResponse:
-    status = _model_status_from_disk()
-    readiness = _readiness(session)
-    latest = _load_latest_report()
-    report = latest.report if isinstance(latest.report, dict) else None
-    comparison = _model_comparison(report, status)
     return MlComparisonResponse(
-        models=comparison,
-        recommendation=_recommend_model(report, comparison, status, readiness),
+        **comparison_summary(session, model_path=MODEL_PATH, reports_dir=REPORTS_DIR)
     )
 
 
 @router.get("/dashboard", response_model=MlDashboardResponse)
 def dashboard(session: Session = Depends(get_session)) -> MlDashboardResponse:
-    status = _model_status_from_disk()
-    readiness = _readiness(session)
-    latest = _load_latest_report()
-    report = latest.report if isinstance(latest.report, dict) else None
-    comparison = _model_comparison(report, status)
     return MlDashboardResponse(
-        status=status,
-        readiness=readiness,
-        latest_report=latest,
-        model_comparison=comparison,
-        recommendation=_recommend_model(report, comparison, status, readiness),
-        validation_slices=report.get("validation_slices", {}) if report else {},
-        confidence_policy=report.get("confidence_policy", {}) if report else {},
-        feedback_quality=feedback_quality(session),
-        confusion_hotspots=confusion_hotspots(session),
+        **dashboard_summary(session, model_path=MODEL_PATH, reports_dir=REPORTS_DIR)
     )
+
+
+@router.get("/review-queue", response_model=list[ReviewQueueItemResponse])
+def review_queue_endpoint(
+    session: Session = Depends(get_session),
+    limit: int = Query(default=50, ge=1, le=200),
+) -> list[ReviewQueueItemResponse]:
+    policy = _classification_policy()
+    rows = review_queue(session, limit=limit, policy=policy)
+    return [ReviewQueueItemResponse(**row.__dict__) for row in rows]
+
+
+@router.get("/feedback-report", response_model=FeedbackReportResponse)
+def feedback_report_endpoint(
+    session: Session = Depends(get_session),
+) -> FeedbackReportResponse:
+    status = model_status_from_disk(model_path=MODEL_PATH, reports_dir=REPORTS_DIR)
+    readiness_data = readiness_summary(session)
+    updated_at = status.get("updated_at")
+    try:
+        model_updated_at = (
+            datetime.fromisoformat(str(updated_at).replace("Z", "+00:00"))
+            if updated_at
+            else None
+        )
+    except ValueError:
+        model_updated_at = None
+    report = feedback_report(
+        session,
+        model_updated_at=model_updated_at,
+        labels_used_in_current_model=status.get("n_total_labelled"),
+        current_label_count=readiness_data.get("total_labelled"),
+    )
+    return FeedbackReportResponse(**report)
 
 
 @router.post("/classify", response_model=ClassifyResponse)
 def classify(req: ClassifyRequest) -> ClassifyResponse:
+    latest = load_latest_report(REPORTS_DIR)
+    report = latest["report"] if isinstance(latest["report"], dict) else None
+    policy = policy_from_report(
+        report,
+        fallback=ClassificationPolicy(default_threshold=req.threshold),
+    )
     try:
         result = predict_transaction(
             req.merchant,
@@ -628,6 +357,9 @@ def classify(req: ClassifyRequest) -> ClassifyResponse:
             use_llm_fallback=req.use_llm_fallback,
             source=req.source,
             transaction_type=req.transaction_type,
+            direction=req.direction,
+            is_transfer=req.is_transfer,
+            policy=policy,
         )
     except ClassifierNotAvailable as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
@@ -641,6 +373,9 @@ def classify(req: ClassifyRequest) -> ClassifyResponse:
         fallback_used=result.fallback_used,
         top_predictions=result.top_predictions,
         recommended_action=result.recommended_action,
+        classification_decision=ClassificationDecisionResponse(
+            **result.classification_decision.__dict__,
+        ),
     )
 
 
@@ -670,8 +405,11 @@ def record_feedback(
 
 @router.post("/reclassify", response_model=ReclassifyResponse)
 def reclassify(session: Session = Depends(get_session)) -> ReclassifyResponse:
+    latest = load_latest_report(REPORTS_DIR)
+    report = latest["report"] if isinstance(latest["report"], dict) else None
+    policy = policy_from_report(report)
     try:
-        n = reclassify_unlabelled(session)
+        n = reclassify_unlabelled(session, policy=policy)
     except ClassifierNotAvailable as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     return ReclassifyResponse(updated=n)
@@ -703,12 +441,12 @@ def _retrain_job(
         pipe = fit_final(df, estimator, feature_set=feature_set)
         MODEL_PATH.parent.mkdir(parents=True, exist_ok=True)
         joblib.dump(
-            {
-                "estimator": estimator,
-                "feature_set": feature_set,
-                "pipeline": pipe,
-                "report": report,
-            },
+            build_model_artifact(
+                estimator=estimator,
+                feature_set=feature_set,
+                pipeline=pipe,
+                report=report,
+            ),
             MODEL_PATH,
         )
         get_classifier.cache_clear()  # type: ignore[attr-defined]

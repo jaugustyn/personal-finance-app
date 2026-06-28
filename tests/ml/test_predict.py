@@ -54,6 +54,7 @@ def test_predict_transaction_model_only(monkeypatch) -> None:
     assert result.source == "model"
     assert result.fallback_used is False
     assert result.recommended_action == "accept_candidate"
+    assert result.classification_decision.action == "accept"
     assert result.top_predictions[0]["category"] == "food"
     assert result.top_predictions[0]["confidence"] == 0.81
 
@@ -70,6 +71,21 @@ def test_predict_transaction_marks_non_category_candidate(monkeypatch) -> None:
     )
 
     assert result.recommended_action == "not_category_candidate"
+    assert result.classification_decision.action == "not_applicable"
+
+
+def test_predict_transaction_infers_credit_as_non_category_candidate(monkeypatch) -> None:
+    monkeypatch.setattr(predict_mod, "get_classifier", lambda: _FakePipeline(confidence=0.81))
+
+    result = predict_mod.predict_transaction(
+        "ACME",
+        "Zwrot środków",
+        Decimal("50.00"),
+        date(2026, 1, 10),
+    )
+
+    assert result.recommended_action == "not_category_candidate"
+    assert result.classification_decision.action == "not_applicable"
 
 
 def test_prediction_features_include_feature_v2_columns() -> None:
@@ -158,6 +174,7 @@ def test_reclassify_unlabelled_stores_prediction_and_confidence(db_session, monk
     assert tx.category_predicted == "food"
     assert tx.category_confidence == 0.82
     assert tx.category_predicted_source == "model"
+    assert tx.category is None
 
 
 def test_reclassify_unlabelled_skips_person_transfers(db_session: Session, monkeypatch) -> None:

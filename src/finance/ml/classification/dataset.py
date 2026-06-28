@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from finance.analytics.filters import expense_category_candidate_filters
+from finance.currencies import amount_base_expr
 from finance.domain.dto import TransactionDTO
 from finance.domain.models import Transaction
 
@@ -42,15 +43,17 @@ def dtos_to_dataframe(dtos: Iterable[TransactionDTO]) -> pd.DataFrame:
 
 def load_training_set(session: Session) -> pd.DataFrame:
     """Load all transactions with a non-null `category` from the DB."""
-    stmt = select(Transaction).where(Transaction.category.is_not(None))
+    stmt = select(Transaction, amount_base_expr().label("base_amount")).where(
+        Transaction.category.is_not(None)
+    )
     stmt = stmt.where(*expense_category_candidate_filters())
-    rows = session.execute(stmt).scalars().all()
+    rows = session.execute(stmt).all()
     data = []
-    for r in rows:
+    for r, base_amount in rows:
         data.append(
             {
                 "text": f"{r.merchant} {r.title}".strip(),
-                "abs_amount": float(abs(r.amount or Decimal(0))),
+                "abs_amount": float(abs(base_amount or Decimal(0))),
                 "day_of_week": r.booking_date.weekday(),
                 "category": r.category,
                 "merchant": r.merchant,

@@ -24,6 +24,13 @@ from finance.ml.classification.confidence import (
     top_prediction_confidences,
 )
 from finance.ml.classification.pipeline import add_feature_v2_columns
+from finance.ml.classification.policy import (
+    DEFAULT_POLICY,
+    ClassificationDecision,
+    ClassificationPolicy,
+    decide_classification,
+    recommended_action_for_decision,
+)
 from finance.profile.service import RULE_MODE_AUTO, effect_for_transaction
 from finance.transactions.rules import explain_transaction_type
 
@@ -46,31 +53,14 @@ class PredictionResult:
     fallback_used: bool
     top_predictions: list[dict[str, float | str]]
     recommended_action: str
-
-
-def recommended_action_for_prediction(
-    confidence: float | None,
-    threshold: float,
-    *,
-    category_candidate: bool = True,
-) -> str:
-    if not category_candidate:
-        return "not_category_candidate"
-    if confidence is None:
-        return "review"
-    if confidence >= threshold:
-        return "accept_candidate"
-    if confidence >= max(threshold * 0.5, 0.25):
-        return "review"
-    return "needs_manual_label"
+    classification_decision: ClassificationDecision
 
 
 def _unwrap_artifact(artifact: Any):
-    """Support both old Pipeline artifacts and new metadata dict artifacts."""
-    pipe = artifact.get("pipeline") if isinstance(artifact, dict) else artifact
+    pipe = artifact.get("pipeline") if isinstance(artifact, dict) else None
     if pipe is None or not hasattr(pipe, "predict"):
         raise ClassifierNotAvailable(
-            f"Invalid classifier artifact at {LATEST_MODEL_PATH}; expected sklearn Pipeline."
+            f"Invalid classifier artifact at {LATEST_MODEL_PATH}; expected metadata dict."
         )
     return pipe
 
@@ -109,10 +99,6 @@ def _row_to_features(
         ]
     )
     return add_feature_v2_columns(base)
-
-
-def predict_one(merchant: str, title: str, amount: Decimal, booking_date: date) -> str:
-    return predict_transaction(merchant, title, amount, booking_date).category
 
 
 def _extract_category_from_llm(content: str | None) -> str | None:
@@ -171,7 +157,12 @@ def predict_transaction(
     use_llm_fallback: bool = False,
     source: str = "unknown",
     transaction_type: str = TransactionType.PURCHASE.value,
+    direction: str | None = None,
+    is_transfer: bool = False,
+    policy: ClassificationPolicy | None = None,
 ) -> PredictionResult:
+    active_policy = policy or ClassificationPolicy(default_threshold=threshold)
+    direction_value = direction or ("credit" if amount > 0 else "debit")
     pipe = get_classifier()
     X = _row_to_features(  # noqa: N806
         merchant,
@@ -184,37 +175,41 @@ def predict_transaction(
     model_category = str(pipe.predict(X)[0])
     confidence = max_prediction_confidence(pipe, X)
     top_predictions = top_prediction_confidences(pipe, X, k=3)
-    category_candidate = is_expense_category_candidate(
-        "debit",
-        False,
-        transaction_type,
+    decision = decide_classification(
+        category=model_category,
+        confidence=confidence,
+        direction=direction_value,
+        is_transfer=is_transfer,
+        transaction_type=transaction_type,
+        policy=active_policy,
     )
-    recommended_action = recommended_action_for_prediction(
-        confidence,
-        threshold,
-        category_candidate=category_candidate,
-    )
+    recommended_action = recommended_action_for_decision(decision)
 
     if (
         use_llm_fallback
         and confidence is not None
-        and confidence < threshold
+        and confidence < decision.threshold_used
     ):
         fallback_category = _llm_fallback_category(merchant, title, amount, booking_date)
         if fallback_category is not None:
+            fallback_decision = decide_classification(
+                category=fallback_category,
+                confidence=confidence,
+                direction=direction_value,
+                is_transfer=is_transfer,
+                transaction_type=transaction_type,
+                policy=active_policy,
+            )
             return PredictionResult(
                 category=fallback_category,
                 confidence=confidence,
                 source="llm_fallback",
                 model_category=model_category,
-                threshold=threshold,
+                threshold=fallback_decision.threshold_used,
                 fallback_used=True,
                 top_predictions=top_predictions,
-                recommended_action=recommended_action_for_prediction(
-                    confidence,
-                    threshold,
-                    category_candidate=category_candidate,
-                ),
+                recommended_action=recommended_action_for_decision(fallback_decision),
+                classification_decision=fallback_decision,
             )
 
     return PredictionResult(
@@ -222,10 +217,11 @@ def predict_transaction(
         confidence=confidence,
         source="model",
         model_category=model_category,
-        threshold=threshold,
+        threshold=decision.threshold_used,
         fallback_used=False,
         top_predictions=top_predictions,
         recommended_action=recommended_action,
+        classification_decision=decision,
     )
 
 
@@ -234,6 +230,7 @@ def reclassify_unlabelled(
     *,
     ids: list[int] | None = None,
     import_id: int | None = None,
+    policy: ClassificationPolicy = DEFAULT_POLICY,
 ) -> int:
     """Run the model on rows without `category` and store predictions in
     `category_predicted`. Returns number of rows updated."""
@@ -255,7 +252,7 @@ def reclassify_unlabelled(
             r.direction,
             raw_category=r.raw_category,
         )
-        tx_type = TransactionType(tx_type_decision.result)
+        tx_type = TransactionType(tx_type_decision.result or TransactionType.PURCHASE.value)
         if personal and personal.transaction_type:
             tx_type = TransactionType(personal.transaction_type)
         current_type = str(r.transaction_type or "")
@@ -264,7 +261,7 @@ def reclassify_unlabelled(
             or current_type in {TransactionType.PURCHASE.value, TransactionType.OTHER.value}
             or (str(r.direction) == "credit" and current_type != TransactionType.SALARY.value)
         ):
-            r.transaction_type = tx_type.value
+            r.transaction_type = tx_type
         if personal and personal.is_transfer is not None:
             r.is_transfer = personal.is_transfer
         elif tx_type == TransactionType.OWN_TRANSFER:
@@ -332,11 +329,14 @@ def reclassify_unlabelled(
         result = predict_transaction(
             r.merchant,
             r.title,
-            r.amount,
+            r.amount_base if r.amount_base is not None else r.amount,
             r.booking_date,
             use_llm_fallback=False,
             source=str(r.source or "unknown"),
             transaction_type=str(r.transaction_type or TransactionType.PURCHASE.value),
+            direction=str(r.direction or "debit"),
+            is_transfer=bool(r.is_transfer),
+            policy=policy,
         )
         session.execute(
             update(Transaction)

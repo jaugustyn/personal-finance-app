@@ -6,10 +6,12 @@ from datetime import date
 from decimal import Decimal
 
 import numpy as np
+import pytest
 
 from apps.api.routers import ml as ml_router
-from finance.domain.models import Transaction
+from finance.domain.models import MlFeedbackEvent, Transaction
 from finance.ml.classification import predict as predict_mod
+from finance.ml.classification.artifacts import build_model_artifact
 
 
 class _FakePipeline:
@@ -34,6 +36,14 @@ def _payload(**overrides):
     }
     data.update(overrides)
     return data
+
+
+@pytest.fixture(autouse=True)
+def _isolated_reports_dir(monkeypatch, tmp_path):
+    reports_dir = tmp_path / "reports"
+    reports_dir.mkdir()
+    monkeypatch.setattr(ml_router, "REPORTS_DIR", reports_dir)
+    return reports_dir
 
 
 def _tx(session, **overrides) -> Transaction:
@@ -72,6 +82,8 @@ def test_classify_returns_model_diagnostics(client, monkeypatch) -> None:
     assert body["fallback_used"] is False
     assert body["threshold_used"] == 0.55
     assert body["recommended_action"] == "accept_candidate"
+    assert body["classification_decision"]["action"] == "accept"
+    assert body["classification_decision"]["threshold_used"] == 0.55
     assert body["top_predictions"][0]["category"] == "food"
     assert body["top_predictions"][0]["confidence"] == 0.83
 
@@ -88,6 +100,7 @@ def test_classify_low_confidence_does_not_fallback_by_default(client, monkeypatc
     assert body["source"] == "model"
     assert body["fallback_used"] is False
     assert body["recommended_action"] == "review"
+    assert body["classification_decision"]["action"] == "review"
 
 
 def test_classify_marks_non_category_candidate(client, monkeypatch) -> None:
@@ -101,6 +114,48 @@ def test_classify_marks_non_category_candidate(client, monkeypatch) -> None:
     assert response.status_code == 200
     body = response.json()
     assert body["recommended_action"] == "not_category_candidate"
+    assert body["classification_decision"]["action"] == "not_applicable"
+
+
+def test_classify_infers_credit_amount_as_non_category_candidate(client, monkeypatch) -> None:
+    monkeypatch.setattr(predict_mod, "get_classifier", lambda: _FakePipeline(confidence=0.91))
+
+    response = client.post(
+        "/ml/classify",
+        json=_payload(amount="50.00"),
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["recommended_action"] == "not_category_candidate"
+    assert body["classification_decision"]["action"] == "not_applicable"
+
+
+def test_classify_uses_category_threshold_from_latest_report(
+    client,
+    monkeypatch,
+    _isolated_reports_dir,
+) -> None:
+    monkeypatch.setattr(predict_mod, "get_classifier", lambda: _FakePipeline(confidence=0.83))
+    report = {
+        "confidence_policy": {
+            "default_threshold": 0.55,
+            "per_category": {"food": {"threshold": 0.90}},
+        }
+    }
+    (_isolated_reports_dir / "classification_20260101.json").write_text(
+        json.dumps(report),
+        encoding="utf-8",
+    )
+
+    response = client.post("/ml/classify", json=_payload())
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["recommended_action"] == "review"
+    assert body["threshold_used"] == 0.90
+    assert body["classification_decision"]["action"] == "review"
+    assert body["classification_decision"]["threshold_used"] == 0.90
 
 
 def test_classify_uses_valid_llm_fallback_when_enabled(client, monkeypatch) -> None:
@@ -157,6 +212,107 @@ def test_ml_status_reports_missing_model(client, monkeypatch, tmp_path) -> None:
     assert body["exists"] is False
     assert "shopping" in body["missing_categories"]
     assert body["classes"] == []
+    assert body["compatibility_warnings"] == []
+
+
+def test_ml_status_reports_artifact_metadata(client, monkeypatch, tmp_path) -> None:
+    model_path = tmp_path / "classifier_latest.joblib"
+    reports_dir = tmp_path / "reports"
+    reports_dir.mkdir(exist_ok=True)
+    artifact = build_model_artifact(
+        estimator="linear_svc",
+        feature_set="baseline",
+        pipeline=_FakePipeline(),
+        report={
+            "labels": ["food", "transport"],
+            "n_total_labelled": 2,
+            "n_classes": 2,
+            "models": {
+                "linear_svc": {
+                    "macro_f1": 0.8,
+                    "weighted_f1": 0.82,
+                    "confidence_curve": [],
+                    "skipped": False,
+                }
+            },
+        },
+    )
+    ml_router.joblib.dump(artifact, model_path)
+    monkeypatch.setattr(ml_router, "MODEL_PATH", model_path)
+    monkeypatch.setattr(ml_router, "REPORTS_DIR", reports_dir)
+
+    response = client.get("/ml/status")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["exists"] is True
+    assert body["estimator"] == "linear_svc"
+    assert body["artifact_metadata"]["artifact_schema_version"] == "1.0"
+    assert "sklearn" in body["artifact_metadata"]["runtime_versions"]
+    assert body["compatibility_warnings"] == []
+    assert body["retrain_signal"]["retrain_recommended"] is False
+
+
+def test_ml_status_recommends_retraining_after_label_growth(
+    client,
+    monkeypatch,
+    tmp_path,
+    db_session,
+) -> None:
+    model_path = tmp_path / "classifier_latest.joblib"
+    reports_dir = tmp_path / "reports"
+    reports_dir.mkdir(exist_ok=True)
+    artifact = build_model_artifact(
+        estimator="linear_svc",
+        feature_set="baseline",
+        pipeline=_FakePipeline(),
+        report={
+            "labels": ["food"],
+            "n_total_labelled": 1,
+            "n_classes": 1,
+            "models": {},
+        },
+    )
+    ml_router.joblib.dump(artifact, model_path)
+    monkeypatch.setattr(ml_router, "MODEL_PATH", model_path)
+    monkeypatch.setattr(ml_router, "REPORTS_DIR", reports_dir)
+    _tx(db_session, dedup_hash="growth-1", category="food")
+    _tx(db_session, dedup_hash="growth-2", category="transport")
+
+    response = client.get("/ml/status")
+
+    assert response.status_code == 200
+    signal = response.json()["retrain_signal"]
+    assert signal["retrain_recommended"] is True
+    assert "label_growth_since_training" in signal["reason_codes"]
+    assert signal["new_labels_since_training"] == 1
+
+
+def test_ml_status_warns_for_artifact_without_metadata(client, monkeypatch, tmp_path) -> None:
+    model_path = tmp_path / "classifier_latest.joblib"
+    reports_dir = tmp_path / "reports"
+    reports_dir.mkdir(exist_ok=True)
+    ml_router.joblib.dump(
+        {
+            "estimator": "linear_svc",
+            "feature_set": "baseline",
+            "pipeline": _FakePipeline(),
+            "report": {
+                "labels": ["food", "transport"],
+                "n_total_labelled": 2,
+                "n_classes": 2,
+            },
+        },
+        model_path,
+    )
+    monkeypatch.setattr(ml_router, "MODEL_PATH", model_path)
+    monkeypatch.setattr(ml_router, "REPORTS_DIR", reports_dir)
+
+    response = client.get("/ml/status")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["compatibility_warnings"] == ["missing_artifact_metadata"]
 
 
 def test_ml_readiness_uses_confirmed_expense_labels(client, db_session) -> None:
@@ -188,7 +344,7 @@ def test_ml_dashboard_compares_models_and_recommends_calibrated_variant(
 ) -> None:
     monkeypatch.setattr(ml_router, "MODEL_PATH", tmp_path / "missing.joblib")
     reports_dir = tmp_path / "reports"
-    reports_dir.mkdir()
+    reports_dir.mkdir(exist_ok=True)
     monkeypatch.setattr(ml_router, "REPORTS_DIR", reports_dir)
 
     def model_report(macro: float, weighted: float) -> dict:
@@ -299,3 +455,70 @@ def test_ml_feedback_endpoint_records_event(client, db_session) -> None:
     dashboard = client.get("/ml/dashboard").json()
     assert dashboard["feedback_quality"]["rejected_suggestions"] == 1
     assert dashboard["confusion_hotspots"][0]["predicted_category"] == "food"
+
+
+def test_review_queue_prioritizes_high_value_uncertain_rows(client, db_session) -> None:
+    high = _tx(
+        db_session,
+        dedup_hash="queue-high",
+        category=None,
+        amount=Decimal("-500.00"),
+        merchant="Big Shop",
+        category_predicted="other",
+        category_confidence=0.95,
+        raw_category="food",
+    )
+    _tx(
+        db_session,
+        dedup_hash="queue-low",
+        category=None,
+        amount=Decimal("-5.00"),
+        merchant="Small Shop",
+        category_predicted="food",
+        category_confidence=0.80,
+    )
+
+    response = client.get("/ml/review-queue?limit=5")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body[0]["transaction_id"] == high.id
+    assert body[0]["priority_score"] > body[1]["priority_score"]
+    assert body[0]["priority_components"]["other_risk"] > 0
+    assert "bank_model_conflict" in body[0]["reason_codes"]
+
+
+def test_feedback_report_returns_merchant_and_category_breakdowns(
+    client,
+    db_session,
+) -> None:
+    tx = _tx(
+        db_session,
+        dedup_hash="feedback-report",
+        merchant="Lidl",
+        category=None,
+        category_predicted="food",
+        category_confidence=0.44,
+    )
+    db_session.add(
+        MlFeedbackEvent(
+            transaction_id=tx.id,
+            entity_type="transaction",
+            entity_key=str(tx.id),
+            event_type="manual_category",
+            predicted_category="food",
+            final_category="transport",
+            confidence=0.44,
+            source="model",
+        )
+    )
+    db_session.commit()
+
+    response = client.get("/ml/feedback-report")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["feedback_coverage"] is None
+    assert body["coverage_basis"] == "not_tracked_per_event"
+    assert body["top_corrected_merchants"][0]["merchant"] == "Lidl"
+    assert body["category_corrections"][0]["predicted_category"] == "food"

@@ -9,9 +9,25 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from finance.db import get_session
+from finance.ml.classification.policy import (
+    ClassificationPolicy,
+    decide_classification,
+    policy_from_report,
+)
+from finance.ml.classification.status import REPORTS_DIR, load_latest_report
 from finance.transactions import service as tx_service
 
 router = APIRouter(prefix="/transactions", tags=["transactions"])
+
+
+class ClassificationDecisionResponse(BaseModel):
+    action: str
+    reason_code: str
+    threshold_used: float
+    review_floor: float
+    category: str | None = None
+    confidence: float | None = None
+    category_candidate: bool
 
 
 class TransactionRow(BaseModel):
@@ -19,6 +35,11 @@ class TransactionRow(BaseModel):
     booking_date: date
     amount: Decimal
     currency: str
+    amount_base: Decimal | None = None
+    base_currency: str | None = None
+    fx_rate: Decimal | None = None
+    fx_rate_date: date | None = None
+    fx_rate_source: str | None = None
     direction: str
     merchant: str
     title: str
@@ -35,6 +56,7 @@ class TransactionRow(BaseModel):
     notes: str | None = None
     tags: list[str] = Field(default_factory=list)
     import_id: int | None = None
+    classification_decision: ClassificationDecisionResponse | None = None
 
     model_config = {"from_attributes": True}
 
@@ -51,9 +73,35 @@ CategoryState = Literal[
     "categorized",
     "uncategorized",
     "suggested",
+    "assignable",
     "needs_review",
     "rejected",
 ]
+
+
+def _classification_policy() -> ClassificationPolicy:
+    latest = load_latest_report(REPORTS_DIR)
+    report = latest["report"] if isinstance(latest["report"], dict) else None
+    return policy_from_report(report)
+
+
+def _classification_decision(tx: Any, policy: ClassificationPolicy):
+    return decide_classification(
+        category=tx.category_predicted,
+        confidence=tx.category_confidence,
+        direction=tx.direction,
+        is_transfer=tx.is_transfer,
+        transaction_type=tx.transaction_type,
+        policy=policy,
+    )
+
+
+def _transaction_row(tx: Any, policy: ClassificationPolicy) -> TransactionRow:
+    row = TransactionRow.model_validate(tx)
+    row.classification_decision = ClassificationDecisionResponse(
+        **_classification_decision(tx, policy).__dict__,
+    )
+    return row
 
 
 @router.get("", response_model=list[TransactionRow])
@@ -76,6 +124,7 @@ def list_transactions(
     transaction_type: str | None = None,
     review_priority: bool = Query(default=False),
 ) -> list[TransactionRow]:
+    policy = _classification_policy()
     filters = tx_service.TransactionFilters(
         date_from=date_from,
         date_to=date_to,
@@ -92,8 +141,14 @@ def list_transactions(
         transaction_type=transaction_type,
         review_priority=review_priority,
     )
-    rows = tx_service.list_transactions(session, filters, limit=limit, offset=offset)
-    return [TransactionRow.model_validate(r) for r in rows]
+    rows = tx_service.list_transactions(
+        session,
+        filters,
+        limit=limit,
+        offset=offset,
+        policy=policy,
+    )
+    return [_transaction_row(r, policy) for r in rows]
 
 
 @router.get("/export.csv")
@@ -155,6 +210,57 @@ def summary_by_category(
         )
         for r in rows
     ]
+
+
+class FilterSummaryResponse(BaseModel):
+    count: int
+    total_income: Decimal
+    total_expenses: Decimal
+    net: Decimal
+
+
+@router.get("/filter-summary", response_model=FilterSummaryResponse)
+def filter_summary(
+    session: Session = Depends(get_session),
+    date_from: date | None = None,
+    date_to: date | None = None,
+    include_transfers: bool = Query(default=True),
+    import_id: int | None = None,
+    merchant: str | None = None,
+    search: str | None = None,
+    direction: Literal["debit", "credit"] | None = None,
+    category: str | None = None,
+    category_state: CategoryState = Query(default="all"),
+    has_suggestion: bool | None = Query(default=None),
+    min_confidence: float | None = Query(default=None, ge=0.0, le=1.0),
+    max_confidence: float | None = Query(default=None, ge=0.0, le=1.0),
+    transaction_type: str | None = None,
+    review_priority: bool = Query(default=False),
+) -> FilterSummaryResponse:
+    """Lightweight count + income/expenses/net for the current filter set."""
+    filters = tx_service.TransactionFilters(
+        date_from=date_from,
+        date_to=date_to,
+        include_transfers=include_transfers,
+        import_id=import_id,
+        merchant=merchant,
+        search=search,
+        direction=direction,
+        category=category,
+        category_state=category_state,
+        has_suggestion=has_suggestion,
+        min_confidence=min_confidence,
+        max_confidence=max_confidence,
+        transaction_type=transaction_type,
+        review_priority=review_priority,
+    )
+    result = tx_service.filter_summary(session, filters)
+    return FilterSummaryResponse(
+        count=result.count,
+        total_income=result.total_income,
+        total_expenses=result.total_expenses,
+        net=result.net,
+    )
 
 
 class MerchantGroup(BaseModel):
@@ -226,8 +332,10 @@ def review_summary(
     recurring_limit: int = Query(default=10, ge=1, le=100),
 ) -> ReviewSummary:
     """Data-quality buckets that most improve ML training data (Review Center)."""
+    policy = _classification_policy()
     data = tx_service.review_summary(
         session,
+        policy=policy,
         rare_class_threshold=rare_class_threshold,
         recurring_min_count=recurring_min_count,
         recurring_limit=recurring_limit,
@@ -272,7 +380,7 @@ def update_category(
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     if tx is None:
         raise HTTPException(status_code=404, detail="Transaction not found")
-    return TransactionRow.model_validate(tx)
+    return _transaction_row(tx, _classification_policy())
 
 
 class TypeUpdate(BaseModel):
@@ -293,7 +401,7 @@ def update_type(
         raise HTTPException(
             status_code=404, detail="Transaction not found or invalid type"
         )
-    return TransactionRow.model_validate(tx)
+    return _transaction_row(tx, _classification_policy())
 
 
 class AnnotationUpdate(BaseModel):
@@ -317,7 +425,7 @@ def update_annotations(
     )
     if tx is None:
         raise HTTPException(status_code=404, detail="Transaction not found")
-    return TransactionRow.model_validate(tx)
+    return _transaction_row(tx, _classification_policy())
 
 
 class BulkCategorize(BaseModel):
@@ -379,10 +487,12 @@ def accept_suggestions(
     payload: AcceptSuggestions,
     session: Session = Depends(get_session),
 ) -> BulkResult:
+    policy = _classification_policy()
     affected = tx_service.accept_suggestions(
         session,
         ids=payload.ids,
         min_confidence=payload.min_confidence,
+        policy=policy,
     )
     return BulkResult(affected=affected)
 

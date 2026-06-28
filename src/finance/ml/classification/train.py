@@ -31,6 +31,7 @@ from sklearn.model_selection import GroupShuffleSplit, StratifiedKFold, cross_va
 from finance.analytics.filters import expense_category_candidate_mask
 from finance.domain.enums import BankSource, Category
 from finance.ingestion import get_parser
+from finance.ml.classification.artifacts import build_model_artifact
 from finance.ml.classification.confidence import (
     cross_val_prediction_confidence,
     prediction_confidence_vector,
@@ -44,7 +45,7 @@ from finance.ml.classification.pipeline import (
     to_features_v2,
 )
 from finance.ml.classification.registry import ESTIMATORS
-from finance.transactions.normalization import normalize_merchant
+from finance.transactions.merchants import merchant_canonical_key
 
 MODELS_DIR = Path("data/models")
 REPORTS_DIR = Path("data/reports")
@@ -310,7 +311,7 @@ def _recommended_thresholds_by_category(
             if covered == 0:
                 continue
             accuracy = float((truth[mask] == pred[mask]).mean())
-            candidate = {
+            candidate: dict[str, float | int | None] = {
                 "threshold": threshold,
                 "coverage": float(covered / total_predicted) if total_predicted else 0.0,
                 "accuracy_on_covered": accuracy,
@@ -612,8 +613,16 @@ def _merchant_group_holdout(
     labelled = filter_category_training_rows(df)
     if labelled.empty:
         return {"skipped": True, "reason": "No labelled data."}
-    merchant = labelled.get("merchant", labelled["text"]).fillna("").map(normalize_merchant)
-    groups = merchant.where(merchant.str.len() > 0, labelled["text"].fillna(""))
+    merchant = labelled.get("merchant", labelled["text"]).fillna("")
+    title = labelled.get("title", labelled["text"]).fillna("")
+    groups = pd.Series(
+        [
+            merchant_canonical_key(merchant_value, title_value)
+            for merchant_value, title_value in zip(merchant, title, strict=False)
+        ],
+        index=labelled.index,
+    )
+    groups = groups.where(groups.str.len() > 0, labelled["text"].fillna(""))
     if groups.nunique() < 2:
         return {"skipped": True, "reason": "Not enough merchant groups."}
     splitter = GroupShuffleSplit(n_splits=1, test_size=test_fraction, random_state=seed)
@@ -627,7 +636,7 @@ def _merchant_group_holdout(
         test_idx=pd.Index(test_pos),
     )
     if isinstance(report, dict):
-        report["split"] = "group_shuffle_by_merchant_norm"
+        report["split"] = "group_shuffle_by_merchant_canonical"
         report["merchant_group_overlap"] = len(overlap)
     return report
 
@@ -653,11 +662,7 @@ def build_evidence_report(
     n_splits: int = 5,
     seed: int = 42,
 ) -> dict:
-    """Build thesis-oriented report: real-only plus optional extra datasets.
-
-    The top level remains compatible with older ``classification_*.json``
-    readers by exposing the selected experiment directly under ``models``.
-    """
+    """Build thesis-oriented report: real-only plus optional extra datasets."""
     label_readiness = build_label_readiness(real_df)
     experiments = {
         "real_only": evaluate(real_df, n_splits=n_splits, seed=seed),
@@ -863,12 +868,12 @@ def main(argv: list[str] | None = None) -> int:
         MODELS_DIR.mkdir(parents=True, exist_ok=True)
         model = fit_final(df, args.persist, feature_set=args.feature_set)
         out = MODELS_DIR / f"classifier_{args.persist}_{ts}.joblib"
-        artifact = {
-            "estimator": args.persist,
-            "feature_set": args.feature_set,
-            "pipeline": model,
-            "report": report,
-        }
+        artifact = build_model_artifact(
+            estimator=args.persist,
+            feature_set=args.feature_set,
+            pipeline=model,
+            report=report,
+        )
         joblib.dump(artifact, out)
         latest = MODELS_DIR / "classifier_latest.joblib"
         joblib.dump(artifact, latest)

@@ -16,13 +16,18 @@ from sqlalchemy.orm import Session
 
 from finance.analytics.filters import expense_category_candidate_filters
 from finance.domain.models import PersonalRule, Transaction
+from finance.ml.classification.policy import (
+    DEFAULT_POLICY,
+    ClassificationPolicy,
+    decide_classification,
+)
 from finance.ml.feedback import (
     anomaly_feedback_summary,
     confusion_hotspots,
     feedback_quality,
     subscription_feedback_summary,
 )
-from finance.transactions.normalization import normalize_merchant
+from finance.transactions.merchants import load_merchant_alias_maps, merchant_canonical_key
 
 DEFAULT_CONFIDENCE_THRESHOLD = 0.55
 DEFAULT_RARE_CLASS_THRESHOLD = 40
@@ -61,7 +66,10 @@ def _count(session: Session, *conditions: Any) -> int:
 
 
 def review_counts(
-    session: Session, *, threshold: float = DEFAULT_CONFIDENCE_THRESHOLD
+    session: Session,
+    *,
+    threshold: float = DEFAULT_CONFIDENCE_THRESHOLD,
+    policy: ClassificationPolicy = DEFAULT_POLICY,
 ) -> ReviewCounts:
     uncategorized = _count(session, Transaction.category.is_(None))
     categorized = _count(session, Transaction.category.is_not(None))
@@ -71,22 +79,29 @@ def review_counts(
         Transaction.category_predicted.is_(None),
         Transaction.category_suggestion_rejected.is_(False),
     )
-    low_confidence = _count(
-        session,
-        Transaction.category.is_(None),
-        Transaction.category_predicted.is_not(None),
-        Transaction.category_suggestion_rejected.is_(False),
-        Transaction.category_confidence.is_not(None),
-        Transaction.category_confidence < threshold,
-    )
-    ready_to_accept = _count(
-        session,
-        Transaction.category.is_(None),
-        Transaction.category_predicted.is_not(None),
-        Transaction.category_suggestion_rejected.is_(False),
-        Transaction.category_confidence.is_not(None),
-        Transaction.category_confidence >= threshold,
-    )
+    suggested_rows = session.execute(
+        select(Transaction).where(
+            *expense_category_candidate_filters(),
+            Transaction.category.is_(None),
+            Transaction.category_predicted.is_not(None),
+            Transaction.category_suggestion_rejected.is_(False),
+        )
+    ).scalars().all()
+    ready_to_accept = 0
+    low_confidence = 0
+    for row in suggested_rows:
+        decision = decide_classification(
+            category=row.category_predicted,
+            confidence=row.category_confidence,
+            direction=row.direction,
+            is_transfer=row.is_transfer,
+            transaction_type=row.transaction_type,
+            policy=policy,
+        )
+        if decision.action == "accept":
+            ready_to_accept += 1
+        else:
+            low_confidence += 1
     rejected = _count(
         session,
         Transaction.category.is_(None),
@@ -131,17 +146,13 @@ def recurring_unruled_merchants(
     limit: int = DEFAULT_RECURRING_LIMIT,
 ) -> list[RecurringMerchant]:
     """Frequent uncategorized merchants that have no personal rule yet."""
-    cnt = func.count().label("cnt")
     stmt = (
-        select(Transaction.merchant, cnt)
+        select(Transaction.merchant, Transaction.title)
         .where(
             *expense_category_candidate_filters(),
             Transaction.category.is_(None),
             Transaction.merchant != "",
         )
-        .group_by(Transaction.merchant)
-        .having(cnt >= min_count)
-        .order_by(cnt.desc())
     )
     rows = session.execute(stmt).all()
 
@@ -153,12 +164,31 @@ def recurring_unruled_merchants(
         if norm
     ]
 
-    out: list[RecurringMerchant] = []
+    alias_map, _label_map = load_merchant_alias_maps(session)
+    grouped: dict[str, dict[str, object]] = {}
     for row in rows:
-        merchant_norm = normalize_merchant(row.merchant)
+        merchant_key = merchant_canonical_key(row.merchant, row.title, alias_map=alias_map)
+        if not merchant_key:
+            continue
+        group = grouped.setdefault(
+            merchant_key,
+            {"merchant": row.merchant, "count": 0},
+        )
+        group["count"] = int(group["count"]) + 1
+
+    out: list[RecurringMerchant] = []
+    for merchant_key, group in sorted(
+        grouped.items(),
+        key=lambda item: int(item[1]["count"]),
+        reverse=True,
+    ):
+        count = int(group["count"])
+        if count < min_count:
+            continue
+        merchant_norm = merchant_key
         if any(rule in merchant_norm or merchant_norm in rule for rule in rule_norms):
             continue
-        out.append(RecurringMerchant(merchant=row.merchant, count=int(row.cnt)))
+        out.append(RecurringMerchant(merchant=str(group["merchant"]), count=count))
         if len(out) >= limit:
             break
     return out
@@ -168,11 +198,12 @@ def review_summary(
     session: Session,
     *,
     threshold: float = DEFAULT_CONFIDENCE_THRESHOLD,
+    policy: ClassificationPolicy = DEFAULT_POLICY,
     rare_class_threshold: int = DEFAULT_RARE_CLASS_THRESHOLD,
     recurring_min_count: int = DEFAULT_RECURRING_MIN_COUNT,
     recurring_limit: int = DEFAULT_RECURRING_LIMIT,
 ) -> dict[str, Any]:
-    counts = review_counts(session, threshold=threshold)
+    counts = review_counts(session, threshold=threshold, policy=policy)
     return {
         "counts": counts,
         "rare_classes": rare_classes(session, threshold=rare_class_threshold),
@@ -183,6 +214,6 @@ def review_summary(
         "confusion_hotspots": confusion_hotspots(session),
         "anomaly_feedback": anomaly_feedback_summary(session),
         "subscription_feedback": subscription_feedback_summary(session),
-        "confidence_threshold": threshold,
+        "confidence_threshold": policy.default_threshold,
         "rare_class_threshold": rare_class_threshold,
     }
