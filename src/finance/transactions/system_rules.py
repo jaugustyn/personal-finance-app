@@ -88,7 +88,9 @@ class SystemRulesRegistry:
                 "Generic source-category mapping.",
                 stripped,
             )
-        return RuleDecision(None, "source.generic.no_match", "No source-category mapping.", stripped)
+        return RuleDecision(
+            None, "source.generic.no_match", "No source-category mapping.", stripped
+        )
 
 
 def _as_dict(data: Any, *, path: str) -> dict[str, Any]:
@@ -201,16 +203,20 @@ def _transaction_rules(data: Any) -> tuple[TransactionTypeRule, ...]:
         if special is not None and special != "person_transfer":
             raise SystemRulesError(f"{rule_id}.special has unsupported value: {special!r}.")
         if special == "person_transfer" and result != TransactionType.PERSON_TRANSFER.value:
-            raise SystemRulesError(f"{rule_id}.special=person_transfer must return person_transfer.")
+            raise SystemRulesError(
+                f"{rule_id}.special=person_transfer must return person_transfer."
+            )
         if special is None and not keywords and not regexes:
             raise SystemRulesError(f"{rule_id} must define keywords or regexes.")
-        reason = rule.get("reason") if isinstance(rule.get("reason"), str) else ""
+        raw_reason = rule.get("reason")
+        reason = raw_reason.strip() if isinstance(raw_reason, str) else ""
+        reason = reason or "System transaction-type rule."
         rules.append(
             TransactionTypeRule(
                 id=rule_id,
                 priority=priority,
                 result=result,
-                reason=reason.strip() or "System transaction-type rule.",
+                reason=reason,
                 direction=direction,
                 keywords=keywords,
                 regexes=regexes,

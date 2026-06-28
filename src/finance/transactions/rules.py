@@ -128,14 +128,13 @@ def detect_transaction_type(
     *,
     raw_category: str | None = None,
 ) -> TransactionType:
-    return TransactionType(
-        explain_transaction_type(
-            merchant,
-            title,
-            direction,
-            raw_category=raw_category,
-        ).result
-    )
+    res = explain_transaction_type(
+        merchant,
+        title,
+        direction,
+        raw_category=raw_category,
+    ).result
+    return TransactionType(res or TransactionType.PURCHASE.value)
 
 
 def detect_transfer(merchant: str | None, title: str | None) -> bool:

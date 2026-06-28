@@ -81,10 +81,9 @@ def expense_category_candidate_mask(
 ) -> pd.Series:
     """Pandas mask equivalent of :func:`expense_category_candidate_filters`.
 
-    If a legacy training/evidence frame has no ``direction`` column, rows are
-    treated as already expense-like. SQL/runtime paths still require debit.
-    Missing ``transaction_type`` is treated like ``None`` in the scalar helper:
-    it remains eligible so older imports are not silently dropped.
+    Training and synthetic evidence frames may omit ``direction`` or
+    ``transaction_type``. SQL/runtime paths still require debit and use the full
+    transaction schema.
     """
     mask = pd.Series(True, index=df.index)
     if direction is not None and "direction" in df.columns:

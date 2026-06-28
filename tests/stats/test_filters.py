@@ -45,7 +45,7 @@ def test_is_expense_category_candidate_treats_false_string_as_not_transfer() -> 
     assert not is_expense_category_candidate("debit", "true", "purchase")
 
 
-def test_expense_category_candidate_mask_keeps_legacy_frames_without_direction() -> None:
+def test_expense_category_candidate_mask_handles_training_frames_without_direction() -> None:
     df = pd.DataFrame(
         {
             "is_transfer": [False, True],
