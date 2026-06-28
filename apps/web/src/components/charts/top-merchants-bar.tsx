@@ -21,12 +21,14 @@ import {
 
 export function TopMerchantsBar({
   data,
+  currency = "PLN",
 }: {
   data: {
     merchant: string;
     amount: number | string;
     category?: string | null;
   }[];
+  currency?: string;
 }) {
   const { data: categories = [] } = useCategories();
   const colorByCategory = useMemo(() => {
@@ -68,7 +70,7 @@ export function TopMerchantsBar({
         />
         <Tooltip
           contentStyle={tooltipStyle()}
-          formatter={(value) => formatCurrency(Number(value))}
+          formatter={(value) => formatCurrency(Number(value), currency)}
           labelFormatter={(label) => String(label)}
         />
         <Bar dataKey="amount" name="Wydatki" radius={[0, 4, 4, 0]}>

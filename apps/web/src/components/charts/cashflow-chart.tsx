@@ -16,7 +16,13 @@ import type { CashflowPoint } from "@/lib/api";
 import { formatCurrency, formatMonth } from "@/lib/utils";
 import { tooltipStyle } from "./chart-utils";
 
-export function CashflowChart({ data }: { data: CashflowPoint[] }) {
+export function CashflowChart({
+  data,
+  currency = "PLN",
+}: {
+  data: CashflowPoint[];
+  currency?: string;
+}) {
   const formatted = useMemo(
     () =>
       data.map((d) => ({
@@ -47,7 +53,7 @@ export function CashflowChart({ data }: { data: CashflowPoint[] }) {
         <Tooltip
           contentStyle={tooltipStyle()}
           formatter={(value, name) => [
-            formatCurrency(Number(value)),
+            formatCurrency(Number(value), currency),
             String(name),
           ]}
         />

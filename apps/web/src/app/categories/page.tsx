@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Trash2, Plus, Loader2, AlertCircle, Check, X } from "lucide-react";
@@ -246,11 +246,13 @@ function CategoryGroupCard({
   const { parent } = group;
   const savedColor = parent.color ?? "#888888";
   const [draftColor, setDraftColor] = useState(savedColor);
+  const [prevSavedColor, setPrevSavedColor] = useState(savedColor);
   const hasDraftColor = draftColor.toLowerCase() !== savedColor.toLowerCase();
 
-  useEffect(() => {
+  if (savedColor !== prevSavedColor) {
+    setPrevSavedColor(savedColor);
     setDraftColor(savedColor);
-  }, [savedColor]);
+  }
 
   return (
     <Card>

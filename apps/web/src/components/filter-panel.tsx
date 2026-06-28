@@ -7,12 +7,14 @@ export function FilterPanel({
   children,
   actions,
   hint,
+  summary,
   className,
   gridClassName,
 }: {
   children: ReactNode;
   actions?: ReactNode;
   hint?: ReactNode;
+  summary?: ReactNode;
   className?: string;
   gridClassName?: string;
 }) {
@@ -34,6 +36,9 @@ export function FilterPanel({
           <div className="mt-4 flex flex-wrap items-center gap-3 border-t pt-4">
             {actions}
           </div>
+        ) : null}
+        {summary ? (
+          <div className="mt-3 border-t pt-3">{summary}</div>
         ) : null}
       </CardContent>
     </Card>

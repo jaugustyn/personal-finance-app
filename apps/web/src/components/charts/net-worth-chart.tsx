@@ -14,7 +14,13 @@ import type { NetWorthPoint } from "@/lib/api";
 import { formatCurrency, formatMonth } from "@/lib/utils";
 import { tooltipStyle } from "./chart-utils";
 
-export function NetWorthChart({ data }: { data: NetWorthPoint[] }) {
+export function NetWorthChart({
+  data,
+  currency = "PLN",
+}: {
+  data: NetWorthPoint[];
+  currency?: string;
+}) {
   const formatted = useMemo(
     () => data.map((d) => ({ label: formatMonth(d.month), balance: Number(d.balance) })),
     [data],
@@ -35,7 +41,10 @@ export function NetWorthChart({ data }: { data: NetWorthPoint[] }) {
           stroke="hsl(var(--muted-foreground))"
           tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`}
         />
-        <Tooltip contentStyle={tooltipStyle()} formatter={(value) => formatCurrency(Number(value))} />
+        <Tooltip
+          contentStyle={tooltipStyle()}
+          formatter={(value) => formatCurrency(Number(value), currency)}
+        />
         <Area
           type="monotone"
           dataKey="balance"

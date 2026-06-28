@@ -106,10 +106,7 @@ export default function AnomaliesPage() {
     "finance.anomalies.direction",
     "debit",
   );
-  const [mode, setMode] = useLocalStorageState<AnomalyMode>(
-    "finance.anomalies.mode",
-    "review",
-  );
+  const mode = "review";
   const [includeModelOnly, setIncludeModelOnly] = useLocalStorageState(
     "finance.anomalies.includeModelOnly",
     false,
@@ -247,64 +244,24 @@ export default function AnomaliesPage() {
         const recordedFeedback = feedbackById[a.id] ?? a.feedback_status;
         return (
           <div className="flex flex-wrap justify-end gap-1">
-            {recordedFeedback ? (
-              <Badge
-                variant={
-                  recordedFeedback === "not_relevant"
-                    ? "warning"
-                    : recordedFeedback === "ignore_merchant"
-                      ? "success"
-                      : "info"
-                }
-              >
-                {recordedFeedback === "relevant"
-                  ? t("anomalies.feedback.recordedRelevant")
-                  : recordedFeedback === "not_relevant"
-                    ? t("anomalies.feedback.recordedNotRelevant")
-                    : t("anomalies.feedback.recordedIgnored")}
+            {recordedFeedback === "ignore_merchant" ? (
+              <Badge variant="success">
+                {t("anomalies.feedback.recordedIgnored")}
               </Badge>
             ) : (
-              <>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={feedback.isPending}
-                  onClick={() =>
-                    feedback.mutate({
-                      transactionId: a.id,
-                      action: "relevant",
-                    })
-                  }
-                >
-                  {t("anomalies.feedback.relevant")}
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={feedback.isPending}
-                  onClick={() =>
-                    feedback.mutate({
-                      transactionId: a.id,
-                      action: "not_relevant",
-                    })
-                  }
-                >
-                  {t("anomalies.feedback.notRelevant")}
-                </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  disabled={feedback.isPending}
-                  onClick={() =>
-                    feedback.mutate({
-                      transactionId: a.id,
-                      action: "ignore_merchant",
-                    })
-                  }
-                >
-                  {t("anomalies.feedback.ignoreMerchant")}
-                </Button>
-              </>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={feedback.isPending}
+                onClick={() =>
+                  feedback.mutate({
+                    transactionId: a.id,
+                    action: "ignore_merchant",
+                  })
+                }
+              >
+                {t("anomalies.feedback.ignoreMerchant")}
+              </Button>
             )}
           </div>
         );
@@ -319,7 +276,7 @@ export default function AnomaliesPage() {
         description={t("anomalies.subtitle")}
       />
 
-      <FilterPanel gridClassName="md:grid-cols-3 xl:grid-cols-3">
+      <FilterPanel gridClassName="md:grid-cols-2 xl:grid-cols-2">
         <FilterField label={t("transactions.filterDirection")}>
           <Select
             value={direction}
@@ -338,20 +295,6 @@ export default function AnomaliesPage() {
               <SelectItem value="all">
                 {t("transactions.filterDirection.all")}
               </SelectItem>
-            </SelectContent>
-          </Select>
-        </FilterField>
-        <FilterField label={t("anomalies.mode")}>
-          <Select value={mode} onValueChange={(v) => setMode(v as AnomalyMode)}>
-            <SelectTrigger className="w-full">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="review">{t("anomalies.mode.review")}</SelectItem>
-              <SelectItem value="suspicious">
-                {t("anomalies.mode.suspicious")}
-              </SelectItem>
-              <SelectItem value="all">{t("anomalies.mode.all")}</SelectItem>
             </SelectContent>
           </Select>
         </FilterField>

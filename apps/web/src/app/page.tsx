@@ -33,12 +33,21 @@ import { transactionsHref } from "@/lib/transaction-links";
 
 export default function DashboardPage() {
   const { t } = useT();
-  const months = 12;
-  const [range, setRange] = useLocalStorageState<"12m" | "all">(
+  type DashboardRange = "1m" | "3m" | "6m" | "12m" | "all";
+  const RANGE_MONTHS: Record<DashboardRange, number> = {
+    "1m": 1,
+    "3m": 3,
+    "6m": 6,
+    "12m": 12,
+    all: 12,
+  };
+  const RANGE_OPTIONS: DashboardRange[] = ["1m", "3m", "6m", "12m", "all"];
+  const [range, setRange] = useLocalStorageState<DashboardRange>(
     "finance.dashboard.range",
     "12m",
   );
   const allData = range === "all";
+  const months = RANGE_MONTHS[range];
   const overview = useQuery({
     queryKey: ["overview", months, range],
     queryFn: () => api.overview(months, allData),
@@ -72,6 +81,7 @@ export default function DashboardPage() {
   const totalIncome = o ? Number(o.total_income) : 0;
   const totalExpenses = o ? Number(o.total_expenses) : 0;
   const netCashflow = o ? Number(o.net_cashflow) : 0;
+  const baseCurrency = o?.base_currency ?? "PLN";
   const savingsHint = o
     ? t("dashboard.kpi.savingsHint", {
         value: formatPercent(Number(o.savings_rate)),
@@ -131,11 +141,18 @@ export default function DashboardPage() {
       align: "right",
       sortValue: (tx) => Number(tx.amount),
       cell: (tx) => (
-        <Money
-          amount={Number(tx.amount)}
-          currency={tx.currency}
-          direction={tx.direction}
-        />
+        <div className="space-y-0.5">
+          <Money
+            amount={Number(tx.amount)}
+            currency={tx.currency}
+            direction={tx.direction}
+          />
+          {tx.amount_base != null && tx.base_currency && tx.base_currency !== tx.currency ? (
+            <div className="text-xs text-muted-foreground">
+              {formatCurrency(Number(tx.amount_base), tx.base_currency)}
+            </div>
+          ) : null}
+        </div>
       ),
     },
   ];
@@ -148,7 +165,7 @@ export default function DashboardPage() {
       />
 
       <div className="inline-flex rounded-lg border border-border p-1">
-        {(["12m", "all"] as const).map((value) => (
+        {RANGE_OPTIONS.map((value) => (
           <button
             key={value}
             type="button"
@@ -168,7 +185,7 @@ export default function DashboardPage() {
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <KpiCard
           label={t("dashboard.kpi.income")}
-          value={o ? formatCurrency(totalIncome) : "—"}
+          value={o ? formatCurrency(totalIncome, baseCurrency) : "—"}
           hint={o ? t("dashboard.kpi.txCount", { n: o.tx_count }) : undefined}
           trend="up"
           icon={ArrowUpCircle}
@@ -176,14 +193,14 @@ export default function DashboardPage() {
         />
         <KpiCard
           label={t("dashboard.kpi.expenses")}
-          value={o ? formatCurrency(totalExpenses) : "—"}
+          value={o ? formatCurrency(totalExpenses, baseCurrency) : "—"}
           trend="down"
           icon={ArrowDownCircle}
           sparkline={sparklines.expenses}
         />
         <KpiCard
           label={t("dashboard.kpi.net")}
-          value={o ? formatCurrency(netCashflow) : "—"}
+          value={o ? formatCurrency(netCashflow, baseCurrency) : "—"}
           hint={savingsHint}
           trend={o && netCashflow >= 0 ? "up" : "down"}
           icon={PiggyBank}
@@ -191,7 +208,7 @@ export default function DashboardPage() {
         />
         <KpiCard
           label={t("dashboard.kpi.monthlyAvg")}
-          value={monthlyAvg != null ? formatCurrency(monthlyAvg) : "—"}
+          value={monthlyAvg != null ? formatCurrency(monthlyAvg, baseCurrency) : "—"}
           icon={Wallet}
         />
       </div>
@@ -207,7 +224,7 @@ export default function DashboardPage() {
             {cashflow.isLoading ? (
               <ChartSkeleton />
             ) : cashflow.data ? (
-              <CashflowChart data={cashflow.data} />
+              <CashflowChart data={cashflow.data} currency={baseCurrency} />
             ) : null}
           </CardContent>
         </Card>
@@ -222,7 +239,7 @@ export default function DashboardPage() {
             {topMerchants.isLoading ? (
               <ChartSkeleton />
             ) : topMerchants.data && topMerchants.data.length > 0 ? (
-              <TopMerchantsBar data={topMerchants.data} />
+              <TopMerchantsBar data={topMerchants.data} currency={baseCurrency} />
             ) : (
               <EmptyState title={t("common.empty")} />
             )}
@@ -241,7 +258,7 @@ export default function DashboardPage() {
             {categoryTrend.isLoading ? (
               <ChartSkeleton />
             ) : categoryTrend.data && categoryTrend.data.length > 0 ? (
-              <CategoryTrendChart data={categoryTrend.data} />
+              <CategoryTrendChart data={categoryTrend.data} currency={baseCurrency} />
             ) : (
               <EmptyState title={t("common.empty")} />
             )}
@@ -277,7 +294,7 @@ export default function DashboardPage() {
             {networth.isLoading ? (
               <ChartSkeleton />
             ) : networth.data ? (
-              <NetWorthChart data={networth.data} />
+              <NetWorthChart data={networth.data} currency={baseCurrency} />
             ) : null}
           </CardContent>
         </Card>
@@ -292,7 +309,7 @@ export default function DashboardPage() {
             {categoryTrend.isLoading ? (
               <ChartSkeleton />
             ) : categoryTrend.data && categoryTrend.data.length > 0 ? (
-              <CategoryMoMChart data={categoryTrend.data} />
+              <CategoryMoMChart data={categoryTrend.data} currency={baseCurrency} />
             ) : (
               <EmptyState title={t("common.empty")} />
             )}

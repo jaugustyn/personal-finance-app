@@ -22,7 +22,13 @@ import { PIE_COLORS, tooltipStyle } from "./chart-utils";
  * ``{month, category, amount}`` rows from the API are pivoted into one row per
  * month with a column per category so Recharts can render parallel lines.
  */
-export function CategoryTrendChart({ data }: { data: CategoryTrendPoint[] }) {
+export function CategoryTrendChart({
+  data,
+  currency = "PLN",
+}: {
+  data: CategoryTrendPoint[];
+  currency?: string;
+}) {
   const { t } = useT();
   const { data: categories = [] } = useCategories();
 
@@ -70,7 +76,7 @@ export function CategoryTrendChart({ data }: { data: CategoryTrendPoint[] }) {
           contentStyle={tooltipStyle()}
           labelFormatter={(v) => formatMonth(String(v))}
           formatter={(value, name) => [
-            formatCurrency(Number(value)),
+            formatCurrency(Number(value), currency),
             tCategory(t, String(name)),
           ]}
         />

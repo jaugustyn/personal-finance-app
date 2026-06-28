@@ -14,7 +14,6 @@ import { formatCurrency, formatDate, cn } from "@/lib/utils";
 import {
   CalendarRange,
   TrendingUp,
-  TrendingDown,
   Store,
   AlertTriangle,
   PiggyBank,

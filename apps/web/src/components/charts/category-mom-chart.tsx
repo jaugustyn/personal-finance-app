@@ -22,7 +22,13 @@ import { tooltipStyle } from "./chart-utils";
  * delta is computed from the two most recent months present in the trend data;
  * increases point right (warm), decreases point left (cool).
  */
-export function CategoryMoMChart({ data }: { data: CategoryTrendPoint[] }) {
+export function CategoryMoMChart({
+  data,
+  currency = "PLN",
+}: {
+  data: CategoryTrendPoint[];
+  currency?: string;
+}) {
   const { t } = useT();
 
   const { rows } = useMemo(() => {
@@ -79,7 +85,7 @@ export function CategoryMoMChart({ data }: { data: CategoryTrendPoint[] }) {
           <Tooltip
             contentStyle={tooltipStyle()}
             formatter={(value) => [
-              formatCurrency(Number(value)),
+              formatCurrency(Number(value), currency),
               t("dashboard.momDelta"),
             ]}
             labelFormatter={(v) => tCategory(t, String(v))}
