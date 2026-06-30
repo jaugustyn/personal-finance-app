@@ -12,6 +12,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import numpy as np
+import numpy.typing as npt
 import pandas as pd
 
 from finance.analytics.filters import expense_category_candidate_mask
@@ -159,6 +160,14 @@ def _has_whitelisted_raw_merchant(group: pd.DataFrame, whitelist: tuple[str, ...
     )
 
 
+def _float_array(series: pd.Series) -> npt.NDArray[np.float64]:
+    return series.to_numpy(dtype=np.float64, copy=False)
+
+
+def _date_array(series: pd.Series) -> npt.NDArray[np.datetime64]:
+    return series.to_numpy(dtype="datetime64[ns]", copy=False)
+
+
 def detect_subscriptions(
     df: pd.DataFrame,
     *,
@@ -207,23 +216,23 @@ def detect_subscriptions(
 
     out: list[Subscription] = []
     for (merch, currency), group in d.groupby(["merchant_norm", "currency"], dropna=False):
+        merchant_norm = str(merch or "")
         currency = str(currency or "").upper()
-        whitelisted = _is_whitelisted(merch, whitelist) or _has_whitelisted_raw_merchant(
-            group,
-            whitelist,
-        )
-        if _is_blacklisted(merch, blacklist) and not whitelisted:
+        whitelisted = _is_whitelisted(
+            merchant_norm, whitelist
+        ) or _has_whitelisted_raw_merchant(group, whitelist)
+        if _is_blacklisted(merchant_norm, blacklist) and not whitelisted:
             continue
         if len(group) < min_occurrences:
             continue
-        amounts = group["abs_amount"].astype(float).values
+        amounts = _float_array(group["abs_amount"])
         med = float(np.median(amounts))
         if med <= 0:
             continue
         amount_dev = float(np.max(np.abs(amounts - med) / med))
         if amount_dev > amount_tol and not whitelisted:
             continue
-        dates = np.sort(group["booking_date"].values).astype("datetime64[D]")
+        dates = np.sort(_date_array(group["booking_date"])).astype("datetime64[D]")
         diffs = np.diff(dates).astype("timedelta64[D]").astype(int)
         if len(diffs) == 0:
             continue
@@ -255,8 +264,12 @@ def detect_subscriptions(
 
         out.append(
             Subscription(
-                merchant=_representative_merchant(group, merch),
-                merchant_key=f"{merch}|{currency.lower()}" if currency else merch,
+                merchant=_representative_merchant(group, merchant_norm),
+                merchant_key=(
+                    f"{merchant_norm}|{currency.lower()}"
+                    if currency
+                    else merchant_norm
+                ),
                 currency=currency,
                 cadence=cadence,
                 median_amount=round(med, 2),
