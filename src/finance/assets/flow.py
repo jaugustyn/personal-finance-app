@@ -8,6 +8,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from finance.currencies import amount_base_expr
+from finance.domain.enums import TransactionDirection
 from finance.domain.models import Transaction
 
 
@@ -35,7 +36,7 @@ def sankey(
         )
         .where(
             Transaction.booking_date >= start,
-            Transaction.direction == "debit",
+            Transaction.direction == TransactionDirection.DEBIT.value,
         )
         .group_by("cat", "merchant")
     )
@@ -58,7 +59,7 @@ def sankey(
     income_total = session.execute(
         select(func.coalesce(func.sum(func.abs(amount_expr)), 0)).where(
             Transaction.booking_date >= start,
-            Transaction.direction == "credit",
+            Transaction.direction == TransactionDirection.CREDIT.value,
         )
     ).scalar_one()
     income_total = Decimal(income_total or 0)

@@ -66,3 +66,16 @@ def test_personal_rules_crud(client, db_session) -> None:
     assert deleted.status_code == 204
     assert db_session.get(PersonalRule, rule_id) is None
 
+
+def test_personal_rule_rejects_invalid_enum_values(client) -> None:
+    response = client.post(
+        "/profile/rules",
+        json={
+            "pattern": "Lidl",
+            "pattern_target": "merchant",
+            "category": "not-a-category",
+            "transaction_type": "not-a-type",
+        },
+    )
+
+    assert response.status_code == 422

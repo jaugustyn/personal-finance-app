@@ -8,7 +8,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from finance.domain.enums import Category, TransactionType
+from finance.domain.enums import CATEGORY_VALUES, TRANSACTION_TYPE_VALUES
 from finance.domain.models import PersonalRule, UserProfile
 from finance.transactions.normalization import normalize_text
 
@@ -61,11 +61,10 @@ def update_profile(
 
 
 def _clean_category_limits(raw: dict[str, float]) -> dict[str, float]:
-    valid = {category.value for category in Category}
     out: dict[str, float] = {}
     for category, value in raw.items():
         key = str(category).strip().lower()
-        if key not in valid:
+        if key not in CATEGORY_VALUES:
             continue
         numeric = float(value)
         if numeric >= 0:
@@ -88,11 +87,9 @@ def _validate_rule_payload(
         raise ValueError(f"Invalid rule target: {pattern_target}.")
     if mode not in RULE_MODES:
         raise ValueError(f"Invalid rule mode: {mode}.")
-    if category is not None and category not in {item.value for item in Category}:
+    if category is not None and category not in CATEGORY_VALUES:
         raise ValueError(f"Invalid category: {category}.")
-    if transaction_type is not None and transaction_type not in {
-        item.value for item in TransactionType
-    }:
+    if transaction_type is not None and transaction_type not in TRANSACTION_TYPE_VALUES:
         raise ValueError(f"Invalid transaction type: {transaction_type}.")
     if not 0.0 <= confidence <= 1.0:
         raise ValueError("Rule confidence must be between 0 and 1.")
@@ -258,4 +255,3 @@ def _matches(rule: PersonalRule, *, merchant_norm: str, title_norm: str) -> bool
     if rule.pattern_target == "title":
         return pattern in title_norm
     return pattern in f"{merchant_norm} {title_norm}".strip()
-

@@ -3,13 +3,18 @@ from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from finance.db import get_session
+from finance.domain.enums import Category, TransactionType
 from finance.profile import service as profile_service
+
+RuleTarget = Literal["merchant", "title", "both"]
+RuleMode = Literal["suggest_only", "auto_apply"]
 
 router = APIRouter(prefix="/profile", tags=["profile"])
 
@@ -51,25 +56,25 @@ class PersonalRuleRow(BaseModel):
 
 class PersonalRuleCreate(BaseModel):
     pattern: str = Field(min_length=1, max_length=256)
-    pattern_target: str = "merchant"
-    category: str | None = None
-    transaction_type: str | None = None
+    pattern_target: RuleTarget = "merchant"
+    category: Category | None = None
+    transaction_type: TransactionType | None = None
     is_transfer: bool | None = None
     priority: int = 100
     active: bool = True
-    mode: str = "suggest_only"
+    mode: RuleMode = "suggest_only"
     confidence: float = Field(default=0.95, ge=0.0, le=1.0)
 
 
 class PersonalRuleUpdate(BaseModel):
     pattern: str | None = Field(default=None, min_length=1, max_length=256)
-    pattern_target: str | None = None
-    category: str | None = None
-    transaction_type: str | None = None
+    pattern_target: RuleTarget | None = None
+    category: Category | None = None
+    transaction_type: TransactionType | None = None
     is_transfer: bool | None = None
     priority: int | None = None
     active: bool | None = None
-    mode: str | None = None
+    mode: RuleMode | None = None
     confidence: float | None = Field(default=None, ge=0.0, le=1.0)
 
 
@@ -116,7 +121,7 @@ def create_rule(
     session: Session = Depends(get_session),
 ) -> PersonalRuleRow:
     try:
-        rule = profile_service.create_rule(session, **payload.model_dump())
+        rule = profile_service.create_rule(session, **payload.model_dump(mode="json"))
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return PersonalRuleRow.model_validate(rule)
@@ -132,7 +137,7 @@ def patch_rule(
         rule = profile_service.update_rule(
             session,
             rule_id,
-            **payload.model_dump(exclude_unset=True),
+            **payload.model_dump(exclude_unset=True, mode="json"),
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -146,4 +151,3 @@ def delete_rule(rule_id: int, session: Session = Depends(get_session)) -> None:
     deleted = profile_service.delete_rule(session, rule_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Rule not found.")
-

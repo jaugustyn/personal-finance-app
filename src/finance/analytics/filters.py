@@ -6,6 +6,7 @@ from typing import Any
 
 import pandas as pd
 
+from finance.domain.enums import TransactionDirection
 from finance.domain.models import Transaction
 from finance.transactions.rules import (
     category_suggestion_candidate_values,
@@ -35,7 +36,7 @@ def category_candidate_type_filter() -> Any:
 def expense_category_candidate_filters() -> list[Any]:
     """SQL filters for rows that can carry an expense-category label."""
     return [
-        Transaction.direction == "debit",
+        Transaction.direction == TransactionDirection.DEBIT.value,
         Transaction.is_transfer.is_(False),
         category_candidate_type_filter(),
     ]
@@ -48,7 +49,7 @@ def is_expense_category_candidate(
 ) -> bool:
     """Python equivalent of :func:`expense_category_candidate_filters`."""
     return (
-        str(direction) == "debit"
+        str(direction) == TransactionDirection.DEBIT.value
         and not _truthy(is_transfer)
         and is_category_suggestion_candidate(
             None if transaction_type is None else str(transaction_type)
@@ -77,7 +78,7 @@ def transfer_mask(df: pd.DataFrame) -> pd.Series:
 def expense_category_candidate_mask(
     df: pd.DataFrame,
     *,
-    direction: str | None = "debit",
+    direction: str | None = TransactionDirection.DEBIT.value,
 ) -> pd.Series:
     """Pandas mask equivalent of :func:`expense_category_candidate_filters`.
 
@@ -104,7 +105,7 @@ def debit_spending_filters(
     include_transfers: bool = False,
 ) -> list[Any]:
     filters: list[Any] = [
-        Transaction.direction == "debit",
+        Transaction.direction == TransactionDirection.DEBIT.value,
         *period_filters(start, end),
         *non_transfer_filters(include_transfers=include_transfers),
     ]

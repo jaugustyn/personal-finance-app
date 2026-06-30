@@ -52,3 +52,10 @@ class BankSource(StrEnum):
     MBANK = "mbank"
     ING = "ing"
     UNKNOWN = "unknown"
+
+
+CATEGORY_VALUES = frozenset(item.value for item in Category)
+CATEGORY_SOURCE_VALUES = frozenset(item.value for item in CategorySource)
+TRANSACTION_DIRECTION_VALUES = frozenset(item.value for item in TransactionDirection)
+TRANSACTION_TYPE_VALUES = frozenset(item.value for item in TransactionType)
+BANK_SOURCE_VALUES = frozenset(item.value for item in BankSource)

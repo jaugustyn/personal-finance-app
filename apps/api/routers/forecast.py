@@ -7,6 +7,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from finance.db import get_session
+from finance.domain.enums import TransactionDirection
 from finance.ml.forecasting.pipeline import forecast_best, load_monthly_series
 
 router = APIRouter(prefix="/forecast", tags=["forecast"])
@@ -46,7 +47,11 @@ def forecast(
     category: str | None = Query(default=None),
     horizon: int = Query(default=3, ge=1, le=12),
 ) -> ForecastResponse:
-    series = load_monthly_series(session, category=category, direction="debit")
+    series = load_monthly_series(
+        session,
+        category=category,
+        direction=TransactionDirection.DEBIT.value,
+    )
     if series.empty:
         raise HTTPException(status_code=404, detail="No data for given filters")
     res = forecast_best(series, horizon=horizon)
