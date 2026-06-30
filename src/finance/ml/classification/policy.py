@@ -5,12 +5,13 @@ from dataclasses import dataclass, replace
 from typing import Any, Literal
 
 from finance.analytics.filters import is_expense_category_candidate
+from finance.ml.classification.constants import (
+    DEFAULT_ACCEPT_THRESHOLD,
+    DEFAULT_REVIEW_FLOOR,
+    OTHER_CATEGORY,
+)
 
 ClassificationDecisionAction = Literal["accept", "review", "manual", "not_applicable"]
-
-DEFAULT_ACCEPT_THRESHOLD = 0.55
-DEFAULT_REVIEW_FLOOR = 0.25
-OTHER_CATEGORY = "other"
 
 
 @dataclass(frozen=True)

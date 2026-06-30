@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 
 from finance.analytics.filters import is_expense_category_candidate
 from finance.domain.category_mapping import map_source_category
-from finance.domain.enums import Category, CategorySource, TransactionType
+from finance.domain.enums import CATEGORY_VALUES, CategorySource, TransactionType
 from finance.domain.models import Transaction
 from finance.llm import client as llm_client
 from finance.ml.classification.confidence import (
@@ -36,7 +36,7 @@ from finance.transactions.rules import explain_transaction_type
 
 LATEST_MODEL_PATH = Path("data/models/classifier_latest.joblib")
 DEFAULT_THRESHOLD = 0.55
-SYSTEM_CATEGORIES = {category.value for category in Category}
+SYSTEM_CATEGORIES = CATEGORY_VALUES
 
 
 class ClassifierNotAvailable(RuntimeError):

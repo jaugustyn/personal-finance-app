@@ -8,10 +8,10 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from finance.currencies import amount_base_expr
-from finance.domain.enums import TransactionType
+from finance.domain.enums import TRANSACTION_TYPE_VALUES
 from finance.domain.models import Transaction
 
-VALID_TRANSACTION_TYPES = {item.value for item in TransactionType}
+VALID_TRANSACTION_TYPES = TRANSACTION_TYPE_VALUES
 LABEL_SOURCE = "silver_transaction_type"
 
 
