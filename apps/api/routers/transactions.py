@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from finance.db import get_session
+from finance.domain.enums import TransactionDirection, TransactionType
 from finance.ml.classification.policy import (
     ClassificationPolicy,
     decide_classification,
@@ -50,7 +51,7 @@ class TransactionRow(BaseModel):
     category_confidence: float | None
     category_predicted_source: str | None = None
     category_suggestion_rejected: bool = False
-    transaction_type: str = "purchase"
+    transaction_type: str = TransactionType.PURCHASE.value
     source: str
     is_transfer: bool = False
     notes: str | None = None
@@ -77,6 +78,13 @@ CategoryState = Literal[
     "needs_review",
     "rejected",
 ]
+
+
+def _enum_value(value: object | None) -> str | None:
+    if value is None:
+        return None
+    enum_value = getattr(value, "value", value)
+    return str(enum_value)
 
 
 def _classification_policy() -> ClassificationPolicy:
@@ -115,13 +123,13 @@ def list_transactions(
     import_id: int | None = None,
     merchant: str | None = None,
     search: str | None = None,
-    direction: Literal["debit", "credit"] | None = None,
+    direction: TransactionDirection | None = None,
     category: str | None = None,
     category_state: CategoryState = Query(default="all"),
     has_suggestion: bool | None = Query(default=None),
     min_confidence: float | None = Query(default=None, ge=0.0, le=1.0),
     max_confidence: float | None = Query(default=None, ge=0.0, le=1.0),
-    transaction_type: str | None = None,
+    transaction_type: TransactionType | None = None,
     review_priority: bool = Query(default=False),
 ) -> list[TransactionRow]:
     policy = _classification_policy()
@@ -132,13 +140,13 @@ def list_transactions(
         import_id=import_id,
         merchant=merchant,
         search=search,
-        direction=direction,
+        direction=_enum_value(direction),
         category=category,
         category_state=category_state,
         has_suggestion=has_suggestion,
         min_confidence=min_confidence,
         max_confidence=max_confidence,
-        transaction_type=transaction_type,
+        transaction_type=_enum_value(transaction_type),
         review_priority=review_priority,
     )
     rows = tx_service.list_transactions(
@@ -160,13 +168,13 @@ def export_csv(
     import_id: int | None = None,
     merchant: str | None = None,
     search: str | None = None,
-    direction: Literal["debit", "credit"] | None = None,
+    direction: TransactionDirection | None = None,
     category: str | None = None,
     category_state: CategoryState = Query(default="all"),
     has_suggestion: bool | None = Query(default=None),
     min_confidence: float | None = Query(default=None, ge=0.0, le=1.0),
     max_confidence: float | None = Query(default=None, ge=0.0, le=1.0),
-    transaction_type: str | None = None,
+    transaction_type: TransactionType | None = None,
     review_priority: bool = Query(default=False),
 ) -> StreamingResponse:
     """Stream all matching transactions as CSV (no row limit)."""
@@ -177,13 +185,13 @@ def export_csv(
         import_id=import_id,
         merchant=merchant,
         search=search,
-        direction=direction,
+        direction=_enum_value(direction),
         category=category,
         category_state=category_state,
         has_suggestion=has_suggestion,
         min_confidence=min_confidence,
         max_confidence=max_confidence,
-        transaction_type=transaction_type,
+        transaction_type=_enum_value(transaction_type),
         review_priority=review_priority,
     )
     headers = {"Content-Disposition": 'attachment; filename="transactions.csv"'}
@@ -228,13 +236,13 @@ def filter_summary(
     import_id: int | None = None,
     merchant: str | None = None,
     search: str | None = None,
-    direction: Literal["debit", "credit"] | None = None,
+    direction: TransactionDirection | None = None,
     category: str | None = None,
     category_state: CategoryState = Query(default="all"),
     has_suggestion: bool | None = Query(default=None),
     min_confidence: float | None = Query(default=None, ge=0.0, le=1.0),
     max_confidence: float | None = Query(default=None, ge=0.0, le=1.0),
-    transaction_type: str | None = None,
+    transaction_type: TransactionType | None = None,
     review_priority: bool = Query(default=False),
 ) -> FilterSummaryResponse:
     """Lightweight count + income/expenses/net for the current filter set."""
@@ -245,13 +253,13 @@ def filter_summary(
         import_id=import_id,
         merchant=merchant,
         search=search,
-        direction=direction,
+        direction=_enum_value(direction),
         category=category,
         category_state=category_state,
         has_suggestion=has_suggestion,
         min_confidence=min_confidence,
         max_confidence=max_confidence,
-        transaction_type=transaction_type,
+        transaction_type=_enum_value(transaction_type),
         review_priority=review_priority,
     )
     result = tx_service.filter_summary(session, filters)
@@ -384,7 +392,7 @@ def update_category(
 
 
 class TypeUpdate(BaseModel):
-    transaction_type: str
+    transaction_type: TransactionType
 
 
 @router.patch("/{tx_id}/type", response_model=TransactionRow)
@@ -395,7 +403,7 @@ def update_type(
 ) -> TransactionRow:
     """Manual override of a transaction type (e.g. mark a personal transfer)."""
     tx = tx_service.update_transaction_type(
-        session, tx_id, payload.transaction_type
+        session, tx_id, payload.transaction_type.value
     )
     if tx is None:
         raise HTTPException(
@@ -433,7 +441,7 @@ class BulkCategorize(BaseModel):
     merchant: str | None = None
     category: str | None = None  # explicit null clears
     mark_transfer: bool | None = None
-    transaction_type: str | None = None
+    transaction_type: TransactionType | None = None
 
 
 class BulkResult(BaseModel):
@@ -463,7 +471,7 @@ def bulk_categorize(
                 else tx_service.UNCHANGED
             ),
             mark_transfer=payload.mark_transfer,
-            transaction_type=payload.transaction_type,
+            transaction_type=_enum_value(payload.transaction_type),
         )
     except ValueError as exc:
         raise HTTPException(

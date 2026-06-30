@@ -113,6 +113,12 @@ def test_list_transactions_filters_suggestions_and_type(client, db_session) -> N
     }
 
 
+def test_list_transactions_rejects_invalid_direction(client) -> None:
+    response = client.get("/transactions", params={"direction": "outgoing"})
+
+    assert response.status_code == 422
+
+
 def test_list_transactions_search_direction_and_category_filters(
     client, db_session
 ) -> None:
@@ -352,12 +358,12 @@ def test_patch_type_updates_and_sets_transfer(client, db_session) -> None:
     assert r2.json()["is_transfer"] is True
 
 
-def test_patch_type_404_on_invalid(client, db_session) -> None:
+def test_patch_type_422_on_invalid(client, db_session) -> None:
     tx = _seed(db_session, category=None, dedup_hash="h-type-bad")
     r = client.patch(
         f"/transactions/{tx.id}/type", json={"transaction_type": "nonsense"}
     )
-    assert r.status_code == 404
+    assert r.status_code == 422
 
 
 def test_patch_annotations_sets_notes_and_dedup_tags(client, db_session) -> None:

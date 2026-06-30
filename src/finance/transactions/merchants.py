@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from collections import Counter, defaultdict
 from collections.abc import Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from decimal import Decimal
 
 from sqlalchemy import select
@@ -98,6 +98,33 @@ class MerchantCandidate:
     variants: list[MerchantCandidateVariant]
     count: int
     total_debit: Decimal
+
+
+@dataclass
+class _AliasSuggestionAccumulator:
+    labels: Counter[str] = field(default_factory=Counter)
+    count: int = 0
+    total: Decimal = Decimal(0)
+    canonical: str = ""
+
+
+@dataclass
+class _MerchantVariantAccumulator:
+    labels: Counter[str] = field(default_factory=Counter)
+    count: int = 0
+    total: Decimal = Decimal(0)
+
+
+@dataclass
+class _MerchantCandidateAccumulator:
+    labels: Counter[str] = field(default_factory=Counter)
+    aliases: set[str] = field(default_factory=set)
+    unresolved_aliases: set[str] = field(default_factory=set)
+    variants: defaultdict[str, _MerchantVariantAccumulator] = field(
+        default_factory=lambda: defaultdict(_MerchantVariantAccumulator)
+    )
+    count: int = 0
+    total: Decimal = Decimal(0)
 
 
 def merchant_display_label(merchant: str | None, title: str | None = None) -> str:
@@ -278,8 +305,8 @@ def alias_suggestions(
     rows = session.execute(
         select(Transaction.merchant, Transaction.title, amount_base_expr())
     ).all()
-    variants: dict[str, dict[str, object]] = defaultdict(
-        lambda: {"labels": Counter(), "count": 0, "total": Decimal(0), "canonical": ""}
+    variants: defaultdict[str, _AliasSuggestionAccumulator] = defaultdict(
+        _AliasSuggestionAccumulator
     )
     for merchant, title, amount in rows:
         alias_key = merchant_key(merchant, title)
@@ -290,23 +317,26 @@ def alias_suggestions(
             continue
         canonical_key = merchant_canonical_key(merchant, title, alias_map=alias_map)
         variant = variants[alias_key]
-        variant["labels"][label] += 1  # type: ignore[index]
-        variant["count"] = int(variant["count"]) + 1
-        variant["total"] = Decimal(variant["total"]) + abs(Decimal(amount or 0))
-        variant["canonical"] = canonical_key
+        variant.labels[label] += 1
+        variant.count += 1
+        variant.total += abs(Decimal(amount or 0))
+        variant.canonical = canonical_key
 
     out: list[MerchantAliasSuggestion] = []
     for alias_key, variant in variants.items():
-        labels: Counter[str] = variant["labels"]  # type: ignore[assignment]
-        canonical_key = str(variant["canonical"] or "")
+        canonical_key = variant.canonical
         out.append(
             MerchantAliasSuggestion(
                 alias_key=alias_key,
-                alias_label=labels.most_common(1)[0][0] if labels else alias_key,
+                alias_label=(
+                    variant.labels.most_common(1)[0][0]
+                    if variant.labels
+                    else alias_key
+                ),
                 canonical_key=canonical_key,
                 canonical_label=label_map.get(canonical_key, canonical_key),
-                count=int(variant["count"]),
-                total_amount=Decimal(variant["total"]),
+                count=variant.count,
+                total_amount=variant.total,
             )
         )
     out.sort(key=lambda item: (item.count, item.total_amount), reverse=True)
@@ -327,17 +357,8 @@ def alias_candidates(
         )
     ).all()
 
-    groups: dict[str, dict[str, object]] = defaultdict(
-        lambda: {
-            "labels": Counter(),
-            "aliases": set(),
-            "unresolved_aliases": set(),
-            "variants": defaultdict(
-                lambda: {"labels": Counter(), "count": 0, "total": Decimal(0)}
-            ),
-            "count": 0,
-            "total": Decimal(0),
-        }
+    groups: defaultdict[str, _MerchantCandidateAccumulator] = defaultdict(
+        _MerchantCandidateAccumulator
     )
     for merchant, title, amount in rows:
         identity = merchant_identity(
@@ -351,41 +372,40 @@ def alias_candidates(
         label = merchant_display_label(merchant, title)
         alias_key = merchant_key(merchant, title)
         group = groups[identity.canonical_key]
-        group["labels"][label] += 1  # type: ignore[index]
-        group["aliases"].add(alias_key)  # type: ignore[union-attr]
+        group.labels[label] += 1
+        group.aliases.add(alias_key)
         if alias_map.get(alias_key) != identity.canonical_key:
-            group["unresolved_aliases"].add(alias_key)  # type: ignore[union-attr]
-        group["count"] = int(group["count"]) + 1
-        group["total"] = Decimal(group["total"]) + abs(Decimal(amount or 0))
-        variants = group["variants"]  # type: ignore[assignment]
-        variant = variants[alias_key]
-        variant["labels"][label] += 1
-        variant["count"] = int(variant["count"]) + 1
-        variant["total"] = Decimal(variant["total"]) + abs(Decimal(amount or 0))
+            group.unresolved_aliases.add(alias_key)
+        group.count += 1
+        group.total += abs(Decimal(amount or 0))
+        variant = group.variants[alias_key]
+        variant.labels[label] += 1
+        variant.count += 1
+        variant.total += abs(Decimal(amount or 0))
 
     candidates: list[MerchantCandidate] = []
     for canonical_key, group in groups.items():
-        aliases = sorted(str(alias) for alias in group["aliases"] if alias)
-        unresolved_aliases = group["unresolved_aliases"]  # type: ignore[assignment]
-        if len(aliases) < min_variants or len(unresolved_aliases) == 0:
+        aliases = sorted(str(alias) for alias in group.aliases if alias)
+        if len(aliases) < min_variants or len(group.unresolved_aliases) == 0:
             continue
-        labels: Counter[str] = group["labels"]  # type: ignore[assignment]
         suggested_label = (
             label_map.get(canonical_key)
-            or labels.most_common(1)[0][0]
+            or group.labels.most_common(1)[0][0]
             or canonical_key
         )
         variant_rows: list[MerchantCandidateVariant] = []
-        variants = group["variants"]  # type: ignore[assignment]
-        for alias_key, variant in variants.items():
-            variant_labels: Counter[str] = variant["labels"]
-            alias_label = variant_labels.most_common(1)[0][0] if variant_labels else alias_key
+        for alias_key, variant in group.variants.items():
+            alias_label = (
+                variant.labels.most_common(1)[0][0]
+                if variant.labels
+                else alias_key
+            )
             variant_rows.append(
                 MerchantCandidateVariant(
                     alias_key=alias_key,
                     alias_label=alias_label,
-                    count=int(variant["count"]),
-                    total_debit=Decimal(variant["total"]),
+                    count=variant.count,
+                    total_debit=variant.total,
                 )
             )
         variant_rows.sort(key=lambda item: (item.count, item.total_debit), reverse=True)
@@ -395,8 +415,8 @@ def alias_candidates(
                 suggested_label=suggested_label,
                 aliases=aliases,
                 variants=variant_rows,
-                count=int(group["count"]),
-                total_debit=Decimal(group["total"]),
+                count=group.count,
+                total_debit=group.total,
             )
         )
     candidates.sort(key=lambda item: (item.count, item.total_debit), reverse=True)
@@ -419,4 +439,6 @@ def _is_generic_merchant_key(key: str) -> bool:
     tokens = key.split()
     if not tokens:
         return True
-    return key in GENERIC_MERCHANT_KEYS or all(token in MERCHANT_GROUP_STOPWORDS for token in tokens)
+    return key in GENERIC_MERCHANT_KEYS or all(
+        token in MERCHANT_GROUP_STOPWORDS for token in tokens
+    )

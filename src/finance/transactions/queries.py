@@ -11,6 +11,10 @@ from sqlalchemy.orm import Session
 
 from finance.analytics.filters import expense_category_candidate_filters
 from finance.currencies import amount_base_expr
+from finance.domain.enums import (
+    TRANSACTION_DIRECTION_VALUES,
+    TransactionDirection,
+)
 from finance.domain.models import Transaction
 from finance.ml.classification.policy import (
     DEFAULT_POLICY,
@@ -127,7 +131,7 @@ def filtered_transactions_stmt(filters: TransactionFilters):
         stmt = stmt.where(
             or_(*search_conditions)
         )
-    if filters.direction in {"debit", "credit"}:
+    if filters.direction in TRANSACTION_DIRECTION_VALUES:
         stmt = stmt.where(Transaction.direction == filters.direction)
     if filters.category:
         predicted_match = and_(
@@ -194,11 +198,27 @@ def filter_summary(
     base = filtered_transactions_stmt(filters).subquery()
     base_amount = func.coalesce(base.c.amount_base, base.c.amount)
     income_expr = func.coalesce(
-        func.sum(case((base.c.direction == "credit", func.abs(base_amount)), else_=0)),
+        func.sum(
+            case(
+                (
+                    base.c.direction == TransactionDirection.CREDIT.value,
+                    func.abs(base_amount),
+                ),
+                else_=0,
+            )
+        ),
         0,
     )
     expense_expr = func.coalesce(
-        func.sum(case((base.c.direction == "debit", func.abs(base_amount)), else_=0)),
+        func.sum(
+            case(
+                (
+                    base.c.direction == TransactionDirection.DEBIT.value,
+                    func.abs(base_amount),
+                ),
+                else_=0,
+            )
+        ),
         0,
     )
     row = session.execute(
@@ -247,10 +267,19 @@ def summary_by_category(
     date_to: date | None = None,
 ) -> list[CategorySummary]:
     debit = func.sum(
-        case((Transaction.direction == "debit", amount_base_expr()), else_=0)
+        case(
+            (Transaction.direction == TransactionDirection.DEBIT.value, amount_base_expr()),
+            else_=0,
+        )
     ).label("total_debit")
     credit = func.sum(
-        case((Transaction.direction == "credit", amount_base_expr()), else_=0)
+        case(
+            (
+                Transaction.direction == TransactionDirection.CREDIT.value,
+                amount_base_expr(),
+            ),
+            else_=0,
+        )
     ).label("total_credit")
     tx_count = func.count().label("tx_count")
 
@@ -312,9 +341,9 @@ def merchant_groups(
         )
         group["count"] += 1
         amount = tx.amount_base if tx.amount_base is not None else tx.amount
-        if tx.direction == "debit":
+        if tx.direction == TransactionDirection.DEBIT.value:
             group["total_debit"] += amount or Decimal(0)
-        elif tx.direction == "credit":
+        elif tx.direction == TransactionDirection.CREDIT.value:
             group["total_credit"] += amount or Decimal(0)
         if tx.title:
             group["titles"].append(tx.title)
