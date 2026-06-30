@@ -304,7 +304,22 @@ export interface Subscription {
     manual_category_count?: number;
   };
   is_confirmed: boolean;
-  is_ignored: boolean;
+  is_ignored?: boolean;
+  user_decision: "suggested" | "confirmed" | "rejected";
+  transactions: SubscriptionTransaction[];
+}
+
+export interface SubscriptionTransaction {
+  id: number;
+  booking_date: string;
+  merchant: string;
+  title: string;
+  amount: number;
+  currency: string;
+  amount_base: number;
+  base_currency: string;
+  category: string | null;
+  category_source: string | null;
 }
 
 export interface SubscriptionUpcomingPayment {
@@ -329,7 +344,7 @@ export interface SubscriptionOverview {
 
 export interface SubscriptionPreferenceInput {
   subscription_key: string;
-  action: "confirm" | "ignore" | "not_subscription" | "update";
+  action: "confirm" | "reject" | "restore" | "update";
   display_name?: string | null;
   cadence_override?: "weekly" | "biweekly" | "monthly" | "yearly" | "unknown" | null;
 }
@@ -490,6 +505,15 @@ export interface MerchantAliasInput {
 export interface MerchantAliasGroupLabelInput {
   canonical_key: string;
   canonical_label: string;
+}
+
+export interface MerchantAliasSuggestion {
+  alias_key: string;
+  alias_label: string;
+  canonical_key: string;
+  canonical_label: string;
+  count: number;
+  total_amount: number | string;
 }
 
 export interface MerchantCandidateVariant {
