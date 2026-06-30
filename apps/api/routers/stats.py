@@ -3,77 +3,29 @@ from __future__ import annotations
 
 from datetime import date
 from decimal import Decimal
+from typing import Literal
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from finance.db import get_session
+from finance.domain.enums import TransactionDirection
 from finance.stats import service as stats_service
+from finance.stats.types import (
+    CashflowBucket,
+    CategorySpend,
+    CategoryTrendPoint,
+    MerchantSpend,
+    NetWorthPoint,
+    Overview,
+    SpendDistribution,
+)
 
 router = APIRouter(prefix="/stats", tags=["stats"])
 
-
-# --- Schemas ---------------------------------------------------------------
-
-
-class Overview(BaseModel):
-    period_from: date | None
-    period_to: date | None
-    total_income: Decimal
-    total_expenses: Decimal
-    net_cashflow: Decimal
-    savings_rate: float  # 0..1, fraction of income saved
-    tx_count: int
-    base_currency: str
-
-
-class CashflowBucket(BaseModel):
-    month: str  # YYYY-MM
-    income: Decimal
-    expenses: Decimal
-    net: Decimal
-
-
-class CategorySpend(BaseModel):
-    category: str | None
-    amount: Decimal
-    share: float
-    count: int
-
-
-class NetWorthPoint(BaseModel):
-    month: str
-    balance: Decimal
-
-
-class MerchantSpend(BaseModel):
-    merchant: str
-    amount: Decimal
-    count: int
-    category: str | None = None
-
-
-class CategoryTrendPoint(BaseModel):
-    month: str  # YYYY-MM
-    category: str
-    amount: Decimal
-
-
-class DistributionBucket(BaseModel):
-    lower: float
-    upper: float
-    count: int
-
-
-class SpendDistribution(BaseModel):
-    buckets: list[DistributionBucket]
-    count: int
-    mean: float
-    median: float
-    p95: float
-    max: float
-    iqr_upper: float  # Tukey upper fence (Q3 + 1.5*IQR) for outlier flagging
+MerchantSort = Literal["amount", "count"]
+RecapPeriod = Literal["week", "month"]
 
 
 class RecapCashflow(BaseModel):
@@ -135,12 +87,10 @@ def overview(
     include_transfers: bool = Query(default=False),
     all_data: bool = Query(default=False),
 ) -> Overview:
-    return Overview(
-        **stats_service.overview(
-            session,
-            months=None if all_data else months,
-            include_transfers=include_transfers,
-        )
+    return stats_service.overview(
+        session,
+        months=None if all_data else months,
+        include_transfers=include_transfers,
     )
 
 
@@ -151,37 +101,31 @@ def cashflow(
     include_transfers: bool = Query(default=False),
     all_data: bool = Query(default=False),
 ) -> list[CashflowBucket]:
-    return [
-        CashflowBucket(**row)
-        for row in stats_service.cashflow(
-            session,
-            months=None if all_data else months,
-            include_transfers=include_transfers,
-        )
-    ]
+    return stats_service.cashflow(
+        session,
+        months=None if all_data else months,
+        include_transfers=include_transfers,
+    )
 
 
 @router.get("/by-category", response_model=list[CategorySpend])
 def by_category(
     session: Session = Depends(get_session),
     months: int = Query(default=3, ge=1, le=120),
-    direction: str = Query(default="debit", pattern="^(debit|credit)$"),
+    direction: TransactionDirection = Query(default=TransactionDirection.DEBIT),
     limit: int = Query(default=20, ge=1, le=100),
     include_transfers: bool = Query(default=False),
     include_predictions: bool = Query(default=False),
     all_data: bool = Query(default=False),
 ) -> list[CategorySpend]:
-    return [
-        CategorySpend(**row)
-        for row in stats_service.by_category(
-            session,
-            months=None if all_data else months,
-            direction=direction,
-            limit=limit,
-            include_transfers=include_transfers,
-            include_predictions=include_predictions,
-        )
-    ]
+    return stats_service.by_category(
+        session,
+        months=None if all_data else months,
+        direction=direction.value,
+        limit=limit,
+        include_transfers=include_transfers,
+        include_predictions=include_predictions,
+    )
 
 
 @router.get("/networth", response_model=list[NetWorthPoint])
@@ -192,14 +136,11 @@ def networth(
     all_data: bool = Query(default=False),
 ) -> list[NetWorthPoint]:
     """Cumulative net cashflow over time (proxy for savings balance)."""
-    return [
-        NetWorthPoint(**row)
-        for row in stats_service.networth(
-            session,
-            months=None if all_data else months,
-            include_transfers=include_transfers,
-        )
-    ]
+    return stats_service.networth(
+        session,
+        months=None if all_data else months,
+        include_transfers=include_transfers,
+    )
 
 
 @router.get("/top-merchants", response_model=list[MerchantSpend])
@@ -207,71 +148,63 @@ def top_merchants(
     session: Session = Depends(get_session),
     months: int = Query(default=3, ge=1, le=120),
     limit: int = Query(default=10, ge=1, le=50),
-    direction: str = Query(default="debit", pattern="^(debit|credit)$"),
+    direction: TransactionDirection = Query(default=TransactionDirection.DEBIT),
     include_transfers: bool = Query(default=False),
-    sort: str = Query(default="amount", pattern="^(amount|count)$"),
+    sort: MerchantSort = Query(default="amount"),
     all_data: bool = Query(default=False),
 ) -> list[MerchantSpend]:
-    return [
-        MerchantSpend(**row)
-        for row in stats_service.top_merchants(
-            session,
-            months=None if all_data else months,
-            limit=limit,
-            direction=direction,
-            include_transfers=include_transfers,
-            sort=sort,
-        )
-    ]
+    return stats_service.top_merchants(
+        session,
+        months=None if all_data else months,
+        limit=limit,
+        direction=direction.value,
+        include_transfers=include_transfers,
+        sort=sort,
+    )
 
 
 @router.get("/category-trend", response_model=list[CategoryTrendPoint])
 def category_trend(
     session: Session = Depends(get_session),
     months: int = Query(default=12, ge=1, le=60),
-    direction: str = Query(default="debit", pattern="^(debit|credit)$"),
+    direction: TransactionDirection = Query(default=TransactionDirection.DEBIT),
     limit: int = Query(default=5, ge=1, le=12),
     include_transfers: bool = Query(default=False),
     all_data: bool = Query(default=False),
 ) -> list[CategoryTrendPoint]:
     """Monthly spend per category for the top ``limit`` categories."""
-    return [
-        CategoryTrendPoint(**row)
-        for row in stats_service.category_trend(
-            session,
-            months=None if all_data else months,
-            direction=direction,
-            limit=limit,
-            include_transfers=include_transfers,
-        )
-    ]
+    return stats_service.category_trend(
+        session,
+        months=None if all_data else months,
+        direction=direction.value,
+        limit=limit,
+        include_transfers=include_transfers,
+    )
 
 
 @router.get("/spend-distribution", response_model=SpendDistribution)
 def spend_distribution(
     session: Session = Depends(get_session),
     months: int = Query(default=12, ge=1, le=60),
-    direction: str = Query(default="debit", pattern="^(debit|credit)$"),
+    direction: TransactionDirection = Query(default=TransactionDirection.DEBIT),
     bins: int = Query(default=12, ge=4, le=40),
     include_transfers: bool = Query(default=False),
     all_data: bool = Query(default=False),
 ) -> SpendDistribution:
     """Histogram + summary statistics of single-transaction amounts."""
-    return SpendDistribution(
-        **stats_service.spend_distribution(
-            session,
-            months=None if all_data else months,
-            direction=direction,
-            bins=bins,
-            include_transfers=include_transfers,
-        )
+    return stats_service.spend_distribution(
+        session,
+        months=None if all_data else months,
+        direction=direction.value,
+        bins=bins,
+        include_transfers=include_transfers,
     )
 
 
 @router.get("/recap", response_model=Recap)
 def recap(
     session: Session = Depends(get_session),
-    period: str = Query(default="month", pattern="^(week|month)$"),
+    period: RecapPeriod = Query(default="month"),
     date_from: date | None = Query(default=None),
     date_to: date | None = Query(default=None),
     top_merchants: int = Query(default=5, ge=1, le=20),

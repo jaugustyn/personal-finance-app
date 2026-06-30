@@ -51,6 +51,35 @@ def test_cashflow_shape() -> None:
     assert isinstance(r.json(), list)
 
 
+def test_cashflow_buckets_months_without_postgres_to_char(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    _add_tx(
+        db_session,
+        booking_date=date(2026, 1, 5),
+        amount=Decimal("-40.00"),
+        merchant="January Shop",
+        dedup_hash="stats-cashflow-jan",
+    )
+    _add_tx(
+        db_session,
+        booking_date=date(2026, 2, 7),
+        amount=Decimal("100.00"),
+        direction="credit",
+        merchant="Salary",
+        dedup_hash="stats-cashflow-feb",
+    )
+    db_session.commit()
+
+    response = client.get("/stats/cashflow?all_data=true")
+
+    assert response.status_code == 200
+    rows = {row["month"]: row for row in response.json()}
+    assert Decimal(rows["2026-01"]["expenses"]) == Decimal("40.00")
+    assert Decimal(rows["2026-02"]["income"]) == Decimal("100.00")
+
+
 def test_by_category_shape() -> None:
     r = client.get("/stats/by-category?months=3")
     if r.status_code >= 500:

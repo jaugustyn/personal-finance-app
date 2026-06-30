@@ -22,6 +22,7 @@ from finance.analytics.filters import (
     period_filters,
 )
 from finance.currencies import amount_base_expr
+from finance.domain.enums import TransactionDirection
 from finance.domain.models import Transaction, UserProfile
 from finance.transactions.merchants import (
     load_merchant_alias_maps,
@@ -100,7 +101,7 @@ def _expense_by_category(
     rows = session.execute(
         select(Transaction.category, amount)
         .where(
-            Transaction.direction == "debit",
+            Transaction.direction == TransactionDirection.DEBIT.value,
             *period_filters(bounds.start, bounds.end),
             *non_transfer_filters(),
             category_candidate_type_filter(),
@@ -114,13 +115,25 @@ def _expense_by_category(
 def _cashflow(session: Session, bounds: PeriodBounds) -> dict[str, Decimal]:
     income = func.coalesce(
         func.sum(
-            case((Transaction.direction == "credit", func.abs(amount_base_expr())), else_=0)
+            case(
+                (
+                    Transaction.direction == TransactionDirection.CREDIT.value,
+                    func.abs(amount_base_expr()),
+                ),
+                else_=0,
+            )
         ),
         0,
     )
     expense = func.coalesce(
         func.sum(
-            case((Transaction.direction == "debit", func.abs(amount_base_expr())), else_=0)
+            case(
+                (
+                    Transaction.direction == TransactionDirection.DEBIT.value,
+                    func.abs(amount_base_expr()),
+                ),
+                else_=0,
+            )
         ),
         0,
     )
@@ -141,7 +154,7 @@ def _top_merchants(
     rows = session.execute(
         select(Transaction.merchant, Transaction.title, func.abs(amount_base_expr()))
         .where(
-            Transaction.direction == "debit",
+            Transaction.direction == TransactionDirection.DEBIT.value,
             *period_filters(bounds.start, bounds.end),
             *non_transfer_filters(),
         )

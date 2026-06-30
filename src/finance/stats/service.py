@@ -10,8 +10,20 @@ from sqlalchemy.orm import Session
 
 from finance.analytics.filters import category_candidate_type_filter, non_transfer_filters
 from finance.currencies import amount_base_expr, resolve_base_currency
+from finance.domain.enums import TransactionDirection
 from finance.domain.models import Transaction
 from finance.stats.recap import custom_recap, period_recap
+from finance.stats.types import (
+    CashflowBucket,
+    CategorySpend,
+    CategoryTrendPoint,
+    DistributionBucket,
+    MerchantSpend,
+    NetWorthPoint,
+    Overview,
+    SpendDistribution,
+    month_bucket,
+)
 from finance.transactions.merchants import (
     load_merchant_alias_maps,
     merchant_display_label,
@@ -29,6 +41,7 @@ __all__ = [
     "spend_distribution",
     "period_recap",
     "custom_recap",
+    "month_bucket",
 ]
 
 def months_ago(months: int) -> date:
@@ -44,7 +57,13 @@ def months_ago(months: int) -> date:
 def _income_expr() -> Any:
     return func.coalesce(
         func.sum(
-            case((Transaction.direction == "credit", func.abs(amount_base_expr())), else_=0)
+            case(
+                (
+                    Transaction.direction == TransactionDirection.CREDIT.value,
+                    func.abs(amount_base_expr()),
+                ),
+                else_=0,
+            )
         ),
         0,
     )
@@ -53,7 +72,13 @@ def _income_expr() -> Any:
 def _expense_expr() -> Any:
     return func.coalesce(
         func.sum(
-            case((Transaction.direction == "debit", func.abs(amount_base_expr())), else_=0)
+            case(
+                (
+                    Transaction.direction == TransactionDirection.DEBIT.value,
+                    func.abs(amount_base_expr()),
+                ),
+                else_=0,
+            )
         ),
         0,
     )
@@ -83,7 +108,7 @@ def overview(
     *,
     months: int | None,
     include_transfers: bool = False,
-) -> dict[str, Any]:
+) -> Overview:
     start = _period_start(months)
     stmt = select(
         _income_expr().label("inc"),
@@ -97,16 +122,16 @@ def overview(
     expenses = Decimal(row.exp or 0)
     net = income - expenses
     savings = float(net / income) if income > 0 else 0.0
-    return {
-        "period_from": row.dmin,
-        "period_to": row.dmax,
-        "total_income": income,
-        "total_expenses": expenses,
-        "net_cashflow": net,
-        "savings_rate": max(min(savings, 1.0), -10.0),
-        "tx_count": int(row.cnt or 0),
-        "base_currency": resolve_base_currency(session),
-    }
+    return Overview(
+        period_from=row.dmin,
+        period_to=row.dmax,
+        total_income=income,
+        total_expenses=expenses,
+        net_cashflow=net,
+        savings_rate=max(min(savings, 1.0), -10.0),
+        tx_count=int(row.cnt or 0),
+        base_currency=resolve_base_currency(session),
+    )
 
 
 def cashflow(
@@ -114,33 +139,32 @@ def cashflow(
     *,
     months: int | None,
     include_transfers: bool = False,
-) -> list[dict[str, Any]]:
+) -> list[CashflowBucket]:
     start = _period_start(months)
-    bucket = func.to_char(Transaction.booking_date, "YYYY-MM").label("month")
-    stmt = (
-        select(
-            bucket,
-            _income_expr().label("inc"),
-            _expense_expr().label("exp"),
-        )
-        .where(*_base_filters(start, include_transfers=include_transfers))
-        .group_by(bucket)
-        .order_by(bucket)
-    )
+    stmt = select(
+        Transaction.booking_date,
+        Transaction.direction,
+        func.abs(amount_base_expr()).label("amount"),
+    ).where(*_base_filters(start, include_transfers=include_transfers))
     rows = session.execute(stmt).all()
-    out: list[dict[str, Any]] = []
+    sums: dict[str, dict[str, Decimal]] = {}
     for row in rows:
-        income = Decimal(row.inc or 0)
-        expenses = Decimal(row.exp or 0)
-        out.append(
-            {
-                "month": row.month,
-                "income": income,
-                "expenses": expenses,
-                "net": income - expenses,
-            }
+        month = month_bucket(row.booking_date)
+        bucket = sums.setdefault(month, {"income": Decimal(0), "expenses": Decimal(0)})
+        amount = Decimal(row.amount or 0)
+        if row.direction == TransactionDirection.CREDIT.value:
+            bucket["income"] += amount
+        elif row.direction == TransactionDirection.DEBIT.value:
+            bucket["expenses"] += amount
+    return [
+        CashflowBucket(
+            month=month,
+            income=values["income"],
+            expenses=values["expenses"],
+            net=values["income"] - values["expenses"],
         )
-    return out
+        for month, values in sorted(sums.items())
+    ]
 
 
 def by_category(
@@ -151,7 +175,7 @@ def by_category(
     limit: int,
     include_transfers: bool = False,
     include_predictions: bool = False,
-) -> list[dict[str, Any]]:
+) -> list[CategorySpend]:
     start = _period_start(months)
     category = (
         func.coalesce(Transaction.category, Transaction.category_predicted)
@@ -164,7 +188,7 @@ def by_category(
         *_base_filters(start, include_transfers=include_transfers),
         Transaction.direction == direction,
     ]
-    if direction == "debit":
+    if direction == TransactionDirection.DEBIT.value:
         filters.append(_category_candidate_type_filter())
     stmt = (
         select(category.label("category"), amount, count)
@@ -175,16 +199,16 @@ def by_category(
     )
     rows = session.execute(stmt).all()
     total = sum((Decimal(row.amount or 0) for row in rows), Decimal(0))
-    out: list[dict[str, Any]] = []
+    out: list[CategorySpend] = []
     for row in rows:
         value = Decimal(row.amount or 0)
         out.append(
-            {
-                "category": row.category,
-                "amount": value,
-                "share": float(value / total) if total > 0 else 0.0,
-                "count": int(row.cnt),
-            }
+            CategorySpend(
+                category=row.category,
+                amount=value,
+                share=float(value / total) if total > 0 else 0.0,
+                count=int(row.cnt),
+            )
         )
     return out
 
@@ -194,24 +218,16 @@ def networth(
     *,
     months: int | None,
     include_transfers: bool = False,
-) -> list[dict[str, Any]]:
-    start = _period_start(months)
-    bucket = func.to_char(Transaction.booking_date, "YYYY-MM").label("month")
-    stmt = (
-        select(
-            bucket,
-            (_income_expr() - _expense_expr()).label("net"),
-        )
-        .where(*_base_filters(start, include_transfers=include_transfers))
-        .group_by(bucket)
-        .order_by(bucket)
-    )
-    rows = session.execute(stmt).all()
+) -> list[NetWorthPoint]:
     running = Decimal(0)
-    out: list[dict[str, Any]] = []
-    for row in rows:
-        running += Decimal(row.net or 0)
-        out.append({"month": row.month, "balance": running})
+    out: list[NetWorthPoint] = []
+    for row in cashflow(
+        session,
+        months=months,
+        include_transfers=include_transfers,
+    ):
+        running += row.net
+        out.append(NetWorthPoint(month=row.month, balance=running))
     return out
 
 
@@ -223,7 +239,7 @@ def top_merchants(
     direction: str,
     include_transfers: bool = False,
     sort: str = "amount",
-) -> list[dict[str, Any]]:
+) -> list[MerchantSpend]:
     start = _period_start(months)
     rows = session.execute(
         select(
@@ -276,7 +292,7 @@ def top_merchants(
     )
     sorted_groups = sorted(groups.items(), key=order_key, reverse=True)[:limit]
 
-    out: list[dict[str, Any]] = []
+    out: list[MerchantSpend] = []
     for _key, group in sorted_groups:
         label = max(
             group["labels"].items(),
@@ -289,12 +305,12 @@ def top_merchants(
                 key=lambda item: item[1],
             )[0]
         out.append(
-            {
-                "merchant": label,
-                "amount": group["amount"],
-                "count": int(group["count"]),
-                "category": dominant_category,
-            }
+            MerchantSpend(
+                merchant=label,
+                amount=group["amount"],
+                count=int(group["count"]),
+                category=dominant_category,
+            )
         )
     return out
 
@@ -306,7 +322,7 @@ def category_trend(
     direction: str,
     limit: int,
     include_transfers: bool = False,
-) -> list[dict[str, Any]]:
+) -> list[CategoryTrendPoint]:
     """Monthly spend per category for the top ``limit`` categories.
 
     Returns a flat, chronologically ordered list of ``{month, category,
@@ -322,7 +338,7 @@ def category_trend(
         Transaction.direction == direction,
         Transaction.category.is_not(None),
     )
-    if direction == "debit":
+    if direction == TransactionDirection.DEBIT.value:
         base = (*base, _category_candidate_type_filter())
 
     totals = session.execute(
@@ -336,9 +352,6 @@ def category_trend(
     if not top_categories:
         return []
 
-    # Bucket per (month, category) in Python so the aggregation works on both
-    # Postgres (production) and SQLite (tests) without dialect-specific date
-    # functions.
     rows = session.execute(
         select(
             Transaction.booking_date,
@@ -348,10 +361,10 @@ def category_trend(
     ).all()
     sums: dict[tuple[str, str], Decimal] = {}
     for row in rows:
-        key = (row.booking_date.strftime("%Y-%m"), row.category)
+        key = (month_bucket(row.booking_date), row.category)
         sums[key] = sums.get(key, Decimal(0)) + Decimal(row.amount or 0)
     return [
-        {"month": month, "category": category, "amount": value}
+        CategoryTrendPoint(month=month, category=category, amount=value)
         for (month, category), value in sorted(sums.items())
     ]
 
@@ -363,7 +376,7 @@ def spend_distribution(
     direction: str,
     bins: int = 12,
     include_transfers: bool = False,
-) -> dict[str, Any]:
+) -> SpendDistribution:
     """Histogram and summary statistics of single-transaction amounts.
 
     Powers the dashboard distribution/outlier view: equal-width histogram
@@ -381,15 +394,15 @@ def spend_distribution(
     ).all()
     amounts = sorted(float(row[0]) for row in rows)
     if not amounts:
-        return {
-            "buckets": [],
-            "count": 0,
-            "mean": 0.0,
-            "median": 0.0,
-            "p95": 0.0,
-            "max": 0.0,
-            "iqr_upper": 0.0,
-        }
+        return SpendDistribution(
+            buckets=[],
+            count=0,
+            mean=0.0,
+            median=0.0,
+            p95=0.0,
+            max=0.0,
+            iqr_upper=0.0,
+        )
 
     def _percentile(data: list[float], q: float) -> float:
         if len(data) == 1:
@@ -410,21 +423,21 @@ def spend_distribution(
 
     lo, hi = amounts[0], maximum
     width = (hi - lo) / bins if hi > lo else 1.0
-    buckets: list[dict[str, Any]] = []
+    buckets: list[DistributionBucket] = []
     for i in range(bins):
         lower = lo + i * width
         upper = lo + (i + 1) * width if i < bins - 1 else hi
         in_bucket = sum(1 for a in amounts if lower <= a <= upper) if i == bins - 1 else sum(
             1 for a in amounts if lower <= a < upper
         )
-        buckets.append({"lower": lower, "upper": upper, "count": in_bucket})
+        buckets.append(DistributionBucket(lower=lower, upper=upper, count=in_bucket))
 
-    return {
-        "buckets": buckets,
-        "count": count,
-        "mean": mean,
-        "median": median,
-        "p95": p95,
-        "max": maximum,
-        "iqr_upper": iqr_upper,
-    }
+    return SpendDistribution(
+        buckets=buckets,
+        count=count,
+        mean=mean,
+        median=median,
+        p95=p95,
+        max=maximum,
+        iqr_upper=iqr_upper,
+    )
