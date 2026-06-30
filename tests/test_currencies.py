@@ -8,6 +8,7 @@ from finance.currencies import (
     MissingFxRate,
     add_manual_rate,
     convert_amount,
+    prefetch_nbp_rates,
     recompute_transactions,
 )
 from finance.domain.models import Transaction
@@ -61,6 +62,41 @@ def test_missing_foreign_rate_blocks_conversion(db_session: Session) -> None:
             rate_date=date(2026, 1, 10),
             allow_fetch=False,
         )
+
+
+class _StaticRateProvider:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, date]] = []
+
+    def fetch_rate(self, currency: str, rate_date: date):
+        self.calls.append((currency, rate_date))
+        return Decimal("4.2500"), rate_date
+
+
+def test_prefetch_uses_injected_provider_without_conversion_fetch(
+    db_session: Session,
+) -> None:
+    provider = _StaticRateProvider()
+
+    result = prefetch_nbp_rates(
+        db_session,
+        rate_requests=[("USD", date(2026, 1, 10)), ("USD", date(2026, 1, 10))],
+        base_currency="PLN",
+        provider=provider,
+    )
+
+    converted = convert_amount(
+        db_session,
+        amount=Decimal("-10.00"),
+        currency="USD",
+        base_currency="PLN",
+        rate_date=date(2026, 1, 10),
+        allow_fetch=False,
+    )
+    assert result == {"existing": 0, "fetched": 1, "missing": 0}
+    assert provider.calls == [("USD", date(2026, 1, 10))]
+    assert converted.amount_base == Decimal("-42.50")
+    assert converted.fx_rate_source == "nbp"
 
 
 def test_recompute_transactions_updates_base_amounts(db_session: Session) -> None:

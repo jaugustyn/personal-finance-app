@@ -18,7 +18,16 @@ from finance.ingestion import ParseError
 def _patch_ingest(monkeypatch):
     calls: list[dict] = []
 
-    def fake_ingest(session, *, source, filename, stream, parser=None, skip_categories=False):
+    def fake_ingest(
+        session,
+        *,
+        source,
+        filename,
+        stream,
+        parser=None,
+        skip_categories=False,
+        fx_mode="prefetch_missing",
+    ):
         calls.append(
             {
                 "source": source,
@@ -26,6 +35,7 @@ def _patch_ingest(monkeypatch):
                 "bytes": stream.read(),
                 "parser": parser,
                 "skip_categories": skip_categories,
+                "fx_mode": fx_mode,
             }
         )
         return ImportSummary(
@@ -56,6 +66,7 @@ def test_upload_returns_summary(client, _patch_ingest) -> None:
     assert len(_patch_ingest) == 1
     assert _patch_ingest[0]["filename"] == "pekao.csv"
     assert _patch_ingest[0]["skip_categories"] is False
+    assert _patch_ingest[0]["fx_mode"] == "prefetch_missing"
 
 
 def test_upload_with_skip_categories(client, _patch_ingest) -> None:
@@ -69,6 +80,18 @@ def test_upload_with_skip_categories(client, _patch_ingest) -> None:
     assert _patch_ingest[0]["skip_categories"] is True
 
 
+def test_upload_with_require_existing_fx_mode(client, _patch_ingest) -> None:
+    r = client.post(
+        "/imports",
+        files={"file": ("pekao.csv", io.BytesIO(b"col1;col2\n1;2\n"), "text/csv")},
+        data={"source": "pekao", "fx_mode": "require_existing"},
+    )
+
+    assert r.status_code == 200
+    assert len(_patch_ingest) == 1
+    assert _patch_ingest[0]["fx_mode"] == "require_existing"
+
+
 def test_upload_invalid_source_400_or_422(client, _patch_ingest) -> None:
     r = client.post(
         "/imports",
@@ -79,7 +102,16 @@ def test_upload_invalid_source_400_or_422(client, _patch_ingest) -> None:
 
 
 def test_upload_parse_error_returns_422(client, monkeypatch) -> None:
-    def boom(session, *, source, filename, stream, parser=None, skip_categories=False):
+    def boom(
+        session,
+        *,
+        source,
+        filename,
+        stream,
+        parser=None,
+        skip_categories=False,
+        fx_mode="prefetch_missing",
+    ):
         raise ParseError("bad header")
 
     from apps.api.routers import imports as imports_router
@@ -95,7 +127,16 @@ def test_upload_parse_error_returns_422(client, monkeypatch) -> None:
 
 
 def test_upload_not_implemented_returns_501(client, monkeypatch) -> None:
-    def boom(session, *, source, filename, stream, parser=None, skip_categories=False):
+    def boom(
+        session,
+        *,
+        source,
+        filename,
+        stream,
+        parser=None,
+        skip_categories=False,
+        fx_mode="prefetch_missing",
+    ):
         raise NotImplementedError("parser not wired")
 
     from apps.api.routers import imports as imports_router

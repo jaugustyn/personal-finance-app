@@ -20,7 +20,7 @@ import io
 import json
 import logging
 from datetime import datetime
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
@@ -194,6 +194,7 @@ def upload_import(
     source: str | None = Form(None),
     column_map: str | None = Form(None),
     skip_categories: bool = Form(False),
+    fx_mode: Literal["require_existing", "prefetch_missing"] = Form("prefetch_missing"),
     session: Session = Depends(get_session),
 ) -> ImportSummary:
     raw = _read_validated(file)
@@ -249,6 +250,7 @@ def upload_import(
             stream=io.BytesIO(raw),
             parser=parser,
             skip_categories=skip_categories,
+            fx_mode=fx_mode,
         )
         if summary.inserted > 0:
             background.add_task(_suggest_import_categories, summary.import_id)

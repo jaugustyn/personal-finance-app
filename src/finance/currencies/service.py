@@ -6,24 +6,22 @@ rate raise ``MissingFxRate`` instead of silently falling back to ``1``.
 """
 from __future__ import annotations
 
-import json
-import urllib.error
-import urllib.request
+from collections.abc import Iterable
 from dataclasses import dataclass
-from datetime import date, timedelta
-from decimal import Decimal, ROUND_HALF_UP
+from datetime import date
+from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
 from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
 
+from finance.currencies.providers import FxRateProvider, NbpFxRateProvider
 from finance.domain.models import FxRate, Transaction, UserProfile
 
 PROFILE_ID = 1
 DEFAULT_BASE_CURRENCY = "PLN"
 RATE_QUANT = Decimal("0.00000001")
 AMOUNT_QUANT = Decimal("0.01")
-NBP_LOOKBACK_DAYS = 7
 
 
 class MissingFxRate(ValueError):
@@ -160,46 +158,19 @@ def list_rates(
     )
 
 
-def _fetch_nbp_rate(currency: str, rate_date: date) -> tuple[Decimal, date] | None:
-    if currency == "PLN":
-        return Decimal("1"), rate_date
-    for table in ("a", "b"):
-        for offset in range(NBP_LOOKBACK_DAYS + 1):
-            day = rate_date - timedelta(days=offset)
-            url = (
-                "https://api.nbp.pl/api/exchangerates/rates/"
-                f"{table}/{currency}/{day.isoformat()}/?format=json"
-            )
-            try:
-                with urllib.request.urlopen(url, timeout=5) as response:
-                    payload = json.loads(response.read().decode("utf-8"))
-            except urllib.error.HTTPError as exc:
-                if exc.code == 404:
-                    continue
-                return None
-            except Exception:  # noqa: BLE001
-                return None
-            rates = payload.get("rates") if isinstance(payload, dict) else None
-            if not rates:
-                continue
-            rate = Decimal(str(rates[0]["mid"]))
-            effective_date = date.fromisoformat(str(rates[0]["effectiveDate"]))
-            return rate, effective_date
-    return None
-
-
 def ensure_nbp_rate(
     session: Session,
     *,
     currency: str,
     base_currency: str,
     rate_date: date,
+    provider: FxRateProvider | None = None,
 ) -> FxRate | None:
     currency = normalize_currency(currency)
     base_currency = normalize_currency(base_currency)
     if base_currency != "PLN":
         return None
-    fetched = _fetch_nbp_rate(currency, rate_date)
+    fetched = (provider or NbpFxRateProvider()).fetch_rate(currency, rate_date)
     if fetched is None:
         return None
     rate, effective_date = fetched
@@ -213,6 +184,49 @@ def ensure_nbp_rate(
     )
 
 
+def prefetch_nbp_rates(
+    session: Session,
+    *,
+    rate_requests: Iterable[tuple[str, date]],
+    base_currency: str | None = None,
+    provider: FxRateProvider | None = None,
+) -> dict[str, int]:
+    """Fetch missing NBP rates for unique currency/date requests without committing."""
+    base = normalize_currency(base_currency or resolve_base_currency(session))
+    existing = 0
+    fetched = 0
+    missing = 0
+    unique_requests = sorted(
+        {
+            (normalize_currency(currency), rate_date)
+            for currency, rate_date in rate_requests
+            if normalize_currency(currency) != base
+        },
+        key=lambda item: (item[1], item[0]),
+    )
+    for currency, rate_date in unique_requests:
+        if _rate_on_or_before(
+            session,
+            currency=currency,
+            base_currency=base,
+            rate_date=rate_date,
+        ):
+            existing += 1
+            continue
+        rate = ensure_nbp_rate(
+            session,
+            currency=currency,
+            base_currency=base,
+            rate_date=rate_date,
+            provider=provider,
+        )
+        if rate is None:
+            missing += 1
+        else:
+            fetched += 1
+    return {"existing": existing, "fetched": fetched, "missing": missing}
+
+
 def convert_amount(
     session: Session,
     *,
@@ -221,6 +235,7 @@ def convert_amount(
     rate_date: date,
     base_currency: str | None = None,
     allow_fetch: bool = True,
+    provider: FxRateProvider | None = None,
 ) -> ConversionResult:
     currency = normalize_currency(currency)
     base_currency = normalize_currency(base_currency or resolve_base_currency(session))
@@ -245,6 +260,7 @@ def convert_amount(
             currency=currency,
             base_currency=base_currency,
             rate_date=rate_date,
+            provider=provider,
         )
     if rate is None:
         raise MissingFxRate(currency, base_currency, rate_date)
@@ -268,13 +284,13 @@ def _missing_rate_rows(session: Session, base_currency: str) -> list[dict[str, A
         .where((Transaction.amount_base.is_(None)) | (Transaction.fx_rate.is_(None)))
         .group_by(Transaction.currency, Transaction.booking_date)
         .order_by(Transaction.booking_date.desc(), Transaction.currency)
-    ).all()
+    ).mappings().all()
     return [
         {
-            "currency": row.currency,
+            "currency": row["currency"],
             "base_currency": base_currency,
-            "rate_date": row.booking_date,
-            "count": int(row.count or 0),
+            "rate_date": row["booking_date"],
+            "count": int(row["count"] or 0),
         }
         for row in rows
     ]
@@ -307,14 +323,14 @@ def status(session: Session) -> dict[str, Any]:
         )
         .group_by(Transaction.currency)
         .order_by(Transaction.currency)
-    ).all()
+    ).mappings().all()
     currencies = [
         {
-            "currency": row.currency,
-            "count": int(row.count or 0),
-            "total_income": Decimal(row.income or 0),
-            "total_expenses": Decimal(row.expenses or 0),
-            "net": Decimal(row.income or 0) - Decimal(row.expenses or 0),
+            "currency": row["currency"],
+            "count": int(row["count"] or 0),
+            "total_income": Decimal(row["income"] or 0),
+            "total_expenses": Decimal(row["expenses"] or 0),
+            "net": Decimal(row["income"] or 0) - Decimal(row["expenses"] or 0),
         }
         for row in currency_rows
     ]
@@ -332,6 +348,7 @@ def recompute_transactions(
     *,
     base_currency: str | None = None,
     allow_fetch: bool = True,
+    provider: FxRateProvider | None = None,
 ) -> dict[str, int]:
     base = normalize_currency(base_currency or resolve_base_currency(session))
     updated = 0
@@ -346,6 +363,7 @@ def recompute_transactions(
                 rate_date=tx.booking_date,
                 base_currency=base,
                 allow_fetch=allow_fetch,
+                provider=provider,
             )
         except MissingFxRate:
             missing += 1
@@ -360,7 +378,11 @@ def recompute_transactions(
     return {"updated": updated, "missing": missing}
 
 
-def fetch_nbp_rates_for_missing_transactions(session: Session) -> dict[str, int]:
+def fetch_nbp_rates_for_missing_transactions(
+    session: Session,
+    *,
+    provider: FxRateProvider | None = None,
+) -> dict[str, int]:
     base = resolve_base_currency(session)
     fetched = 0
     missing = 0
@@ -370,6 +392,7 @@ def fetch_nbp_rates_for_missing_transactions(session: Session) -> dict[str, int]
             currency=str(row["currency"]),
             base_currency=base,
             rate_date=row["rate_date"],
+            provider=provider,
         )
         if rate is None:
             missing += 1
