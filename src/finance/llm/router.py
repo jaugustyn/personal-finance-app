@@ -19,6 +19,7 @@ from finance.llm.formatters import format_answer
 from finance.llm.heuristics import ToolCall, heuristic_route, normalize_question_text
 from finance.llm.periods import extract_period
 from finance.llm.tools import TOOL_SCHEMAS, TOOLS
+from finance.llm.types import ToolResult
 
 logger = logging.getLogger(__name__)
 
@@ -83,7 +84,7 @@ def _llm_pick_tool(question: str) -> ToolCall | None:
     return None
 
 
-def _llm_summarise(question: str, tool: str, result: dict[str, Any]) -> str | None:
+def _llm_summarise(question: str, tool: str, result: ToolResult) -> str | None:
     if not client.is_available():
         return None
     try:
@@ -131,7 +132,7 @@ class ChatResult:
     answer: str
     tool: str | None
     tool_args: dict[str, Any] | None
-    data: dict[str, Any] | None
+    data: ToolResult | None
     source: str  # "heuristic" | "context" | "llm" | "smalltalk"
 
 

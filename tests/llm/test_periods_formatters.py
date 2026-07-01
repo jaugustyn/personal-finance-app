@@ -96,5 +96,21 @@ def test_format_answer_recommend_savings_is_deterministic() -> None:
     assert "food" in answer
 
 
+def test_format_answer_forecast_ignores_empty_error_field() -> None:
+    answer = format_answer(
+        "forecast_for",
+        {
+            "category": "food",
+            "error": None,
+            "model": "naive",
+            "mape": None,
+            "rmse": None,
+            "forecast": [{"month": "2026-08-01", "amount": 123.0}],
+        },
+    )
+    assert "Prognoza dla food" in answer
+    assert "123,00 zł" in answer
+
+
 def test_format_answer_unknown_falls_back_to_json() -> None:
     assert format_answer("unknown", {"ok": True}) == '{"ok": true}'

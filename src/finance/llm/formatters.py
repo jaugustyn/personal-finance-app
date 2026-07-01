@@ -3,7 +3,8 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
-from typing import Any
+
+from finance.llm.types import ToolResult
 
 _CATEGORY_LABELS_PL = {
     "food": "Jedzenie",
@@ -17,7 +18,7 @@ _CATEGORY_LABELS_PL = {
     "other": "Inne",
 }
 
-Formatter = Callable[[dict[str, Any]], str]
+Formatter = Callable[[ToolResult], str]
 
 
 def fmt_money(value: float) -> str:
@@ -34,7 +35,7 @@ def _category_label(value: str | None) -> str:
     return _CATEGORY_LABELS_PL.get(value, value)
 
 
-def _format_get_spending(result: dict[str, Any]) -> str:
+def _format_get_spending(result: ToolResult) -> str:
     period = result["period"]
     category = result.get("category") or "wszystkie kategorie"
     return (
@@ -43,7 +44,7 @@ def _format_get_spending(result: dict[str, Any]) -> str:
     )
 
 
-def _format_top_merchants(result: dict[str, Any]) -> str:
+def _format_top_merchants(result: ToolResult) -> str:
     merchants = result.get("merchants") or []
     if not merchants:
         return "Brak danych do top sprzedawców w tym okresie."
@@ -57,7 +58,7 @@ def _format_top_merchants(result: dict[str, Any]) -> str:
     return "Top wydatki:\n" + "\n".join(lines)
 
 
-def _format_top_categories(result: dict[str, Any]) -> str:
+def _format_top_categories(result: ToolResult) -> str:
     categories = result.get("categories") or []
     total = float(result.get("total_candidate_spend") or 0.0)
     if not categories and total <= 0:
@@ -80,7 +81,7 @@ def _format_top_categories(result: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def _format_cashflow_overview(result: dict[str, Any]) -> str:
+def _format_cashflow_overview(result: ToolResult) -> str:
     period = result["period"]
     savings_rate = float(result.get("savings_rate") or 0.0) * 100.0
     return (
@@ -93,7 +94,7 @@ def _format_cashflow_overview(result: dict[str, Any]) -> str:
     )
 
 
-def _format_list_subscriptions(result: dict[str, Any]) -> str:
+def _format_list_subscriptions(result: ToolResult) -> str:
     subscriptions = result.get("subscriptions") or []
     if not subscriptions:
         return "Nie wykryto subskrypcji."
@@ -108,7 +109,7 @@ def _format_list_subscriptions(result: dict[str, Any]) -> str:
     return f"Wykryte subskrypcje (~{fmt_money(cost)} / mies.):\n" + "\n".join(lines)
 
 
-def _format_list_anomalies(result: dict[str, Any]) -> str:
+def _format_list_anomalies(result: ToolResult) -> str:
     anomalies = result.get("anomalies") or []
     if not anomalies:
         return "Brak anomalii w tym okresie."
@@ -124,8 +125,8 @@ def _format_list_anomalies(result: dict[str, Any]) -> str:
     return "Anomalie:\n" + "\n".join(lines)
 
 
-def _format_forecast_for(result: dict[str, Any]) -> str:
-    if "error" in result:
+def _format_forecast_for(result: ToolResult) -> str:
+    if result.get("error"):
         return "Brak danych do prognozy."
     category = result.get("category") or "wszystko"
     lines = [f"- {f['month']}: {fmt_money(f['amount'])}" for f in result["forecast"]]
@@ -134,7 +135,7 @@ def _format_forecast_for(result: dict[str, Any]) -> str:
     return f"Prognoza dla {category}{suffix}:\n" + "\n".join(lines)
 
 
-def _format_compare_periods(result: dict[str, Any]) -> str:
+def _format_compare_periods(result: ToolResult) -> str:
     a, b = result["a"], result["b"]
     delta_pct = result.get("delta_pct")
     pct = f" ({delta_pct:+.1f}%)" if delta_pct is not None else ""
@@ -145,7 +146,7 @@ def _format_compare_periods(result: dict[str, Any]) -> str:
     )
 
 
-def _format_recommend_savings(result: dict[str, Any]) -> str:
+def _format_recommend_savings(result: ToolResult) -> str:
     opportunities = result.get("category_opportunities") or []
     merchants = result.get("top_merchants") or []
     lines = [
@@ -192,7 +193,7 @@ def _format_recommend_savings(result: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def _format_category_review_summary(result: dict[str, Any]) -> str:
+def _format_category_review_summary(result: ToolResult) -> str:
     lines = [
         "Kolejka kategoryzacji:",
         f"- Bez kategorii: {result.get('total_uncategorized', 0)}.",
@@ -230,7 +231,7 @@ _FORMATTERS: dict[str, Formatter] = {
 }
 
 
-def format_answer(tool: str, result: dict[str, Any]) -> str:
+def format_answer(tool: str, result: ToolResult) -> str:
     """Build a Polish answer from tool output when LLM polishing is disabled."""
     formatter = _FORMATTERS.get(tool)
     if formatter is not None:

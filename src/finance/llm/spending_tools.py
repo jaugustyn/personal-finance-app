@@ -23,6 +23,19 @@ from finance.llm.tool_schemas import (
     TopCategoriesArgs,
     TopMerchantsArgs,
 )
+from finance.llm.types import (
+    CashflowOverviewResult,
+    CategorySpend,
+    ComparePeriodsResult,
+    GetSpendingResult,
+    MerchantSpend,
+    PeriodRange,
+    PeriodTotal,
+    ToolResult,
+    TopCategoriesResult,
+    TopMerchantsResult,
+    tool_result,
+)
 from finance.transactions.merchants import (
     load_merchant_alias_maps,
     merchant_display_label,
@@ -34,7 +47,7 @@ def _category_candidate_type_filter():
     return category_candidate_type_filter()
 
 
-def get_spending(session: Session, args: dict[str, Any]) -> dict[str, Any]:
+def get_spending(session: Session, args: dict[str, Any]) -> ToolResult:
     parsed = GetSpendingArgs(**args)
     start, end = parse_period(parsed.period)
     amount = amount_base_expr()
@@ -43,16 +56,18 @@ def get_spending(session: Session, args: dict[str, Any]) -> dict[str, Any]:
         .where(*debit_spending_filters(start, end, category=parsed.category))
     )
     total, n = session.execute(stmt).one()
-    return {
-        "period": {"start": start.isoformat(), "end": end.isoformat()},
-        "category": parsed.category,
-        "total": float(total or 0.0),
-        "currency": resolve_base_currency(session),
-        "transactions": int(n or 0),
-    }
+    return tool_result(
+        GetSpendingResult(
+            period=PeriodRange(start=start.isoformat(), end=end.isoformat()),
+            category=parsed.category,
+            total=float(total or 0.0),
+            currency=resolve_base_currency(session),
+            transactions=int(n or 0),
+        )
+    )
 
 
-def top_merchants(session: Session, args: dict[str, Any]) -> dict[str, Any]:
+def top_merchants(session: Session, args: dict[str, Any]) -> ToolResult:
     parsed = TopMerchantsArgs(**args)
     start, end = parse_period(parsed.period)
     amount_expr = amount_base_expr()
@@ -84,7 +99,7 @@ def top_merchants(session: Session, args: dict[str, Any]) -> dict[str, Any]:
         label_stats = labels.setdefault(label, {"count": 0, "total": 0.0})
         label_stats["count"] += 1
         label_stats["total"] += total
-    merchants = []
+    merchants: list[MerchantSpend] = []
     for group in sorted(
         groups.values(),
         key=lambda item: (item["total"], item["count"]),
@@ -95,21 +110,23 @@ def top_merchants(session: Session, args: dict[str, Any]) -> dict[str, Any]:
             key=lambda item: (item[1]["count"], item[1]["total"], item[0]),
         )[0]
         merchants.append(
-            {
-                "merchant": label,
-                "total": float(group["total"]),
-                "transactions": int(group["count"]),
-            }
+            MerchantSpend(
+                merchant=label,
+                total=float(group["total"]),
+                transactions=int(group["count"]),
+            )
         )
-    return {
-        "period": {"start": start.isoformat(), "end": end.isoformat()},
-        "category": parsed.category,
-        "currency": resolve_base_currency(session),
-        "merchants": merchants,
-    }
+    return tool_result(
+        TopMerchantsResult(
+            period=PeriodRange(start=start.isoformat(), end=end.isoformat()),
+            category=parsed.category,
+            currency=resolve_base_currency(session),
+            merchants=merchants,
+        )
+    )
 
 
-def top_categories(session: Session, args: dict[str, Any]) -> dict[str, Any]:
+def top_categories(session: Session, args: dict[str, Any]) -> ToolResult:
     parsed = TopCategoriesArgs(**args)
     start, end = parse_period(parsed.period)
     base_filters = [
@@ -140,33 +157,33 @@ def top_categories(session: Session, args: dict[str, Any]) -> dict[str, Any]:
         categorized_total / total_candidate_spend if total_candidate_spend else 0.0
     )
 
-    categories = []
+    categories: list[CategorySpend] = []
     for category, category_total, n in rows[: parsed.limit]:
         value = float(category_total or 0.0)
         categories.append(
-            {
-                "category": category,
-                "total": value,
-                "transactions": int(n or 0),
-                "share": value / total_candidate_spend
-                if total_candidate_spend
-                else 0.0,
-            }
+            CategorySpend(
+                category=str(category),
+                total=value,
+                transactions=int(n or 0),
+                share=value / total_candidate_spend if total_candidate_spend else 0.0,
+            )
         )
 
-    return {
-        "period": {"start": start.isoformat(), "end": end.isoformat()},
-        "currency": resolve_base_currency(session),
-        "total_candidate_spend": total_candidate_spend,
-        "categorized_total": categorized_total,
-        "uncategorized_total": uncategorized_total,
-        "category_coverage": category_coverage,
-        "transactions": int(tx_count or 0),
-        "categories": categories,
-    }
+    return tool_result(
+        TopCategoriesResult(
+            period=PeriodRange(start=start.isoformat(), end=end.isoformat()),
+            currency=resolve_base_currency(session),
+            total_candidate_spend=total_candidate_spend,
+            categorized_total=categorized_total,
+            uncategorized_total=uncategorized_total,
+            category_coverage=category_coverage,
+            transactions=int(tx_count or 0),
+            categories=categories,
+        )
+    )
 
 
-def cashflow_overview(session: Session, args: dict[str, Any]) -> dict[str, Any]:
+def cashflow_overview(session: Session, args: dict[str, Any]) -> ToolResult:
     parsed = CashflowOverviewArgs(**args)
     start, end = parse_period(parsed.period)
     amount_expr = amount_base_expr()
@@ -201,18 +218,20 @@ def cashflow_overview(session: Session, args: dict[str, Any]) -> dict[str, Any]:
     income = float(row.income or 0.0)
     expenses = float(row.expenses or 0.0)
     net = income - expenses
-    return {
-        "period": {"start": start.isoformat(), "end": end.isoformat()},
-        "currency": resolve_base_currency(session),
-        "income": income,
-        "expenses": expenses,
-        "net": net,
-        "savings_rate": net / income if income else 0.0,
-        "transactions": int(row.tx_count or 0),
-    }
+    return tool_result(
+        CashflowOverviewResult(
+            period=PeriodRange(start=start.isoformat(), end=end.isoformat()),
+            currency=resolve_base_currency(session),
+            income=income,
+            expenses=expenses,
+            net=net,
+            savings_rate=net / income if income else 0.0,
+            transactions=int(row.tx_count or 0),
+        )
+    )
 
 
-def compare_periods(session: Session, args: dict[str, Any]) -> dict[str, Any]:
+def compare_periods(session: Session, args: dict[str, Any]) -> ToolResult:
     parsed = ComparePeriodsArgs(**args)
     a_start, a_end = parse_period(parsed.period_a)
     b_start, b_end = parse_period(parsed.period_b)
@@ -228,11 +247,21 @@ def compare_periods(session: Session, args: dict[str, Any]) -> dict[str, Any]:
     total_a, total_b = _sum(a_start, a_end), _sum(b_start, b_end)
     delta = total_a - total_b
     pct = (delta / total_b * 100.0) if total_b else None
-    return {
-        "category": parsed.category,
-        "currency": resolve_base_currency(session),
-        "a": {"start": a_start.isoformat(), "end": a_end.isoformat(), "total": total_a},
-        "b": {"start": b_start.isoformat(), "end": b_end.isoformat(), "total": total_b},
-        "delta": delta,
-        "delta_pct": pct,
-    }
+    return tool_result(
+        ComparePeriodsResult(
+            category=parsed.category,
+            currency=resolve_base_currency(session),
+            a=PeriodTotal(
+                start=a_start.isoformat(),
+                end=a_end.isoformat(),
+                total=total_a,
+            ),
+            b=PeriodTotal(
+                start=b_start.isoformat(),
+                end=b_end.isoformat(),
+                total=total_b,
+            ),
+            delta=delta,
+            delta_pct=pct,
+        )
+    )

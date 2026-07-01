@@ -13,6 +13,19 @@ from finance.currencies import amount_base_expr
 from finance.domain.models import Transaction
 from finance.llm.periods import parse_period
 from finance.llm.tool_schemas import SavingsRecommendationsArgs
+from finance.llm.types import (
+    AnomalySummary,
+    CategoryLimitAlert,
+    CategoryOpportunity,
+    MerchantSpend,
+    PeriodRange,
+    ProfileSummary,
+    SavingsGoalSummary,
+    SavingsRecommendationResult,
+    SubscriptionSummary,
+    ToolResult,
+    tool_result,
+)
 from finance.ml.anomaly.service import list_anomaly_rows
 from finance.ml.subscriptions.service import list_subscription_rows
 from finance.profile.service import get_or_create_profile
@@ -55,7 +68,7 @@ def _top_merchants(
     end: date,
     *,
     limit: int,
-) -> list[dict[str, Any]]:
+) -> list[MerchantSpend]:
     amount_expr = amount_base_expr()
     rows = session.execute(
         select(Transaction.merchant, Transaction.title, func.abs(amount_expr)).where(
@@ -81,11 +94,19 @@ def _top_merchants(
             group["merchant"] = merchant_display_label(merchant, title)
         group["total"] += _safe_float(amount)
         group["transactions"] += 1
-    return sorted(
+    sorted_groups = sorted(
         groups.values(),
         key=lambda item: (item["total"], item["transactions"]),
         reverse=True,
     )[:limit]
+    return [
+        MerchantSpend(
+            merchant=str(row["merchant"]),
+            total=_safe_float(row["total"]),
+            transactions=int(row["transactions"]),
+        )
+        for row in sorted_groups
+    ]
 
 
 def _income_total(session: Session, start: date, end: date) -> float:
@@ -100,7 +121,7 @@ def _income_total(session: Session, start: date, end: date) -> float:
     return _safe_float(session.execute(stmt).scalar())
 
 
-def recommend_savings(session: Session, args: dict[str, Any]) -> dict[str, Any]:
+def recommend_savings(session: Session, args: dict[str, Any]) -> ToolResult:
     """Return deterministic savings opportunities for a period.
 
     The LLM may explain these facts later, but the numbers are computed here.
@@ -118,25 +139,25 @@ def recommend_savings(session: Session, args: dict[str, Any]) -> dict[str, Any]:
     actual_savings = income_current - total_current
     monthly_goal = _safe_float(profile.monthly_savings_goal, default=0.0)
 
-    category_opportunities: list[dict[str, Any]] = []
+    category_opportunities: list[CategoryOpportunity] = []
     for category, current_total in current.items():
         previous_total = previous.get(category, 0.0)
         delta = current_total - previous_total
         if delta <= 0:
             continue
         category_opportunities.append(
-            {
-                "kind": "category_increase",
-                "category": category,
-                "current_total": current_total,
-                "previous_total": previous_total,
-                "delta": delta,
-                "delta_pct": (delta / previous_total * 100.0)
+            CategoryOpportunity(
+                kind="category_increase",
+                category=category,
+                current_total=current_total,
+                previous_total=previous_total,
+                delta=delta,
+                delta_pct=(delta / previous_total * 100.0)
                 if previous_total
                 else None,
-            }
+            )
         )
-    category_opportunities.sort(key=lambda row: row["delta"], reverse=True)
+    category_opportunities.sort(key=lambda row: row.delta, reverse=True)
 
     merchants = _top_merchants(session, start, end, limit=parsed.limit)
     opportunities = category_opportunities[: parsed.limit]
@@ -144,27 +165,25 @@ def recommend_savings(session: Session, args: dict[str, Any]) -> dict[str, Any]:
         str(category): _safe_float(limit)
         for category, limit in (profile.category_limits or {}).items()
     }
-    limit_alerts: list[dict[str, Any]] = [
-        {
-            "category": category,
-            "limit": limit,
-            "actual": current.get(category, 0.0),
-            "over_by": current.get(category, 0.0) - limit,
-        }
+    limit_alerts = [
+        CategoryLimitAlert(
+            category=category,
+            limit=limit,
+            actual=current.get(category, 0.0),
+            over_by=current.get(category, 0.0) - limit,
+        )
         for category, limit in limits.items()
         if current.get(category, 0.0) > limit
     ]
-    limit_alerts.sort(key=lambda row: row["over_by"], reverse=True)
+    limit_alerts.sort(key=lambda row: row.over_by, reverse=True)
 
-    subscriptions_summary = {"count": 0, "estimated_monthly_cost": 0.0}
-    anomaly_summary = {"count": 0, "max_severity": 0.0}
     subs = list_subscription_rows(session)
-    subscriptions_summary = {
-        "count": len(subs),
-        "estimated_monthly_cost": float(
+    subscriptions_summary = SubscriptionSummary(
+        count=len(subs),
+        estimated_monthly_cost=float(
             sum(_safe_float(sub.estimated_monthly_cost) for sub in subs)
         ),
-    }
+    )
     anomalies = list_anomaly_rows(
         session,
         date_from=start,
@@ -174,36 +193,38 @@ def recommend_savings(session: Session, args: dict[str, Any]) -> dict[str, Any]:
         mode="review",
         include_model_only=False,
     )
-    anomaly_summary = {
-        "count": len(anomalies),
-        "max_severity": max((_safe_float(row.severity) for row in anomalies), default=0.0),
-    }
+    anomaly_summary = AnomalySummary(
+        count=len(anomalies),
+        max_severity=max((_safe_float(row.severity) for row in anomalies), default=0.0),
+    )
 
-    return {
-        "period": {"start": start.isoformat(), "end": end.isoformat()},
-        "previous_period": {
-            "start": prev_start.isoformat(),
-            "end": prev_end.isoformat(),
-        },
-        "total_current": float(total_current),
-        "total_previous": float(total_previous),
-        "delta": float(total_current - total_previous),
-        "profile": {
-            "base_currency": profile.base_currency,
-            "salary_day": profile.salary_day,
-            "monthly_savings_goal": monthly_goal if monthly_goal > 0 else None,
-            "category_limits": limits,
-        },
-        "savings_goal": {
-            "income": float(income_current),
-            "actual_savings": float(actual_savings),
-            "target": monthly_goal if monthly_goal > 0 else None,
-            "remaining": (monthly_goal - actual_savings) if monthly_goal > 0 else None,
-            "met": actual_savings >= monthly_goal if monthly_goal > 0 else None,
-        },
-        "category_limit_alerts": limit_alerts,
-        "category_opportunities": opportunities,
-        "top_merchants": merchants,
-        "subscriptions": subscriptions_summary,
-        "anomalies": anomaly_summary,
-    }
+    return tool_result(
+        SavingsRecommendationResult(
+            period=PeriodRange(start=start.isoformat(), end=end.isoformat()),
+            previous_period=PeriodRange(
+                start=prev_start.isoformat(),
+                end=prev_end.isoformat(),
+            ),
+            total_current=float(total_current),
+            total_previous=float(total_previous),
+            delta=float(total_current - total_previous),
+            profile=ProfileSummary(
+                base_currency=profile.base_currency,
+                salary_day=profile.salary_day,
+                monthly_savings_goal=monthly_goal if monthly_goal > 0 else None,
+                category_limits=limits,
+            ),
+            savings_goal=SavingsGoalSummary(
+                income=float(income_current),
+                actual_savings=float(actual_savings),
+                target=monthly_goal if monthly_goal > 0 else None,
+                remaining=(monthly_goal - actual_savings) if monthly_goal > 0 else None,
+                met=actual_savings >= monthly_goal if monthly_goal > 0 else None,
+            ),
+            category_limit_alerts=limit_alerts,
+            category_opportunities=opportunities,
+            top_merchants=merchants,
+            subscriptions=subscriptions_summary,
+            anomalies=anomaly_summary,
+        )
+    )

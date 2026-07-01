@@ -1,9 +1,11 @@
 """Function-calling tool registry for the LLM assistant."""
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
 
 from pydantic import BaseModel
+from sqlalchemy.orm import Session
 
 from finance.llm.insight_tools import forecast_for, list_anomalies, list_subscriptions
 from finance.llm.recommendation_tools import recommend_savings
@@ -27,8 +29,11 @@ from finance.llm.tool_schemas import (
     TopCategoriesArgs,
     TopMerchantsArgs,
 )
+from finance.llm.types import ToolResult
 
-TOOLS: dict[str, Any] = {
+ToolFunction = Callable[[Session, dict[str, Any]], ToolResult]
+
+TOOLS: dict[str, ToolFunction] = {
     "get_spending": get_spending,
     "top_merchants": top_merchants,
     "top_categories": top_categories,
