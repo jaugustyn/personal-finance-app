@@ -163,6 +163,7 @@ def recommend_model(
     status: dict[str, Any],
     readiness: dict[str, Any],
 ) -> dict[str, Any]:
+    recommendation: dict[str, Any]
     actionable = [
         row
         for row in comparison
