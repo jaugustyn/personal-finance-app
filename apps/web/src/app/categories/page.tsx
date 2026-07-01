@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Trash2, Plus, Loader2, AlertCircle, Check, X } from "lucide-react";
-import { api, type CategoryDef } from "@/lib/api";
+import { api, isApiError, type CategoryDef } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -46,7 +46,9 @@ export default function CategoriesPage() {
     },
     onError: (err: Error) => {
       setError(
-        err.message.includes("409") ? t("categories.duplicate") : err.message,
+        isApiError(err) && err.status === 409
+          ? t("categories.duplicate")
+          : err.message,
       );
     },
   });

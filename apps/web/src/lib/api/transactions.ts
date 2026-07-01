@@ -1,132 +1,73 @@
 import { request } from "./client";
+import { buildQuery, withQuery, type QueryValue } from "./query";
 import type { CategoryState, FilterSummary, MerchantGroup, ReviewSummary, Transaction } from "./types";
 
+type TransactionFilterParams = {
+  date_from?: string;
+  date_to?: string;
+  include_transfers?: boolean;
+  import_id?: number;
+  merchant?: string;
+  search?: string;
+  direction?: "debit" | "credit";
+  category?: string;
+  category_state?: CategoryState;
+  has_suggestion?: boolean;
+  min_confidence?: number;
+  max_confidence?: number;
+  transaction_type?: string;
+  review_priority?: boolean;
+};
+
+type TransactionListParams = TransactionFilterParams & {
+  limit?: number;
+  offset?: number;
+};
+
+function transactionFilterQueryValues(
+  params: TransactionFilterParams,
+): Record<string, QueryValue> {
+  return {
+    date_from: params.date_from,
+    date_to: params.date_to,
+    include_transfers: params.include_transfers === false ? false : undefined,
+    import_id: params.import_id,
+    merchant: params.merchant,
+    search: params.search,
+    direction: params.direction,
+    category: params.category,
+    category_state:
+      params.category_state && params.category_state !== "all"
+        ? params.category_state
+        : undefined,
+    has_suggestion: params.has_suggestion,
+    min_confidence: params.min_confidence,
+    max_confidence: params.max_confidence,
+    transaction_type: params.transaction_type,
+    review_priority: params.review_priority ? true : undefined,
+  };
+}
+
+export function transactionFiltersQuery(params: TransactionFilterParams = {}): string {
+  return buildQuery(transactionFilterQueryValues(params));
+}
+
 export const transactionsApi = {
-  transactions: (
-    params: {
-      limit?: number;
-      offset?: number;
-      date_from?: string;
-      date_to?: string;
-      include_transfers?: boolean;
-      import_id?: number;
-      merchant?: string;
-      search?: string;
-      direction?: "debit" | "credit";
-      category?: string;
-      category_state?: CategoryState;
-      has_suggestion?: boolean;
-      min_confidence?: number;
-      max_confidence?: number;
-      transaction_type?: string;
-      review_priority?: boolean;
-    } = {},
-  ) => {
-    const q = new URLSearchParams();
-    if (params.limit) q.set("limit", String(params.limit));
-    if (params.offset) q.set("offset", String(params.offset));
-    if (params.date_from) q.set("date_from", params.date_from);
-    if (params.date_to) q.set("date_to", params.date_to);
-    if (params.include_transfers === false) q.set("include_transfers", "false");
-    if (params.import_id !== undefined) q.set("import_id", String(params.import_id));
-    if (params.merchant) q.set("merchant", params.merchant);
-    if (params.search) q.set("search", params.search);
-    if (params.direction) q.set("direction", params.direction);
-    if (params.category) q.set("category", params.category);
-    if (params.category_state && params.category_state !== "all") {
-      q.set("category_state", params.category_state);
-    }
-    if (params.has_suggestion !== undefined) {
-      q.set("has_suggestion", String(params.has_suggestion));
-    }
-    if (params.min_confidence !== undefined) {
-      q.set("min_confidence", String(params.min_confidence));
-    }
-    if (params.max_confidence !== undefined) {
-      q.set("max_confidence", String(params.max_confidence));
-    }
-    if (params.transaction_type) q.set("transaction_type", params.transaction_type);
-    if (params.review_priority) q.set("review_priority", "true");
-    const qs = q.toString();
-    return request<Transaction[]>(`/transactions${qs ? `?${qs}` : ""}`);
-  },
-  filterSummary: (
-    params: {
-      date_from?: string;
-      date_to?: string;
-      include_transfers?: boolean;
-      import_id?: number;
-      search?: string;
-      direction?: "debit" | "credit";
-      category?: string;
-      category_state?: CategoryState;
-      min_confidence?: number;
-      transaction_type?: string;
-      review_priority?: boolean;
-    } = {},
-  ) => {
-    const q = new URLSearchParams();
-    if (params.date_from) q.set("date_from", params.date_from);
-    if (params.date_to) q.set("date_to", params.date_to);
-    if (params.include_transfers === false) q.set("include_transfers", "false");
-    if (params.import_id !== undefined) q.set("import_id", String(params.import_id));
-    if (params.search) q.set("search", params.search);
-    if (params.direction) q.set("direction", params.direction);
-    if (params.category) q.set("category", params.category);
-    if (params.category_state && params.category_state !== "all") {
-      q.set("category_state", params.category_state);
-    }
-    if (params.min_confidence !== undefined) {
-      q.set("min_confidence", String(params.min_confidence));
-    }
-    if (params.transaction_type) q.set("transaction_type", params.transaction_type);
-    if (params.review_priority) q.set("review_priority", "true");
-    const qs = q.toString();
-    return request<FilterSummary>(`/transactions/filter-summary${qs ? `?${qs}` : ""}`);
-  },
-  exportTransactionsUrl: (
-    params: {
-      date_from?: string;
-      date_to?: string;
-      include_transfers?: boolean;
-      import_id?: number;
-      merchant?: string;
-      search?: string;
-      direction?: "debit" | "credit";
-      category?: string;
-      category_state?: CategoryState;
-      has_suggestion?: boolean;
-      min_confidence?: number;
-      max_confidence?: number;
-      transaction_type?: string;
-      review_priority?: boolean;
-    } = {},
-  ) => {
-    const q = new URLSearchParams();
-    if (params.date_from) q.set("date_from", params.date_from);
-    if (params.date_to) q.set("date_to", params.date_to);
-    if (params.include_transfers === false) q.set("include_transfers", "false");
-    if (params.import_id !== undefined) q.set("import_id", String(params.import_id));
-    if (params.merchant) q.set("merchant", params.merchant);
-    if (params.search) q.set("search", params.search);
-    if (params.direction) q.set("direction", params.direction);
-    if (params.category) q.set("category", params.category);
-    if (params.category_state && params.category_state !== "all") {
-      q.set("category_state", params.category_state);
-    }
-    if (params.has_suggestion !== undefined) {
-      q.set("has_suggestion", String(params.has_suggestion));
-    }
-    if (params.min_confidence !== undefined) {
-      q.set("min_confidence", String(params.min_confidence));
-    }
-    if (params.max_confidence !== undefined) {
-      q.set("max_confidence", String(params.max_confidence));
-    }
-    if (params.transaction_type) q.set("transaction_type", params.transaction_type);
-    if (params.review_priority) q.set("review_priority", "true");
-    const qs = q.toString();
-    return `/api/proxy/transactions/export.csv${qs ? `?${qs}` : ""}`;
+  transactions: (params: TransactionListParams = {}) =>
+    request<Transaction[]>(
+      withQuery("/transactions", {
+        limit: params.limit || undefined,
+        offset: params.offset || undefined,
+        ...transactionFilterQueryValues(params),
+      }),
+    ),
+  filterSummary: (params: TransactionFilterParams = {}) =>
+    request<FilterSummary>(
+      withQuery("/transactions/filter-summary", transactionFilterQueryValues(params)),
+    ),
+  exportTransactionsUrl: (params: TransactionFilterParams = {}) => {
+    const query = transactionFiltersQuery(params);
+    return `/api/proxy/transactions/export.csv${query ? `?${query}` : ""}`;
   },
   patchCategory: (
     id: number,
@@ -190,14 +131,13 @@ export const transactionsApi = {
   merchantGroups: (
     params: { only_uncategorized?: boolean; min_count?: number; limit?: number } = {},
   ) => {
-    const q = new URLSearchParams();
-    if (params.only_uncategorized !== undefined) {
-      q.set("only_uncategorized", String(params.only_uncategorized));
-    }
-    if (params.min_count !== undefined) q.set("min_count", String(params.min_count));
-    if (params.limit !== undefined) q.set("limit", String(params.limit));
-    const qs = q.toString();
-    return request<MerchantGroup[]>(`/transactions/groups${qs ? `?${qs}` : ""}`);
+    return request<MerchantGroup[]>(
+      withQuery("/transactions/groups", {
+        only_uncategorized: params.only_uncategorized,
+        min_count: params.min_count,
+        limit: params.limit,
+      }),
+    );
   },
   reviewSummary: () => request<ReviewSummary>("/transactions/review-summary"),
 };

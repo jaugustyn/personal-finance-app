@@ -13,6 +13,7 @@ import { statsApi } from "./api/stats";
 import { transactionsApi } from "./api/transactions";
 
 export type * from "./api/types";
+export { ApiError, apiErrorMessage, isApiError } from "./api/client";
 
 export const api = {
   ...statsApi,
