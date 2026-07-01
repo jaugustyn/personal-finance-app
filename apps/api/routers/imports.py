@@ -19,14 +19,26 @@ from __future__ import annotations
 import io
 import json
 import logging
-from datetime import datetime
 from typing import Any, Literal, cast
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile
-from pydantic import BaseModel
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, UploadFile
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
+from apps.api.errors import (
+    not_found,
+    not_implemented,
+    payload_too_large,
+    unsupported_media_type,
+    validation_error,
+)
+from apps.api.schemas.imports import (
+    ImportDeleteResult,
+    ImportQualityIssueResponse,
+    ImportQualityReportResponse,
+    ImportRow,
+    PreviewResponse,
+)
 from finance.currencies import MissingFxRate
 from finance.db import SessionLocal, get_session
 from finance.domain.dto import ImportSummary
@@ -67,26 +79,17 @@ def _read_validated(file: UploadFile) -> bytes:
     """Validate filename, content-type and size; return raw bytes."""
     name = (file.filename or "").lower()
     if name and not name.endswith(ALLOWED_EXTENSIONS):
-        raise HTTPException(
-            status_code=415,
-            detail=f"Unsupported file extension: {file.filename!r}",
-        )
+        raise unsupported_media_type(f"Unsupported file extension: {file.filename!r}")
     ct = (file.content_type or "").lower().split(";")[0].strip()
     if ct not in ALLOWED_CONTENT_TYPES:
-        raise HTTPException(
-            status_code=415,
-            detail=f"Unsupported content type: {file.content_type!r}",
-        )
+        raise unsupported_media_type(f"Unsupported content type: {file.content_type!r}")
     raw = file.file.read(MAX_UPLOAD_BYTES + 1)
     if len(raw) > MAX_UPLOAD_BYTES:
-        raise HTTPException(
-            status_code=413,
-            detail=(
-                f"File too large (limit: {MAX_UPLOAD_BYTES // (1024 * 1024)} MiB)."
-            ),
+        raise payload_too_large(
+            f"File too large (limit: {MAX_UPLOAD_BYTES // (1024 * 1024)} MiB)."
         )
     if not raw:
-        raise HTTPException(status_code=422, detail="Empty file.")
+        raise validation_error("Empty file.")
     return raw
 
 
@@ -99,34 +102,6 @@ def _suggest_import_categories(import_id: int) -> None:
         logger.info("Skipping category suggestions for import %s: no classifier", import_id)
     except Exception:
         logger.exception("Category suggestion job failed for import %s", import_id)
-
-
-class ImportQualityIssueResponse(BaseModel):
-    code: str
-    severity: str
-    count: int
-    sample_rows: list[int]
-
-
-class ImportQualityReportResponse(BaseModel):
-    total_rows: int
-    valid_rows: int
-    blocking_issues: int
-    warnings: int
-    issues: list[ImportQualityIssueResponse]
-
-
-class PreviewResponse(BaseModel):
-    headers: list[str]
-    sample_rows: list[dict[str, str]]
-    delimiter: str
-    encoding: str
-    detected_source: BankSource | None
-    detected_mapping: dict[str, str | None]
-    field_specs: list[dict[str, object]]
-    quality_warnings: list[str]
-    quality_report: ImportQualityReportResponse
-    supported_extensions: list[str]
 
 
 def _quality_report_response(report: ImportQualityReport) -> ImportQualityReportResponse:
@@ -156,7 +131,7 @@ def preview_import(
     try:
         prev = preview_csv(io.BytesIO(raw))
     except Exception as exc:  # noqa: BLE001
-        raise HTTPException(status_code=422, detail=f"Cannot parse CSV: {exc}") from exc
+        raise validation_error(f"Cannot parse CSV: {exc}") from exc
     detected_source = detect_source(prev.headers)
     quality_source = detected_source or BankSource.UNKNOWN
     quality_parser = (
@@ -206,7 +181,7 @@ def upload_import(
         try:
             prev = preview_csv(io.BytesIO(raw))
         except Exception as exc:  # noqa: BLE001
-            raise HTTPException(status_code=422, detail=f"Cannot parse CSV: {exc}") from exc
+            raise validation_error(f"Cannot parse CSV: {exc}") from exc
         detected = detect_source(prev.headers)
         if detected is not None:
             chosen_source = detected
@@ -219,28 +194,26 @@ def upload_import(
         try:
             prev = preview_csv(io.BytesIO(raw))
         except Exception as exc:  # noqa: BLE001
-            raise HTTPException(status_code=422, detail=f"Cannot parse CSV: {exc}") from exc
+            raise validation_error(f"Cannot parse CSV: {exc}") from exc
         if column_map:
             try:
                 parsed = json.loads(column_map)
             except json.JSONDecodeError as exc:
-                raise HTTPException(
-                    status_code=422, detail=f"Invalid column_map JSON: {exc}"
-                ) from exc
+                raise validation_error(f"Invalid column_map JSON: {exc}") from exc
             if not isinstance(parsed, dict):
-                raise HTTPException(status_code=422, detail="column_map must be an object.")
+                raise validation_error("column_map must be an object.")
             mapping = clean_column_map(parsed)
         else:
             mapping = clean_column_map(prev.detected_mapping)
         errors = validate_column_map(mapping or {}, headers=prev.headers)
         if errors:
-            raise HTTPException(status_code=422, detail="; ".join(errors))
+            raise validation_error("; ".join(errors))
         parser = GenericCsvParser(mapping)
     else:
         try:
             chosen_source = BankSource(src_lower)
         except ValueError as exc:
-            raise HTTPException(status_code=422, detail=f"Unknown source: {source!r}") from exc
+            raise validation_error(f"Unknown source: {source!r}") from exc
 
     try:
         summary = ingest_file(
@@ -256,27 +229,15 @@ def upload_import(
             background.add_task(_suggest_import_categories, summary.import_id)
         return summary
     except ParseError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        raise validation_error(str(exc)) from exc
     except MissingFxRate as exc:
         session.rollback()
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        raise validation_error(str(exc)) from exc
     except ValueError as exc:
         session.rollback()
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        raise validation_error(str(exc)) from exc
     except NotImplementedError as exc:
-        raise HTTPException(status_code=501, detail=str(exc)) from exc
-
-
-class ImportRow(BaseModel):
-    id: int
-    source: str
-    filename: str
-    total_rows: int
-    inserted: int
-    duplicates: int
-    created_at: datetime
-
-    model_config = {"from_attributes": True}
+        raise not_implemented(str(exc)) from exc
 
 
 @router.get("", response_model=list[ImportRow])
@@ -285,11 +246,6 @@ def list_imports(session: Session = Depends(get_session)) -> list[ImportRow]:
         select(Import).order_by(Import.created_at.desc())
     ).scalars().all()
     return [ImportRow.model_validate(r) for r in rows]
-
-
-class ImportDeleteResult(BaseModel):
-    deleted_transactions: int
-    import_id: int
 
 
 @router.delete("/{import_id}", response_model=ImportDeleteResult)
@@ -303,7 +259,7 @@ def delete_import(
     """
     imp = session.get(Import, import_id)
     if imp is None:
-        raise HTTPException(status_code=404, detail="Import not found.")
+        raise not_found("Import not found.")
     res = session.execute(
         delete(Transaction).where(Transaction.import_id == import_id)
     )

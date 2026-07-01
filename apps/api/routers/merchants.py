@@ -1,64 +1,22 @@
 """Merchant canonicalization and alias endpoints."""
 from __future__ import annotations
 
-from datetime import datetime
-from decimal import Decimal
-
-from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, Field
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
+from apps.api.errors import not_found, validation_error
+from apps.api.schemas.merchants import (
+    MerchantAliasCreate,
+    MerchantAliasGroupLabelPatch,
+    MerchantAliasRow,
+    MerchantAliasSuggestionRow,
+    MerchantCandidateRow,
+    MerchantCandidateVariantRow,
+)
 from finance.db import get_session
 from finance.transactions import merchants as merchant_service
 
 router = APIRouter(prefix="/merchants", tags=["merchants"])
-
-
-class MerchantAliasRow(BaseModel):
-    id: int
-    alias_key: str
-    alias_label: str
-    canonical_key: str
-    canonical_label: str
-    created_at: datetime | None = None
-
-    model_config = {"from_attributes": True}
-
-
-class MerchantAliasCreate(BaseModel):
-    canonical_label: str = Field(min_length=1, max_length=256)
-    canonical_key: str | None = Field(default=None, max_length=256)
-    aliases: list[str] = Field(min_length=1)
-
-
-class MerchantAliasGroupLabelPatch(BaseModel):
-    canonical_key: str = Field(min_length=1, max_length=256)
-    canonical_label: str = Field(min_length=1, max_length=256)
-
-
-class MerchantCandidateVariantRow(BaseModel):
-    alias_key: str
-    alias_label: str
-    count: int
-    total_debit: Decimal
-
-
-class MerchantCandidateRow(BaseModel):
-    canonical_key: str
-    suggested_label: str
-    aliases: list[str]
-    variants: list[MerchantCandidateVariantRow]
-    count: int
-    total_debit: Decimal
-
-
-class MerchantAliasSuggestionRow(BaseModel):
-    alias_key: str
-    alias_label: str
-    canonical_key: str
-    canonical_label: str
-    count: int
-    total_amount: Decimal
 
 
 @router.get("/aliases", response_model=list[MerchantAliasRow])
@@ -82,7 +40,7 @@ def create_aliases(
             aliases=payload.aliases,
         )
     except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        raise validation_error(str(exc)) from exc
     return [MerchantAliasRow.model_validate(row) for row in rows]
 
 
@@ -98,16 +56,16 @@ def update_alias_group_label(
             canonical_label=payload.canonical_label,
         )
     except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        raise validation_error(str(exc)) from exc
     if not rows:
-        raise HTTPException(status_code=404, detail="Merchant alias group not found.")
+        raise not_found("Merchant alias group not found.")
     return [MerchantAliasRow.model_validate(row) for row in rows]
 
 
 @router.delete("/aliases/{alias_id}", status_code=204)
 def delete_alias(alias_id: int, session: Session = Depends(get_session)) -> None:
     if not merchant_service.delete_alias(session, alias_id):
-        raise HTTPException(status_code=404, detail="Merchant alias not found.")
+        raise not_found("Merchant alias not found.")
 
 
 @router.get("/suggestions", response_model=list[MerchantAliasSuggestionRow])

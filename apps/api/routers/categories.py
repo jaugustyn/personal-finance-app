@@ -1,11 +1,12 @@
 """Category catalog endpoints — system + user-defined categories."""
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from apps.api.errors import conflict, not_found, validation_error
 from finance.db import get_session
 from finance.domain.category_mapping import (
     SYSTEM_CATEGORY_COLORS,
@@ -119,23 +120,21 @@ def create_category(
     ensure_system_categories(session)
     name = _normalize(payload.name)
     if not name:
-        raise HTTPException(status_code=422, detail="Category name cannot be empty.")
+        raise validation_error("Category name cannot be empty.")
     parent = _normalize(payload.parent) if payload.parent else None
     if parent is not None:
         parent_def = session.execute(
             select(CategoryDef).where(CategoryDef.name == parent)
         ).scalar_one_or_none()
         if parent_def is None:
-            raise HTTPException(status_code=422, detail="Parent category not found.")
+            raise validation_error("Parent category not found.")
         if parent_def.parent is not None:
-            raise HTTPException(
-                status_code=422, detail="Subcategories cannot be nested."
-            )
+            raise validation_error("Subcategories cannot be nested.")
     existing = session.execute(
         select(CategoryDef).where(CategoryDef.name == name)
     ).scalar_one_or_none()
     if existing is not None:
-        raise HTTPException(status_code=409, detail="Category already exists.")
+        raise conflict("Category already exists.")
     cat = CategoryDef(
         name=name,
         is_system=False,
@@ -157,7 +156,7 @@ def update_category(
 ) -> CategoryRow:
     cat = session.get(CategoryDef, category_id)
     if cat is None:
-        raise HTTPException(status_code=404, detail="Category not found.")
+        raise not_found("Category not found.")
     if payload.color is not None:
         cat.color = payload.color
     if payload.icon is not None:
@@ -173,10 +172,8 @@ def delete_category(
 ) -> None:
     cat = session.get(CategoryDef, category_id)
     if cat is None:
-        raise HTTPException(status_code=404, detail="Category not found.")
+        raise not_found("Category not found.")
     if cat.is_system:
-        raise HTTPException(
-            status_code=409, detail="System categories cannot be deleted."
-        )
+        raise conflict("System categories cannot be deleted.")
     session.delete(cat)
     session.commit()

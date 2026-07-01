@@ -1,84 +1,28 @@
 """Assets portfolio: CRUD, refresh prices, history, and Sankey flow."""
 from __future__ import annotations
 
-from datetime import date
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, Field
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
+from apps.api.errors import conflict, not_found
+from apps.api.schemas.assets import (
+    AssetIn,
+    AssetOut,
+    AssetPatch,
+    HistoryPoint,
+    PortfolioSummary,
+    RefreshResult,
+    SankeyData,
+    SankeyLink,
+    SankeyNode,
+)
 from finance.assets import service as asset_service
 from finance.db import get_session
 
 router = APIRouter(prefix="/assets", tags=["assets"])
 fetch_quote = asset_service.asset_quotes.fetch_quote
-
-
-# --- Schemas ---------------------------------------------------------------
-
-
-class AssetIn(BaseModel):
-    symbol: str = Field(min_length=1, max_length=32)
-    name: str = ""
-    asset_class: str = "equity"
-    currency: str = "USD"
-    quantity: Decimal = Decimal("0")
-    cost_basis: Decimal = Decimal("0")
-    notes: str | None = None
-
-
-class AssetPatch(BaseModel):
-    name: str | None = None
-    asset_class: str | None = None
-    currency: str | None = None
-    quantity: Decimal | None = None
-    cost_basis: Decimal | None = None
-    notes: str | None = None
-
-
-class AssetOut(BaseModel):
-    id: int
-    symbol: str
-    name: str
-    asset_class: str
-    currency: str
-    quantity: Decimal
-    cost_basis: Decimal
-    notes: str | None
-    last_price: Decimal | None
-    last_value_pln: Decimal | None
-    last_snapshot_date: date | None
-    pnl_pln: Decimal | None
-
-
-class PortfolioSummary(BaseModel):
-    total_value_pln: Decimal
-    total_cost_pln: Decimal
-    pnl_pln: Decimal
-    pnl_pct: float
-    asset_count: int
-    last_refresh: date | None
-
-
-class HistoryPoint(BaseModel):
-    snapshot_date: date
-    value_pln: Decimal
-
-
-class SankeyNode(BaseModel):
-    name: str
-
-
-class SankeyLink(BaseModel):
-    source: int
-    target: int
-    value: Decimal
-
-
-class SankeyData(BaseModel):
-    nodes: list[SankeyNode]
-    links: list[SankeyLink]
 
 
 # --- CRUD endpoints --------------------------------------------------------
@@ -107,7 +51,7 @@ def create_asset(payload: AssetIn, session: Session = Depends(get_session)) -> A
         notes=payload.notes,
     )
     if asset is None:
-        raise HTTPException(status_code=409, detail="Symbol already exists")
+        raise conflict("Symbol already exists")
     return AssetOut(**asset_service.to_asset_view(session, asset).__dict__)
 
 
@@ -123,20 +67,14 @@ def patch_asset(
         payload.model_dump(exclude_unset=True),
     )
     if asset is None:
-        raise HTTPException(status_code=404, detail="Asset not found")
+        raise not_found("Asset not found")
     return AssetOut(**asset_service.to_asset_view(session, asset).__dict__)
 
 
 @router.delete("/{asset_id}", status_code=204)
 def delete_asset(asset_id: int, session: Session = Depends(get_session)) -> None:
     if not asset_service.delete_asset(session, asset_id):
-        raise HTTPException(status_code=404, detail="Asset not found")
-
-
-class RefreshResult(BaseModel):
-    refreshed: int
-    skipped: int
-    total: int
+        raise not_found("Asset not found")
 
 
 @router.post("/refresh", response_model=RefreshResult)

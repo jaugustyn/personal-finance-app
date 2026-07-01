@@ -7,9 +7,10 @@ from datetime import datetime
 from pathlib import Path
 
 import joblib  # noqa: F401 - tests use apps.api.routers.ml.joblib for artifacts.
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, Query
 from sqlalchemy.orm import Session
 
+from apps.api.errors import bad_request, service_unavailable
 from apps.api.schemas.ml import (
     ClassificationDecisionResponse,
     ClassifyRequest,
@@ -164,9 +165,9 @@ def classify(req: ClassifyRequest) -> ClassifyResponse:
             direction=req.direction.value if req.direction is not None else None,
             is_transfer=req.is_transfer,
             policy=policy,
-        )
+    )
     except ClassifierNotAvailable as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
+        raise service_unavailable(str(exc)) from exc
     return ClassifyResponse(
         category=result.category,
         confidence=result.confidence,
@@ -215,7 +216,7 @@ def reclassify(session: Session = Depends(get_session)) -> ReclassifyResponse:
     try:
         n = reclassify_unlabelled(session, policy=policy)
     except ClassifierNotAvailable as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
+        raise service_unavailable(str(exc)) from exc
     return ReclassifyResponse(updated=n)
 
 
@@ -244,15 +245,9 @@ def retrain(
     feature_set: str = DEFAULT_RECOMMENDED_FEATURE_SET,
 ) -> RetrainResponse:
     if estimator not in ESTIMATORS:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Unknown estimator '{estimator}'. Choose: {list(ESTIMATORS)}",
-        )
+        raise bad_request(f"Unknown estimator '{estimator}'. Choose: {list(ESTIMATORS)}")
     if feature_set not in {"baseline", "feature_v2"}:
-        raise HTTPException(
-            status_code=400,
-            detail="Unknown feature_set. Choose: ['baseline', 'feature_v2']",
-        )
+        raise bad_request("Unknown feature_set. Choose: ['baseline', 'feature_v2']")
     background.add_task(_retrain_job, estimator, feature_set)
     return RetrainResponse(
         status="scheduled",

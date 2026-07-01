@@ -1,106 +1,31 @@
 """GET /subscriptions — recurring debits with stable amount + cadence."""
-from datetime import date
-from typing import Literal
 
 from fastapi import APIRouter, Depends, Query
-from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from apps.api.schemas.subscriptions import (
+    FeedbackResponse,
+    PreferenceResponse,
+    SubscriptionFeedbackRequest,
+    SubscriptionOverviewResponse,
+    SubscriptionPreferenceRequest,
+    SubscriptionRow,
+    SubscriptionTransactionRow,
+    UpcomingPaymentRow,
+)
 from finance.db import get_session
 from finance.ml.subscriptions.service import (
     SubscriptionOverview,
     SubscriptionReviewRow,
     list_subscription_rows,
-    record_subscription_feedback as record_subscription_feedback_event,
     subscription_overview,
     upsert_subscription_preference,
 )
+from finance.ml.subscriptions.service import (
+    record_subscription_feedback as record_subscription_feedback_event,
+)
 
 router = APIRouter(prefix="/subscriptions", tags=["subscriptions"])
-
-
-class SubscriptionRow(BaseModel):
-    merchant: str
-    merchant_key: str
-    display_name: str
-    currency: str
-    base_currency: str
-    cadence: str
-    median_amount: float
-    occurrences: int
-    last_seen: date
-    next_expected_date: date | None
-    estimated_monthly_cost_original: float
-    estimated_monthly_cost: float
-    confidence: float
-    status: str
-    source: str
-    previous_amount: float | None
-    current_amount: float | None
-    price_change_pct: float | None
-    price_change_annual_impact: float | None
-    evidence: dict[str, object]
-    is_confirmed: bool
-    user_decision: Literal["suggested", "confirmed", "rejected"]
-    transactions: list["SubscriptionTransactionRow"]
-
-
-class SubscriptionTransactionRow(BaseModel):
-    id: int
-    booking_date: date
-    merchant: str
-    title: str
-    amount: float
-    currency: str
-    amount_base: float
-    base_currency: str
-    category: str | None
-    category_source: str | None
-
-
-class SubscriptionFeedbackRequest(BaseModel):
-    merchant: str
-    action: Literal["confirm"]
-    subscription_key: str | None = None
-
-
-class SubscriptionPreferenceRequest(BaseModel):
-    subscription_key: str
-    action: Literal["confirm", "reject", "restore", "update"] = "update"
-    display_name: str | None = None
-    cadence_override: (
-        Literal["weekly", "biweekly", "monthly", "yearly", "unknown"] | None
-    ) = None
-
-
-class FeedbackResponse(BaseModel):
-    status: str = "recorded"
-    id: int | None = None
-
-
-class PreferenceResponse(BaseModel):
-    status: str = "saved"
-    id: int
-
-
-class UpcomingPaymentRow(BaseModel):
-    subscription_key: str
-    display_name: str
-    due_date: date
-    amount: float
-    currency: str
-    amount_base: float
-    base_currency: str
-    status: str
-
-
-class SubscriptionOverviewResponse(BaseModel):
-    monthly_total: float
-    yearly_total: float
-    next_30_days_count: int
-    next_30_days_total: float
-    base_currency: str
-    upcoming: list[UpcomingPaymentRow]
 
 
 def _to_response(row: SubscriptionReviewRow) -> SubscriptionRow:

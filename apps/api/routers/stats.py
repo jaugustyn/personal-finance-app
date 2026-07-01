@@ -2,79 +2,27 @@
 from __future__ import annotations
 
 from datetime import date
-from decimal import Decimal
-from typing import Literal
 
 from fastapi import APIRouter, Depends, Query
-from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from finance.db import get_session
-from finance.domain.enums import TransactionDirection
-from finance.stats import service as stats_service
-from finance.stats.types import (
+from apps.api.schemas.stats import (
     CashflowBucket,
     CategorySpend,
     CategoryTrendPoint,
+    MerchantSort,
     MerchantSpend,
     NetWorthPoint,
     Overview,
+    Recap,
+    RecapPeriod,
     SpendDistribution,
 )
+from finance.db import get_session
+from finance.domain.enums import TransactionDirection
+from finance.stats import service as stats_service
 
 router = APIRouter(prefix="/stats", tags=["stats"])
-
-MerchantSort = Literal["amount", "count"]
-RecapPeriod = Literal["week", "month"]
-
-
-class RecapCashflow(BaseModel):
-    income: Decimal
-    expenses: Decimal
-    net: Decimal
-    income_delta: Decimal
-    expenses_delta: Decimal
-    net_delta: Decimal
-
-
-class RecapCategoryChange(BaseModel):
-    category: str
-    current: Decimal
-    previous: Decimal
-    delta: Decimal
-
-
-class RecapMerchant(BaseModel):
-    merchant: str
-    amount: Decimal
-    count: int
-
-
-class RecapLimitBreach(BaseModel):
-    category: str
-    spent: Decimal
-    limit: Decimal
-    overshoot: Decimal
-
-
-class RecapSavings(BaseModel):
-    goal: Decimal
-    net: Decimal
-    ratio: float
-    met: bool
-
-
-class Recap(BaseModel):
-    period: str  # "week" | "month"
-    current_from: date
-    current_to: date
-    previous_from: date
-    previous_to: date
-    cashflow: RecapCashflow
-    category_changes: list[RecapCategoryChange]
-    top_merchants: list[RecapMerchant]
-    limit_breaches: list[RecapLimitBreach]
-    savings_progress: RecapSavings | None
 
 
 # --- Endpoints -------------------------------------------------------------

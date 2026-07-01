@@ -3,10 +3,11 @@ from datetime import date
 from decimal import Decimal
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from apps.api.errors import not_found
 from finance.db import get_session
 from finance.ml.anomaly.service import (
     AnomalyDirection,
@@ -111,5 +112,5 @@ def record_anomaly_feedback(
         action=req.action,
     )
     if event is None:
-        raise HTTPException(status_code=404, detail="Transaction not found")
+        raise not_found("Transaction not found")
     return FeedbackResponse(id=event.id)

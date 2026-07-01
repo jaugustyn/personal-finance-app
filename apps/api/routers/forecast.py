@@ -2,10 +2,11 @@
 import math
 from datetime import date
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from apps.api.errors import not_found
 from finance.db import get_session
 from finance.domain.enums import TransactionDirection
 from finance.ml.forecasting.pipeline import forecast_best, load_monthly_series
@@ -53,7 +54,7 @@ def forecast(
         direction=TransactionDirection.DEBIT.value,
     )
     if series.empty:
-        raise HTTPException(status_code=404, detail="No data for given filters")
+        raise not_found("No data for given filters")
     res = forecast_best(series, horizon=horizon)
     return ForecastResponse(
         category=category,

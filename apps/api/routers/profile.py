@@ -1,81 +1,21 @@
 """User profile and personal rule endpoints."""
 from __future__ import annotations
 
-from datetime import datetime
-from decimal import Decimal
-from typing import Literal
-
-from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
+from apps.api.errors import not_found, validation_error
+from apps.api.schemas.profile import (
+    PersonalRuleCreate,
+    PersonalRuleRow,
+    PersonalRuleUpdate,
+    UserProfileRow,
+    UserProfileUpdate,
+)
 from finance.db import get_session
-from finance.domain.enums import Category, TransactionType
 from finance.profile import service as profile_service
 
-RuleTarget = Literal["merchant", "title", "both"]
-RuleMode = Literal["suggest_only", "auto_apply"]
-
 router = APIRouter(prefix="/profile", tags=["profile"])
-
-
-class UserProfileRow(BaseModel):
-    id: int
-    base_currency: str
-    salary_day: int | None
-    monthly_savings_goal: Decimal | None
-    category_limits: dict[str, float]
-    created_at: datetime | None = None
-
-    model_config = {"from_attributes": True}
-
-
-class UserProfileUpdate(BaseModel):
-    base_currency: str | None = Field(default=None, min_length=3, max_length=3)
-    salary_day: int | None = Field(default=None, ge=1, le=31)
-    monthly_savings_goal: Decimal | None = Field(default=None, ge=0)
-    category_limits: dict[str, float] | None = None
-
-
-class PersonalRuleRow(BaseModel):
-    id: int
-    pattern: str
-    pattern_norm: str
-    pattern_target: str
-    category: str | None
-    transaction_type: str | None
-    is_transfer: bool | None
-    priority: int
-    active: bool
-    mode: str
-    confidence: float
-    created_at: datetime | None = None
-
-    model_config = {"from_attributes": True}
-
-
-class PersonalRuleCreate(BaseModel):
-    pattern: str = Field(min_length=1, max_length=256)
-    pattern_target: RuleTarget = "merchant"
-    category: Category | None = None
-    transaction_type: TransactionType | None = None
-    is_transfer: bool | None = None
-    priority: int = 100
-    active: bool = True
-    mode: RuleMode = "suggest_only"
-    confidence: float = Field(default=0.95, ge=0.0, le=1.0)
-
-
-class PersonalRuleUpdate(BaseModel):
-    pattern: str | None = Field(default=None, min_length=1, max_length=256)
-    pattern_target: RuleTarget | None = None
-    category: Category | None = None
-    transaction_type: TransactionType | None = None
-    is_transfer: bool | None = None
-    priority: int | None = None
-    active: bool | None = None
-    mode: RuleMode | None = None
-    confidence: float | None = Field(default=None, ge=0.0, le=1.0)
 
 
 @router.get("", response_model=UserProfileRow)
@@ -123,7 +63,7 @@ def create_rule(
     try:
         rule = profile_service.create_rule(session, **payload.model_dump(mode="json"))
     except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        raise validation_error(str(exc)) from exc
     return PersonalRuleRow.model_validate(rule)
 
 
@@ -140,9 +80,9 @@ def patch_rule(
             **payload.model_dump(exclude_unset=True, mode="json"),
         )
     except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        raise validation_error(str(exc)) from exc
     if rule is None:
-        raise HTTPException(status_code=404, detail="Rule not found.")
+        raise not_found("Rule not found.")
     return PersonalRuleRow.model_validate(rule)
 
 
@@ -150,4 +90,4 @@ def patch_rule(
 def delete_rule(rule_id: int, session: Session = Depends(get_session)) -> None:
     deleted = profile_service.delete_rule(session, rule_id)
     if not deleted:
-        raise HTTPException(status_code=404, detail="Rule not found.")
+        raise not_found("Rule not found.")
