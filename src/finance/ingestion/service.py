@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import hashlib
-from typing import IO, Literal
+from typing import IO
 
 from sqlalchemy.orm import Session
 
@@ -13,10 +13,9 @@ from finance.ingestion.base import BankParser
 from finance.ingestion.policy import TransactionImportPolicy, build_transaction_values
 from finance.ingestion.registry import get_parser
 from finance.ingestion.repository import TransactionImportRepository
+from finance.ingestion.types import FxRateMode
 from finance.profile.service import effect_for_transaction
 from finance.transactions.normalization import normalize_merchant, normalize_text
-
-FxRateMode = Literal["require_existing", "prefetch_missing"]
 
 
 def compute_dedup_hash(dto: TransactionDTO) -> str:

@@ -19,13 +19,18 @@ import csv
 import io
 from dataclasses import dataclass
 from datetime import datetime
-from decimal import Decimal, InvalidOperation
 from typing import IO
 
 from finance.domain.category_mapping import map_source_category
 from finance.domain.dto import TransactionDTO
 from finance.domain.enums import BankSource, TransactionDirection
 from finance.ingestion.base import BankParser, ParseError
+from finance.ingestion.csv_utils import (
+    decode_csv,
+    parse_date,
+    parse_decimal,
+    sniff_delimiter,
+)
 from finance.ingestion.schema import REQUIRED_IMPORT_FIELDS, clean_column_map
 
 # ---------------------------------------------------------------------------
@@ -72,24 +77,6 @@ def _norm(s: str) -> str:
     return " ".join(s.strip().lower().split())
 
 
-def _decode(raw: bytes) -> str:
-    """Best-effort decode: utf-8-sig → utf-8 → cp1250 → latin1."""
-    for enc in ("utf-8-sig", "utf-8", "cp1250", "latin1"):
-        try:
-            return raw.decode(enc)
-        except UnicodeDecodeError:
-            continue
-    return raw.decode("latin1", errors="replace")
-
-
-def _sniff_delimiter(sample: str) -> str:
-    """Pick the delimiter that yields the most columns on the first line."""
-    head = sample.splitlines()[0] if sample else ""
-    counts = {d: head.count(d) for d in (";", ",", "\t", "|")}
-    delim, n = max(counts.items(), key=lambda kv: kv[1])
-    return delim if n > 0 else ","
-
-
 def auto_detect_columns(headers: list[str]) -> dict[str, str | None]:
     """Map logical fields → actual header name (case-preserving) or None."""
     norm_to_orig = {_norm(h): h for h in headers if h}
@@ -117,9 +104,9 @@ class CsvPreview:
 
 def preview_csv(stream: IO[bytes], *, max_rows: int = 5) -> CsvPreview:
     raw = stream.read()
-    text = _decode(raw)
+    text = decode_csv(raw)
     encoding = "utf-8" if raw.startswith(b"\xef\xbb\xbf") or _try("utf-8", raw) else "cp1250"
-    delimiter = _sniff_delimiter(text)
+    delimiter = sniff_delimiter(text)
     reader = csv.DictReader(io.StringIO(text), delimiter=delimiter)
     headers = list(reader.fieldnames or [])
     rows: list[dict[str, str]] = []
@@ -145,46 +132,6 @@ def _try(enc: str, raw: bytes) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# Value parsing
-# ---------------------------------------------------------------------------
-_DATE_FORMATS = (
-    "%d.%m.%Y", "%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y",
-    "%d.%m.%Y %H:%M:%S", "%d.%m.%Y %H:%M",
-    "%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S",
-)
-
-
-def _parse_date(raw: str) -> datetime | None:
-    raw = raw.strip()
-    if not raw:
-        return None
-    for fmt in _DATE_FORMATS:
-        try:
-            return datetime.strptime(raw, fmt)
-        except ValueError:
-            continue
-    return None
-
-
-def _parse_decimal(raw: str) -> Decimal | None:
-    raw = raw.strip().replace(" ", "").replace("\u00a0", "")
-    if not raw:
-        return None
-    # If both ',' and '.' present, the rightmost is the decimal separator.
-    if "," in raw and "." in raw:
-        if raw.rfind(",") > raw.rfind("."):
-            raw = raw.replace(".", "").replace(",", ".")
-        else:
-            raw = raw.replace(",", "")
-    elif "," in raw:
-        raw = raw.replace(",", ".")
-    try:
-        return Decimal(raw)
-    except InvalidOperation:
-        return None
-
-
-# ---------------------------------------------------------------------------
 # Parser
 # ---------------------------------------------------------------------------
 class GenericCsvParser(BankParser):
@@ -201,8 +148,8 @@ class GenericCsvParser(BankParser):
         self.column_map = column_map or {}
 
     def parse(self, stream: IO[bytes], filename: str = "") -> list[TransactionDTO]:
-        text = _decode(stream.read())
-        delimiter = _sniff_delimiter(text)
+        text = decode_csv(stream.read())
+        delimiter = sniff_delimiter(text)
         reader = csv.DictReader(io.StringIO(text), delimiter=delimiter)
         headers = list(reader.fieldnames or [])
         if not headers:
@@ -228,10 +175,10 @@ class GenericCsvParser(BankParser):
 
         out: list[TransactionDTO] = []
         for row in reader:
-            dt = _parse_date(row.get(date_col, "") or "")
+            dt = parse_date(row.get(date_col, "") or "")
             if dt is None:
                 continue
-            amount = _parse_decimal(row.get(amount_col, "") or "")
+            amount = parse_decimal(row.get(amount_col, "") or "")
             if amount is None:
                 continue
             direction = (

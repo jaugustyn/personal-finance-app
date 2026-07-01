@@ -7,7 +7,6 @@ rate raise ``MissingFxRate`` instead of silently falling back to ``1``.
 from __future__ import annotations
 
 from collections.abc import Iterable
-from dataclasses import dataclass
 from datetime import date
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
@@ -16,33 +15,13 @@ from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
 
 from finance.currencies.providers import FxRateProvider, NbpFxRateProvider
+from finance.currencies.types import ConversionResult, MissingFxRate
 from finance.domain.models import FxRate, Transaction, UserProfile
 
 PROFILE_ID = 1
 DEFAULT_BASE_CURRENCY = "PLN"
 RATE_QUANT = Decimal("0.00000001")
 AMOUNT_QUANT = Decimal("0.01")
-
-
-class MissingFxRate(ValueError):
-    """Raised when a non-base transaction cannot be converted."""
-
-    def __init__(self, currency: str, base_currency: str, rate_date: date) -> None:
-        self.currency = normalize_currency(currency)
-        self.base_currency = normalize_currency(base_currency)
-        self.rate_date = rate_date
-        super().__init__(
-            f"missing_fx_rate: {self.currency}/{self.base_currency} for {rate_date.isoformat()}"
-        )
-
-
-@dataclass(frozen=True)
-class ConversionResult:
-    amount_base: Decimal
-    base_currency: str
-    fx_rate: Decimal
-    fx_rate_date: date
-    fx_rate_source: str
 
 
 def normalize_currency(value: str | None) -> str:

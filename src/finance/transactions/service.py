@@ -14,10 +14,6 @@ from finance.transactions.mutations import (
     update_transaction_type,
 )
 from finance.transactions.queries import (
-    CategorySummary,
-    FilterSummaryResult,
-    MerchantGroupSummary,
-    TransactionFilters,
     filter_summary,
     filtered_transactions_stmt,
     list_transactions,
@@ -25,13 +21,35 @@ from finance.transactions.queries import (
     summary_by_category,
 )
 from finance.transactions.review import review_summary
+from finance.transactions.types import (
+    CategoryState,
+    CategorySummary,
+    FilterSummaryResult,
+    MerchantAliasSuggestion,
+    MerchantCandidate,
+    MerchantCandidateVariant,
+    MerchantGroupSummary,
+    MerchantIdentity,
+    RareClass,
+    RecurringMerchant,
+    ReviewCounts,
+    TransactionFilters,
+)
 
 __all__ = [
     "CSV_COLUMNS",
     "CategorySummary",
+    "CategoryState",
     "FilterSummaryResult",
     "InvalidCategoryAssignment",
+    "MerchantAliasSuggestion",
+    "MerchantCandidate",
+    "MerchantCandidateVariant",
     "MerchantGroupSummary",
+    "MerchantIdentity",
+    "RareClass",
+    "RecurringMerchant",
+    "ReviewCounts",
     "TransactionFilters",
     "UNCHANGED",
     "accept_suggestions",

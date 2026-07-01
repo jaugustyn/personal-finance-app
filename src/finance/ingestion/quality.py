@@ -4,8 +4,6 @@ from __future__ import annotations
 import csv
 import io
 from collections import Counter, defaultdict
-from dataclasses import dataclass, field
-from typing import Literal
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -15,36 +13,21 @@ from finance.domain.dto import TransactionDTO
 from finance.domain.enums import BankSource
 from finance.domain.models import Transaction
 from finance.ingestion.base import BankParser
-from finance.ingestion.generic import (
-    GenericCsvParser,
-    _decode,
-    _parse_date,
-    _parse_decimal,
-    _sniff_delimiter,
-    auto_detect_columns,
+from finance.ingestion.csv_utils import (
+    decode_csv,
+    parse_date,
+    parse_decimal,
+    sniff_delimiter,
 )
+from finance.ingestion.generic import GenericCsvParser, auto_detect_columns
 from finance.ingestion.schema import REQUIRED_IMPORT_FIELDS, clean_column_map
 from finance.ingestion.service import compute_dedup_hash
+from finance.ingestion.types import (
+    ImportQualityIssue,
+    ImportQualityReport,
+    IssueSeverity,
+)
 from finance.transactions.normalization import normalize_text
-
-IssueSeverity = Literal["error", "warning"]
-
-
-@dataclass(frozen=True)
-class ImportQualityIssue:
-    code: str
-    severity: IssueSeverity
-    count: int
-    sample_rows: list[int] = field(default_factory=list)
-
-
-@dataclass(frozen=True)
-class ImportQualityReport:
-    total_rows: int
-    valid_rows: int
-    blocking_issues: int
-    warnings: int
-    issues: list[ImportQualityIssue]
 
 
 def assess_import_quality(
@@ -136,10 +119,10 @@ def _sample_rows(rows: list[int], *, limit: int = 5) -> list[int]:
 
 
 def _csv_data_row_count(raw: bytes) -> int:
-    text = _decode(raw)
+    text = decode_csv(raw)
     if not text.strip():
         return 0
-    delimiter = _sniff_delimiter(text)
+    delimiter = sniff_delimiter(text)
     reader = csv.DictReader(io.StringIO(text), delimiter=delimiter)
     return sum(1 for _ in reader)
 
@@ -147,8 +130,8 @@ def _csv_data_row_count(raw: bytes) -> int:
 def _generic_mapping(parser: GenericCsvParser, raw: bytes) -> dict[str, str]:
     if parser.column_map:
         return clean_column_map(parser.column_map)
-    text = _decode(raw)
-    delimiter = _sniff_delimiter(text)
+    text = decode_csv(raw)
+    delimiter = sniff_delimiter(text)
     reader = csv.DictReader(io.StringIO(text), delimiter=delimiter)
     return {
         key: value
@@ -161,8 +144,8 @@ def _generic_row_issues(
     raw: bytes,
     mapping: dict[str, str],
 ) -> list[ImportQualityIssue]:
-    text = _decode(raw)
-    delimiter = _sniff_delimiter(text)
+    text = decode_csv(raw)
+    delimiter = sniff_delimiter(text)
     reader = csv.DictReader(io.StringIO(text), delimiter=delimiter)
     headers = set(reader.fieldnames or [])
     missing_required = sorted(REQUIRED_IMPORT_FIELDS - set(mapping))
@@ -196,11 +179,11 @@ def _generic_row_issues(
         raw_date = (row.get(date_col, "") or "").strip()
         if not raw_date:
             row_hits[("missing_date", "error")].append(index)
-        elif _parse_date(raw_date) is None:
+        elif parse_date(raw_date) is None:
             row_hits[("invalid_date", "error")].append(index)
 
         raw_amount = (row.get(amount_col, "") or "").strip()
-        amount = _parse_decimal(raw_amount)
+        amount = parse_decimal(raw_amount)
         if not raw_amount:
             row_hits[("missing_amount", "error")].append(index)
         elif amount is None:

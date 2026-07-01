@@ -1,10 +1,9 @@
 """Read-side transaction queries."""
 from __future__ import annotations
 
-from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
-from typing import Any, Literal
+from typing import Any
 
 from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.orm import Session
@@ -28,52 +27,12 @@ from finance.transactions.merchants import (
     merchant_identity,
 )
 from finance.transactions.normalization import normalize_text
-
-CategoryState = Literal[
-    "all",
-    "categorized",
-    "uncategorized",
-    "suggested",
-    "assignable",
-    "needs_review",
-    "rejected",
-]
-
-
-@dataclass(frozen=True)
-class TransactionFilters:
-    date_from: date | None = None
-    date_to: date | None = None
-    include_transfers: bool = True
-    import_id: int | None = None
-    merchant: str | None = None
-    search: str | None = None
-    direction: str | None = None
-    category: str | None = None
-    category_state: CategoryState = "all"
-    has_suggestion: bool | None = None
-    min_confidence: float | None = None
-    max_confidence: float | None = None
-    transaction_type: str | None = None
-    review_priority: bool = False
-
-
-@dataclass(frozen=True)
-class CategorySummary:
-    category: str | None
-    total_debit: Decimal
-    total_credit: Decimal
-    count: int
-
-
-@dataclass(frozen=True)
-class MerchantGroupSummary:
-    merchant: str
-    count: int
-    total_debit: Decimal
-    total_credit: Decimal
-    common_category: str | None
-    sample_titles: list[str]
+from finance.transactions.types import (
+    CategorySummary,
+    FilterSummaryResult,
+    MerchantGroupSummary,
+    TransactionFilters,
+)
 
 
 def _category_candidate_conditions():
@@ -180,14 +139,6 @@ def filtered_transactions_stmt(filters: TransactionFilters):
         stmt = stmt.where(Transaction.category_confidence <= filters.max_confidence)
     stmt = stmt.order_by(Transaction.booking_date.desc())
     return stmt
-
-
-@dataclass(frozen=True)
-class FilterSummaryResult:
-    count: int
-    total_income: Decimal
-    total_expenses: Decimal
-    net: Decimal
 
 
 def filter_summary(

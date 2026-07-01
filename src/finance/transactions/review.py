@@ -8,7 +8,6 @@ not receive category suggestions.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Any
 
 from sqlalchemy import func, select
@@ -28,33 +27,12 @@ from finance.ml.feedback import (
     subscription_feedback_summary,
 )
 from finance.transactions.merchants import load_merchant_alias_maps, merchant_canonical_key
+from finance.transactions.types import RareClass, RecurringMerchant, ReviewCounts
 
 DEFAULT_CONFIDENCE_THRESHOLD = 0.55
 DEFAULT_RARE_CLASS_THRESHOLD = 40
 DEFAULT_RECURRING_MIN_COUNT = 3
 DEFAULT_RECURRING_LIMIT = 10
-
-
-@dataclass(frozen=True)
-class ReviewCounts:
-    uncategorized: int
-    no_suggestion: int
-    low_confidence: int
-    ready_to_accept: int
-    rejected: int
-    categorized: int
-
-
-@dataclass(frozen=True)
-class RareClass:
-    category: str
-    count: int
-
-
-@dataclass(frozen=True)
-class RecurringMerchant:
-    merchant: str
-    count: int
 
 
 def _count(session: Session, *conditions: Any) -> int:
@@ -165,30 +143,27 @@ def recurring_unruled_merchants(
     ]
 
     alias_map, _label_map = load_merchant_alias_maps(session)
-    grouped: dict[str, dict[str, object]] = {}
+    counts: dict[str, int] = {}
+    labels: dict[str, str] = {}
     for row in rows:
         merchant_key = merchant_canonical_key(row.merchant, row.title, alias_map=alias_map)
         if not merchant_key:
             continue
-        group = grouped.setdefault(
-            merchant_key,
-            {"merchant": row.merchant, "count": 0},
-        )
-        group["count"] = int(group["count"]) + 1
+        labels.setdefault(merchant_key, str(row.merchant))
+        counts[merchant_key] = counts.get(merchant_key, 0) + 1
 
     out: list[RecurringMerchant] = []
-    for merchant_key, group in sorted(
-        grouped.items(),
-        key=lambda item: int(item[1]["count"]),
+    for merchant_key, count in sorted(
+        counts.items(),
+        key=lambda item: item[1],
         reverse=True,
     ):
-        count = int(group["count"])
         if count < min_count:
             continue
         merchant_norm = merchant_key
         if any(rule in merchant_norm or merchant_norm in rule for rule in rule_norms):
             continue
-        out.append(RecurringMerchant(merchant=str(group["merchant"]), count=count))
+        out.append(RecurringMerchant(merchant=labels[merchant_key], count=count))
         if len(out) >= limit:
             break
     return out

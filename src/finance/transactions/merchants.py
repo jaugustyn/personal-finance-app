@@ -13,6 +13,12 @@ from finance.analytics.filters import expense_category_candidate_filters
 from finance.currencies import amount_base_expr
 from finance.domain.models import MerchantAlias, Transaction
 from finance.transactions.normalization import normalize_merchant
+from finance.transactions.types import (
+    MerchantAliasSuggestion,
+    MerchantCandidate,
+    MerchantCandidateVariant,
+    MerchantIdentity,
+)
 
 MERCHANT_GROUP_STOPWORDS = {
     "blik",
@@ -63,41 +69,6 @@ GENERIC_MERCHANT_KEYS = {
     "platnosc karta",
     "transakcja",
 }
-
-
-@dataclass(frozen=True)
-class MerchantIdentity:
-    alias_key: str
-    canonical_key: str
-    display_label: str
-
-
-@dataclass(frozen=True)
-class MerchantCandidateVariant:
-    alias_key: str
-    alias_label: str
-    count: int
-    total_debit: Decimal
-
-
-@dataclass(frozen=True)
-class MerchantAliasSuggestion:
-    alias_key: str
-    alias_label: str
-    canonical_key: str
-    canonical_label: str
-    count: int
-    total_amount: Decimal
-
-
-@dataclass(frozen=True)
-class MerchantCandidate:
-    canonical_key: str
-    suggested_label: str
-    aliases: list[str]
-    variants: list[MerchantCandidateVariant]
-    count: int
-    total_debit: Decimal
 
 
 @dataclass

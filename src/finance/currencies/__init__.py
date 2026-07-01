@@ -2,8 +2,6 @@
 
 from finance.currencies.providers import FxRateProvider, NbpFxRateProvider
 from finance.currencies.service import (
-    ConversionResult,
-    MissingFxRate,
     add_manual_rate,
     amount_base_expr,
     convert_amount,
@@ -14,6 +12,7 @@ from finance.currencies.service import (
     resolve_base_currency,
     status,
 )
+from finance.currencies.types import ConversionResult, MissingFxRate
 
 __all__ = [
     "ConversionResult",
