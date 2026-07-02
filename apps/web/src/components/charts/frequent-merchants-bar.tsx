@@ -23,7 +23,12 @@ import { tooltipStyle, truncateChartLabel } from "./chart-utils";
 export function FrequentMerchantsBar({
   data,
 }: {
-  data: { merchant: string; count: number; category?: string | null }[];
+  data: {
+    merchant: string;
+    merchant_display?: string | null;
+    count: number;
+    category?: string | null;
+  }[];
 }) {
   const { t } = useT();
   const { data: categories = [] } = useCategories();
@@ -35,7 +40,7 @@ export function FrequentMerchantsBar({
     return map;
   }, [categories]);
   const rows = data.map((d) => ({
-    merchant: d.merchant,
+    merchant: d.merchant_display || d.merchant,
     count: Number(d.count),
     category: d.category ?? null,
   }));

@@ -27,6 +27,7 @@ import {
 } from "@/components/ui/select";
 import { formatDate } from "@/lib/utils";
 import { useT, tCategory } from "@/lib/i18n";
+import { showErrorToast } from "@/lib/toasts";
 import { useLocalStorageState } from "@/hooks/use-local-storage-state";
 import { transactionsHref } from "@/lib/transaction-links";
 import { HelpCircle } from "lucide-react";
@@ -134,7 +135,7 @@ export default function AnomaliesPage() {
       qc.invalidateQueries({ queryKey: ["mlDashboard"] });
       feedbackToast(variables.action, t);
     },
-    onError: () => toast.error(t("toast.error")),
+    onError: (error) => showErrorToast(error, t("toast.error")),
   });
   const columns: DataTableColumn<Anomaly>[] = [
     {
@@ -147,16 +148,21 @@ export default function AnomaliesPage() {
     {
       id: "merchant",
       header: t("transactions.column.merchant"),
-      sortValue: (a) => a.merchant || a.title,
+      sortValue: (a) => a.merchant_display || a.merchant || a.title,
       className: "font-medium",
       cell: (a) => (
         <>
           <Link
-            href={transactionsHref({ search: a.merchant || a.title })}
+            href={transactionsHref({
+              merchant_canonical_key: a.merchant_canonical_key,
+              search: a.merchant_canonical_key
+                ? undefined
+                : a.merchant || a.title,
+            })}
             className="text-primary underline-offset-4 hover:underline"
             title={t("anomalies.openTransaction")}
           >
-            {a.merchant || a.title}
+            {a.merchant_display || a.merchant || a.title}
           </Link>
           {a.reasons.length > 0 ? (
             <div className="mt-1 max-w-md text-xs font-normal text-muted-foreground">

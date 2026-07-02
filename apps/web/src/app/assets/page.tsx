@@ -24,6 +24,7 @@ import { PortfolioHistoryChart } from "@/components/charts";
 import { formatCurrency, formatDate, formatPercent } from "@/lib/utils";
 import { Loader2, RefreshCw, Trash2, Plus } from "lucide-react";
 import { useT } from "@/lib/i18n";
+import { showErrorToast } from "@/lib/toasts";
 
 /** Currencies offered when adding a position (kept simple, no live FX list). */
 const CURRENCIES = [
@@ -62,7 +63,7 @@ export default function AssetsPage() {
       qc.invalidateQueries({ queryKey: ["assetHistory"] });
       toast.success(t("toast.refreshed"));
     },
-    onError: () => toast.error(t("toast.error")),
+    onError: (error) => showErrorToast(error, t("toast.error")),
   });
 
   const create = useMutation({
@@ -80,7 +81,7 @@ export default function AssetsPage() {
       });
       toast.success(t("toast.saved"));
     },
-    onError: () => toast.error(t("toast.error")),
+    onError: (error) => showErrorToast(error, t("toast.error")),
   });
 
   const remove = useMutation({
@@ -90,7 +91,7 @@ export default function AssetsPage() {
       qc.invalidateQueries({ queryKey: ["portfolioSummary"] });
       toast.success(t("toast.deleted"));
     },
-    onError: () => toast.error(t("toast.error")),
+    onError: (error) => showErrorToast(error, t("toast.error")),
   });
 
   const [form, setForm] = useState({

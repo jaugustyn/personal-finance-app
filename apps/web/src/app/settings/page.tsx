@@ -10,6 +10,7 @@ import {
   type UserProfile,
 } from "@/lib/api";
 import { useT, tCategory, tTransactionType } from "@/lib/i18n";
+import { showErrorToast } from "@/lib/toasts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -92,7 +93,7 @@ export default function SettingsPage() {
       setRuleMode("suggest_only");
       toast.success(t("toast.ruleAdded"));
     },
-    onError: () => toast.error(t("toast.error")),
+    onError: (error) => showErrorToast(error, t("toast.error")),
   });
 
   const patchRule = useMutation({
@@ -107,7 +108,7 @@ export default function SettingsPage() {
       qc.invalidateQueries({ queryKey: RULES_KEY });
       toast.success(t("toast.deleted"));
     },
-    onError: () => toast.error(t("toast.error")),
+    onError: (error) => showErrorToast(error, t("toast.error")),
   });
   const ruleColumns: DataTableColumn<PersonalRule>[] = [
     {
@@ -357,7 +358,7 @@ function ProfileForm({ profile }: { profile: UserProfile }) {
       qc.invalidateQueries({ queryKey: PROFILE_KEY });
       toast.success(t("toast.saved"));
     },
-    onError: () => toast.error(t("toast.error")),
+    onError: (error) => showErrorToast(error, t("toast.error")),
   });
 
   return (

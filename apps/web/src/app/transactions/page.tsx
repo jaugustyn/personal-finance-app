@@ -29,6 +29,7 @@ export default function TransactionsPage() {
       key: window.location.search,
       search: valueOrUndefined(params.get("search")),
       category: valueOrUndefined(params.get("category")),
+      merchantCanonicalKey: valueOrUndefined(params.get("merchant_canonical_key")),
       direction: parseDirection(params.get("direction")),
       transactionType: valueOrUndefined(params.get("transaction_type")),
       dateFrom: valueOrUndefined(params.get("date_from")),
@@ -75,6 +76,7 @@ function hasTransactionFilterParams(params: URLSearchParams): boolean {
   return [
     "search",
     "category",
+    "merchant_canonical_key",
     "direction",
     "transaction_type",
     "date_from",

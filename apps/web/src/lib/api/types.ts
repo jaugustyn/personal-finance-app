@@ -40,6 +40,8 @@ export interface NetWorthPoint {
 
 export interface MerchantStat {
   merchant: string;
+  merchant_display?: string | null;
+  merchant_canonical_key?: string | null;
   amount: number;
   count: number;
   category?: string | null;
@@ -55,6 +57,10 @@ export interface Transaction {
   id: number;
   booking_date: string;
   merchant: string;
+  merchant_raw?: string | null;
+  merchant_display?: string | null;
+  merchant_canonical_key?: string | null;
+  merchant_alias_key?: string | null;
   title: string;
   amount: number | string;
   currency: string;
@@ -143,10 +149,13 @@ export interface CategoryDef {
 
 export interface MerchantGroup {
   merchant: string;
+  merchant_display: string;
+  merchant_canonical_key: string;
   count: number;
   total_debit: number | string;
   total_credit: number | string;
   common_category: string | null;
+  sample_merchants: string[];
   sample_titles: string[];
 }
 
@@ -160,7 +169,12 @@ export interface ReviewSummary {
     categorized: number;
   };
   rare_classes: { category: string; count: number }[];
-  recurring_unruled: { merchant: string; count: number }[];
+  recurring_unruled: {
+    merchant: string;
+    merchant_display: string;
+    merchant_canonical_key: string;
+    count: number;
+  }[];
   feedback_quality: Record<string, unknown>;
   confusion_hotspots: Record<string, unknown>[];
   anomaly_feedback: Record<string, unknown>;
@@ -173,6 +187,8 @@ export interface ReviewQueueItem {
   transaction_id: number;
   booking_date: string;
   merchant: string;
+  merchant_display: string;
+  merchant_canonical_key: string;
   title: string;
   amount: number;
   currency: string;
@@ -206,7 +222,13 @@ export interface Recap {
     previous: number;
     delta: number;
   }[];
-  top_merchants: { merchant: string; amount: number; count: number }[];
+  top_merchants: {
+    merchant: string;
+    merchant_display?: string | null;
+    merchant_canonical_key?: string | null;
+    amount: number;
+    count: number;
+  }[];
   limit_breaches: {
     category: string;
     spent: number;
@@ -250,6 +272,8 @@ export interface Anomaly {
   id: number;
   booking_date: string;
   merchant: string;
+  merchant_display: string;
+  merchant_canonical_key: string;
   title: string;
   amount: number;
   direction: "debit" | "credit";
@@ -268,6 +292,8 @@ export interface Anomaly {
 export interface Subscription {
   merchant: string;
   merchant_key: string;
+  merchant_display: string;
+  merchant_canonical_key: string;
   display_name: string;
   currency: string;
   base_currency: string;
@@ -313,6 +339,8 @@ export interface SubscriptionTransaction {
   id: number;
   booking_date: string;
   merchant: string;
+  merchant_display: string;
+  merchant_canonical_key: string;
   title: string;
   amount: number;
   currency: string;
@@ -380,6 +408,17 @@ export interface AssetHistoryPoint {
 
 export interface SankeyNode {
   name: string;
+  node_type?:
+    | "income"
+    | "category"
+    | "merchant"
+    | "other"
+    | "savings"
+    | string
+    | null;
+  category?: string | null;
+  merchant_display?: string | null;
+  merchant_canonical_key?: string | null;
 }
 
 export interface SankeyLink {
@@ -525,6 +564,7 @@ export interface MerchantCandidateVariant {
 
 export interface MerchantCandidate {
   canonical_key: string;
+  canonical_label: string;
   suggested_label: string;
   aliases: string[];
   variants: MerchantCandidateVariant[];

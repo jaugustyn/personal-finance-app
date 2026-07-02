@@ -1,4 +1,5 @@
 import { request } from "./client";
+import { withQuery } from "./query";
 import type {
   Anomaly,
   Direction,
@@ -20,7 +21,7 @@ export const mlApi = {
   mlDashboard: () => request<MlDashboard>("/ml/dashboard"),
   mlComparison: () => request<MlComparison>("/ml/comparison"),
   reviewQueue: (limit = 20) =>
-    request<ReviewQueueItem[]>(`/ml/review-queue?limit=${limit}`),
+    request<ReviewQueueItem[]>(withQuery("/ml/review-queue", { limit })),
   feedbackReport: () => request<FeedbackReport>("/ml/feedback-report"),
   recordMlFeedback: (payload: MlFeedbackInput) =>
     request<MlFeedbackResponse>("/ml/feedback", {
@@ -31,21 +32,16 @@ export const mlApi = {
     request<MlReclassifyResponse>("/ml/reclassify", { method: "POST" }),
   retrainClassifier: (
     params: { estimator?: string; feature_set?: string } = {},
-  ) => {
-    const q = new URLSearchParams();
-    if (params.estimator) q.set("estimator", params.estimator);
-    if (params.feature_set) q.set("feature_set", params.feature_set);
-    const qs = q.toString();
-    return request<MlRetrainResponse>(
-      `/ml/retrain${qs ? `?${qs}` : ""}`,
+  ) =>
+    request<MlRetrainResponse>(
+      withQuery("/ml/retrain", {
+        estimator: params.estimator,
+        feature_set: params.feature_set,
+      }),
       { method: "POST" },
-    );
-  },
-  forecast: (category: string | null, horizon = 3) => {
-    const q = new URLSearchParams({ horizon: String(horizon) });
-    if (category) q.set("category", category);
-    return request<ForecastResponse>(`/forecast?${q.toString()}`);
-  },
+    ),
+  forecast: (category: string | null, horizon = 3) =>
+    request<ForecastResponse>(withQuery("/forecast", { horizon, category })),
   anomalies: (
     params: {
       direction?: Direction;
@@ -54,16 +50,16 @@ export const mlApi = {
       mode?: "review" | "suspicious" | "all";
       include_model_only?: boolean;
     } = {},
-  ) => {
-    const q = new URLSearchParams();
-    if (params.direction) q.set("direction", params.direction === "all" ? "both" : params.direction);
-    if (params.contamination) q.set("contamination", String(params.contamination));
-    if (params.limit) q.set("limit", String(params.limit));
-    if (params.mode) q.set("mode", params.mode);
-    if (params.include_model_only) q.set("include_model_only", "true");
-    const qs = q.toString();
-    return request<Anomaly[]>(`/anomalies${qs ? `?${qs}` : ""}`);
-  },
+  ) =>
+    request<Anomaly[]>(
+      withQuery("/anomalies", {
+        direction: params.direction === "all" ? "both" : params.direction,
+        contamination: params.contamination,
+        limit: params.limit,
+        mode: params.mode,
+        include_model_only: params.include_model_only ? true : undefined,
+      }),
+    ),
   recordAnomalyFeedback: (
     transactionId: number,
     action: "relevant" | "not_relevant" | "ignore_merchant",
@@ -75,11 +71,13 @@ export const mlApi = {
         body: JSON.stringify({ action }),
       },
     ),
-  subscriptions: (minConfidence = 0.0, includeRejected = false) => {
-    const q = new URLSearchParams({ min_confidence: String(minConfidence) });
-    if (includeRejected) q.set("include_rejected", "true");
-    return request<Subscription[]>(`/subscriptions?${q.toString()}`);
-  },
+  subscriptions: (minConfidence = 0.0, includeRejected = false) =>
+    request<Subscription[]>(
+      withQuery("/subscriptions", {
+        min_confidence: minConfidence,
+        include_rejected: includeRejected ? true : undefined,
+      }),
+    ),
   subscriptionsOverview: () =>
     request<SubscriptionOverview>("/subscriptions/overview"),
   saveSubscriptionPreference: (payload: SubscriptionPreferenceInput) =>
@@ -87,13 +85,14 @@ export const mlApi = {
       method: "POST",
       body: JSON.stringify(payload),
     }),
-  recordSubscriptionFeedback: (
-    merchant: string,
-    action: "confirm",
-    subscriptionKey?: string,
-  ) =>
+  recordSubscriptionFeedback: (payload: {
+    action: "confirm";
+    merchant?: string | null;
+    merchant_canonical_key?: string | null;
+    subscription_key?: string | null;
+  }) =>
     request<{ id: number | null; status: string }>("/subscriptions/feedback", {
       method: "POST",
-      body: JSON.stringify({ merchant, action, subscription_key: subscriptionKey }),
+      body: JSON.stringify(payload),
     }),
 };

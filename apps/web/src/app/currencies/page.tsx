@@ -15,6 +15,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { useT } from "@/lib/i18n";
+import { showErrorToast } from "@/lib/toasts";
 
 const STATUS_KEY = ["currencies", "status"] as const;
 const RATES_KEY = ["currencies", "rates"] as const;
@@ -58,7 +59,7 @@ export default function CurrenciesPage() {
       setRate("");
       invalidateMoneyQueries(qc);
     },
-    onError: (error) => toast.error(String(error)),
+    onError: (error) => showErrorToast(error, t("toast.error")),
   });
   const fetchNbp = useMutation({
     mutationFn: api.fetchNbpRates,
@@ -71,7 +72,7 @@ export default function CurrenciesPage() {
       );
       invalidateMoneyQueries(qc);
     },
-    onError: (error) => toast.error(String(error)),
+    onError: (error) => showErrorToast(error, t("toast.error")),
   });
   const recompute = useMutation({
     mutationFn: api.recomputeCurrencies,
@@ -84,7 +85,7 @@ export default function CurrenciesPage() {
       );
       invalidateMoneyQueries(qc);
     },
-    onError: (error) => toast.error(String(error)),
+    onError: (error) => showErrorToast(error, t("toast.error")),
   });
 
   const baseCurrency = statusQuery.data?.base_currency ?? "PLN";

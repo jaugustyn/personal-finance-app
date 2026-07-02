@@ -10,6 +10,7 @@ import { TableSkeleton } from "@/components/ui/skeleton";
 import { api, type MerchantGroup } from "@/lib/api";
 import { useT } from "@/lib/i18n";
 import { formatCurrency } from "@/lib/utils";
+import { transactionQueryKeys } from "../_lib/query-keys";
 
 export function GroupsView() {
   const { t } = useT();
@@ -18,19 +19,25 @@ export function GroupsView() {
   const [pickers, setPickers] = useState<Record<string, string | null>>({});
 
   const query = useQuery<MerchantGroup[]>({
-    queryKey: ["transactions", "groups", { onlyUncat }],
+    queryKey: transactionQueryKeys.groups({ onlyUncategorized: onlyUncat }),
     queryFn: () =>
       api.merchantGroups({ only_uncategorized: onlyUncat, min_count: 2 }),
   });
 
   const apply = useMutation({
-    mutationFn: (vars: { merchant: string; category: string | null }) =>
-      api.bulkCategorize({ merchant: vars.merchant, category: vars.category }),
+    mutationFn: (vars: {
+      merchantCanonicalKey: string;
+      category: string | null;
+    }) =>
+      api.bulkCategorize({
+        merchant_canonical_key: vars.merchantCanonicalKey,
+        category: vars.category,
+      }),
     onSuccess: (_data, vars) => {
-      qc.invalidateQueries({ queryKey: ["transactions"] });
+      qc.invalidateQueries({ queryKey: transactionQueryKeys.all });
       setPickers((p) => {
         const next = { ...p };
-        delete next[vars.merchant];
+        delete next[vars.merchantCanonicalKey];
         return next;
       });
     },
@@ -46,16 +53,31 @@ export function GroupsView() {
       header: t("transactions.column.merchant"),
       sortValue: (g) => g.merchant,
       className: "font-medium",
-      cell: (g) => (
-        <>
-          <div className="truncate">{g.merchant}</div>
-          {g.sample_titles.length > 0 && (
-            <div className="line-clamp-1 text-xs text-muted-foreground">
-              {g.sample_titles.slice(0, 2).join(" · ")}
-            </div>
-          )}
-        </>
-      ),
+      cell: (g) => {
+        const merchantDisplay = g.merchant_display || g.merchant;
+        const rawMerchants = (g.sample_merchants ?? []).filter(
+          (merchant) => !sameDisplayText(merchant, merchantDisplay),
+        );
+        return (
+          <>
+            <div className="truncate">{merchantDisplay}</div>
+            {rawMerchants.length > 0 ? (
+              <div className="line-clamp-1 text-xs font-normal text-muted-foreground">
+                {t("transactions.originalMerchant", {
+                  value: rawMerchants.slice(0, 3).join(" · "),
+                })}
+              </div>
+            ) : null}
+            {g.sample_titles.length > 0 ? (
+              <div className="line-clamp-1 text-xs text-muted-foreground">
+                {t("transactions.sourceTitle", {
+                  value: g.sample_titles.slice(0, 2).join(" · "),
+                })}
+              </div>
+            ) : null}
+          </>
+        );
+      },
     },
     {
       id: "amount",
@@ -96,8 +118,8 @@ export function GroupsView() {
       sortValue: (g) => g.common_category ?? "",
       cell: (g) => {
         const picked =
-          g.merchant in pickers
-            ? pickers[g.merchant]
+          g.merchant_canonical_key in pickers
+            ? pickers[g.merchant_canonical_key]
             : (g.common_category ?? null);
         return (
           <CategoryCombobox
@@ -105,7 +127,7 @@ export function GroupsView() {
             onChange={(sel) =>
               setPickers((p) => ({
                 ...p,
-                [g.merchant]: sel.category,
+                [g.merchant_canonical_key]: sel.category,
               }))
             }
             groupsOnly
@@ -122,8 +144,8 @@ export function GroupsView() {
       className: "w-28",
       cell: (g) => {
         const picked =
-          g.merchant in pickers
-            ? pickers[g.merchant]
+          g.merchant_canonical_key in pickers
+            ? pickers[g.merchant_canonical_key]
             : (g.common_category ?? null);
         return (
           <Button
@@ -131,7 +153,7 @@ export function GroupsView() {
             disabled={apply.isPending || !picked}
             onClick={() =>
               apply.mutate({
-                merchant: g.merchant,
+                merchantCanonicalKey: g.merchant_canonical_key,
                 category: picked,
               })
             }
@@ -174,7 +196,7 @@ export function GroupsView() {
           <DataTable
             columns={columns}
             data={query.data ?? []}
-            rowKey={(g) => g.merchant}
+            rowKey={(g) => g.merchant_canonical_key}
             initialSort={{ id: "count", dir: "desc" }}
             tableClassName="min-w-[760px] table-fixed"
           />
@@ -182,4 +204,15 @@ export function GroupsView() {
       </CardContent>
     </Card>
   );
+}
+
+function sameDisplayText(
+  left: string | null | undefined,
+  right: string | null | undefined,
+) {
+  return normalizeDisplayText(left) === normalizeDisplayText(right);
+}
+
+function normalizeDisplayText(value: string | null | undefined) {
+  return (value ?? "").trim().replace(/\s+/g, " ").toLocaleLowerCase("pl");
 }

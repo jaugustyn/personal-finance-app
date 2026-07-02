@@ -2,14 +2,14 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { toast } from "sonner";
+import { useQuery } from "@tanstack/react-query";
 import {
   api,
   type CategoryState,
   type Direction,
   type FilterSummary,
   type Transaction,
+  type TransactionFilterParams,
 } from "@/lib/api";
 import { useT } from "@/lib/i18n";
 import { useConfirm } from "@/components/confirm-dialog";
@@ -21,6 +21,8 @@ import {
   hasRejectedCategorySuggestion,
   isSuggestionReadyToAccept,
 } from "../_lib/constants";
+import { transactionQueryKeys } from "../_lib/query-keys";
+import { useTransactionMutations } from "../_lib/use-transaction-mutations";
 import { BulkActionsBar } from "./bulk-actions-bar";
 import { TransactionFilters } from "./transaction-filters";
 import { TransactionsTable } from "./transactions-table";
@@ -34,6 +36,7 @@ export interface TransactionInitialFilters {
   key: string;
   search?: string;
   category?: string;
+  merchantCanonicalKey?: string;
   direction?: Direction;
   transactionType?: string;
   dateFrom?: string;
@@ -45,7 +48,6 @@ export interface TransactionInitialFilters {
 
 export function ListView({ reviewMode, initialFilters }: ListViewProps) {
   const { t } = useT();
-  const qc = useQueryClient();
   const confirm = useConfirm();
   const storagePrefix = reviewMode
     ? "finance.transactions.review"
@@ -66,6 +68,9 @@ export function ListView({ reviewMode, initialFilters }: ListViewProps) {
   const [importId, setImportId] = useState<number | undefined>(
     initialFilters?.importId,
   );
+  const [merchantCanonicalKey, setMerchantCanonicalKey] = useState<
+    string | undefined
+  >(initialFilters?.merchantCanonicalKey);
   const [includeTransfers, setIncludeTransfers] = useLocalStorageState(
     `${storagePrefix}.includeTransfers`,
     !reviewMode,
@@ -102,6 +107,7 @@ export function ListView({ reviewMode, initialFilters }: ListViewProps) {
     if (!initialFilters?.key) return;
     if (initialFilters.search !== undefined) setSearch(initialFilters.search);
     if (initialFilters.category !== undefined) setCategory(initialFilters.category);
+    setMerchantCanonicalKey(initialFilters.merchantCanonicalKey);
     if (initialFilters.direction !== undefined) setDirection(initialFilters.direction);
     if (initialFilters.transactionType !== undefined) {
       setTransactionType(initialFilters.transactionType);
@@ -120,6 +126,7 @@ export function ListView({ reviewMode, initialFilters }: ListViewProps) {
     initialFilters?.key,
     initialFilters?.search,
     initialFilters?.category,
+    initialFilters?.merchantCanonicalKey,
     initialFilters?.direction,
     initialFilters?.transactionType,
     initialFilters?.dateFrom,
@@ -137,10 +144,11 @@ export function ListView({ reviewMode, initialFilters }: ListViewProps) {
     setTransactionType,
   ]);
 
-  const filterParams = {
+  const filterParams: TransactionFilterParams = {
     search: searchFilter,
     direction: directionFilter,
     category: categoryFilter,
+    merchant_canonical_key: merchantCanonicalKey,
     date_from: dateFrom || undefined,
     date_to: dateTo || undefined,
     import_id: importId,
@@ -152,13 +160,7 @@ export function ListView({ reviewMode, initialFilters }: ListViewProps) {
   };
 
   const query = useQuery({
-    queryKey: [
-      "transactions",
-      {
-        page,
-        ...filterParams,
-      },
-    ],
+    queryKey: transactionQueryKeys.list(page, filterParams),
     queryFn: () =>
       api.transactions({
         limit: PAGE_SIZE,
@@ -168,7 +170,7 @@ export function ListView({ reviewMode, initialFilters }: ListViewProps) {
   });
 
   const summaryQuery = useQuery<FilterSummary>({
-    queryKey: ["transactions", "filter-summary", filterParams],
+    queryKey: transactionQueryKeys.filterSummary(filterParams),
     queryFn: () => api.filterSummary(filterParams),
   });
 
@@ -198,161 +200,22 @@ export function ListView({ reviewMode, initialFilters }: ListViewProps) {
     [filtered, selected],
   );
 
-  const invalidateAll = () => {
-    qc.invalidateQueries({ queryKey: ["transactions"] });
-    qc.invalidateQueries({ queryKey: ["overview"] });
-    qc.invalidateQueries({ queryKey: ["byCategory"] });
-    qc.invalidateQueries({ queryKey: ["recent"] });
-  };
-
-  const patch = useMutation({
-    mutationFn: ({
-      id,
-      value,
-      subcategory,
-      rememberRule,
-    }: {
-      id: number;
-      value: string | null;
-      subcategory?: string | null;
-      rememberRule?: boolean;
-    }) =>
-      api.patchCategory(id, value, {
-        subcategory,
-        remember_rule: rememberRule,
-      }),
-    onSuccess: () => {
-      invalidateAll();
-      qc.invalidateQueries({ queryKey: ["personalRules"] });
-      toast.success(t("toast.saved"));
-    },
-    onError: () => toast.error(t("toast.error")),
-  });
-
-  const deleteOne = useMutation({
-    mutationFn: (id: number) => api.deleteTransaction(id),
-    onSuccess: () => {
-      invalidateAll();
-      toast.success(t("toast.deleted"));
-    },
-    onError: () => toast.error(t("toast.error")),
-  });
-
-  const patchType = useMutation({
-    mutationFn: ({ id, value }: { id: number; value: string }) =>
-      api.patchType(id, value),
-    onSuccess: () => {
-      invalidateAll();
-      toast.success(t("toast.saved"));
-    },
-    onError: () => toast.error(t("toast.error")),
-  });
-
-  const patchAnnotations = useMutation({
-    mutationFn: ({
-      id,
-      notes,
-      tags,
-    }: {
-      id: number;
-      notes?: string | null;
-      tags?: string[];
-    }) => api.patchAnnotations(id, { notes, tags }),
-    onSuccess: () => {
-      invalidateAll();
-      toast.success(t("toast.saved"));
-    },
-    onError: () => toast.error(t("toast.error")),
-  });
-
-  const bulkCategorize = useMutation({
-    mutationFn: (vars: { ids: number[]; category: string | null }) =>
-      api.bulkCategorize({ ids: vars.ids, category: vars.category }),
-    onSuccess: () => {
-      invalidateAll();
-      setSelected(new Set());
-      setBulkCat(null);
-      toast.success(t("toast.saved"));
-    },
-    onError: () => toast.error(t("toast.error")),
-  });
-
-  const bulkSetType = useMutation({
-    mutationFn: (vars: { ids: number[]; transactionType: string }) =>
-      api.bulkCategorize({
-        ids: vars.ids,
-        transaction_type: vars.transactionType,
-      }),
-    onSuccess: () => {
-      invalidateAll();
-      setSelected(new Set());
-      setBulkType("");
-      toast.success(t("toast.saved"));
-    },
-    onError: () => toast.error(t("toast.error")),
-  });
-
-  const bulkDelete = useMutation({
-    mutationFn: (ids: number[]) => api.bulkDelete(ids),
-    onSuccess: () => {
-      invalidateAll();
-      setSelected(new Set());
-      toast.success(t("toast.deleted"));
-    },
-    onError: () => toast.error(t("toast.error")),
-  });
-
-  const markTransfer = useMutation({
-    mutationFn: (vars: { ids: number[]; transfer: boolean }) =>
-      api.bulkCategorize({
-        ids: vars.ids,
-        category: null,
-        mark_transfer: vars.transfer,
-      }),
-    onSuccess: () => {
-      invalidateAll();
-      setSelected(new Set());
-      toast.success(t("toast.saved"));
-    },
-    onError: () => toast.error(t("toast.error")),
-  });
-
-  const acceptSuggestions = useMutation({
-    mutationFn: ({
-      ids,
-      minConfidence,
-      manual,
-    }: {
-      ids: number[];
-      minConfidence: number;
-      manual?: boolean;
-    }) => api.acceptSuggestions({ ids, min_confidence: minConfidence, manual }),
-    onSuccess: () => {
-      invalidateAll();
-      setSelected(new Set());
-      toast.success(t("toast.saved"));
-    },
-    onError: () => toast.error(t("toast.error")),
-  });
-
-  const rejectSuggestions = useMutation({
-    mutationFn: (ids: number[]) => api.rejectSuggestions({ ids }),
-    onSuccess: () => {
-      invalidateAll();
-      setSelected(new Set());
-      toast.success(t("toast.saved"));
-    },
-    onError: () => toast.error(t("toast.error")),
-  });
-
-  const restoreSuggestions = useMutation({
-    mutationFn: (ids: number[]) => api.restoreSuggestions({ ids }),
-    onSuccess: () => {
-      invalidateAll();
-      setSelected(new Set());
-      toast.success(t("toast.saved"));
-    },
-    onError: () => toast.error(t("toast.error")),
+  const {
+    patchCategory,
+    deleteOne,
+    patchType,
+    patchAnnotations,
+    bulkCategorize,
+    bulkSetType,
+    bulkDelete,
+    markTransfer,
+    acceptSuggestions,
+    rejectSuggestions,
+    restoreSuggestions,
+  } = useTransactionMutations({
+    clearSelection: () => setSelected(new Set()),
+    clearBulkCategory: () => setBulkCat(null),
+    clearBulkType: () => setBulkType(""),
   });
 
   const hasActiveFilters =
@@ -365,6 +228,7 @@ export function ListView({ reviewMode, initialFilters }: ListViewProps) {
     minConfidence !== "" ||
     includeTransfers !== !reviewMode ||
     (reviewMode && reviewState !== "assignable") ||
+    merchantCanonicalKey !== undefined ||
     importId !== undefined;
 
   const clearFilters = () => {
@@ -378,6 +242,7 @@ export function ListView({ reviewMode, initialFilters }: ListViewProps) {
     setIncludeTransfers(!reviewMode);
     setReviewState("assignable");
     setImportId(undefined);
+    setMerchantCanonicalKey(undefined);
     setPage(0);
   };
 
@@ -535,11 +400,15 @@ export function ListView({ reviewMode, initialFilters }: ListViewProps) {
           onToggleAll={toggleAll}
           onToggleOne={toggleOne}
           onPatchCategory={(id, value, subcategory, rememberRule) =>
-            patch.mutate({ id, value, subcategory, rememberRule })
+            patchCategory.mutate({ id, value, subcategory, rememberRule })
           }
           onPatchType={(id, value) => patchType.mutate({ id, value })}
           onAcceptSuggestion={(id) =>
-            acceptSuggestions.mutate({ ids: [id], minConfidence: 0, manual: true })
+            acceptSuggestions.mutate({
+              ids: [id],
+              minConfidence: 0,
+              manual: true,
+            })
           }
           onRejectSuggestion={(id) => rejectSuggestions.mutate([id])}
           onRestoreSuggestion={(id) => restoreSuggestions.mutate([id])}

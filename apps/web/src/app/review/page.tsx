@@ -26,7 +26,12 @@ const COUNT_KEYS = [
 ] as const;
 
 type RareClassRow = { category: string; count: number };
-type RecurringMerchantRow = { merchant: string; count: number };
+type RecurringMerchantRow = {
+  merchant: string;
+  merchant_display: string;
+  merchant_canonical_key: string;
+  count: number;
+};
 
 export default function ReviewPage() {
   const { t } = useT();
@@ -69,17 +74,18 @@ export default function ReviewPage() {
     {
       id: "merchant",
       header: t("transactions.column.merchant"),
-      sortValue: (row) => row.merchant,
+      sortValue: (row) => row.merchant_display || row.merchant,
       className: "font-medium",
       cell: (row) => (
         <Link
           href={transactionsHref({
             view: "review",
-            search: row.merchant,
+            merchant_canonical_key: row.merchant_canonical_key,
+            search: row.merchant_canonical_key ? undefined : row.merchant,
           })}
           className="text-primary underline-offset-4 hover:underline"
         >
-          {row.merchant}
+          {row.merchant_display || row.merchant}
         </Link>
       ),
     },
@@ -166,7 +172,7 @@ export default function ReviewPage() {
                 <DataTable
                   columns={recurringColumns}
                   data={query.data.recurring_unruled}
-                  rowKey={(row) => row.merchant}
+                  rowKey={(row) => row.merchant_canonical_key || row.merchant}
                   emptyTitle={t("review.recurring.empty")}
                   initialSort={{ id: "count", dir: "desc" }}
                 />
@@ -219,16 +225,19 @@ function ReviewQueuePanel({
     {
       id: "merchant",
       header: t("transactions.column.merchant"),
-      sortValue: (row) => row.merchant,
+      sortValue: (row) => row.merchant_display || row.merchant,
       cell: (row) => (
         <Link
           href={transactionsHref({
             view: "review",
-            search: row.merchant,
+            merchant_canonical_key: row.merchant_canonical_key,
+            search: row.merchant_canonical_key ? undefined : row.merchant,
           })}
           className="block min-w-0 text-primary underline-offset-4 hover:underline"
         >
-          <span className="block truncate font-medium">{row.merchant || row.title}</span>
+          <span className="block truncate font-medium">
+            {row.merchant_display || row.merchant || row.title}
+          </span>
           {row.title && row.title !== row.merchant ? (
             <span className="block truncate text-xs text-muted-foreground">
               {row.title}

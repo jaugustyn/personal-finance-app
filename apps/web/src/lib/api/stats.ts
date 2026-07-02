@@ -1,4 +1,5 @@
 import { request } from "./client";
+import { withQuery, type QueryValue } from "./query";
 import type {
   CashflowPoint,
   CategoryBreakdown,
@@ -21,20 +22,25 @@ interface DirectionalStatsOptions extends StatsRangeOptions {
   direction?: StatsDirection;
 }
 
-function rangeQuery(months: number, options: StatsRangeOptions = {}): string {
-  const params = new URLSearchParams({ months: String(months) });
-  if (options.allData) params.set("all_data", "true");
-  if (options.includeTransfers) params.set("include_transfers", "true");
-  return params.toString();
+function rangeQueryValues(
+  months: number,
+  options: StatsRangeOptions = {},
+): Record<string, QueryValue> {
+  return {
+    months,
+    all_data: options.allData ? true : undefined,
+    include_transfers: options.includeTransfers ? true : undefined,
+  };
 }
 
-function directionalRangeQuery(
+function directionalRangeQueryValues(
   months: number,
   options: DirectionalStatsOptions = {},
-): string {
-  const params = new URLSearchParams(rangeQuery(months, options));
-  if (options.direction) params.set("direction", options.direction);
-  return params.toString();
+): Record<string, QueryValue> {
+  return {
+    ...rangeQueryValues(months, options),
+    direction: options.direction,
+  };
 }
 
 export const statsApi = {
@@ -42,11 +48,11 @@ export const statsApi = {
     request<{ status: string; checks: Record<string, boolean>; auth_enabled: boolean }>("/health"),
   overview: (months = 12, allData = false, includeTransfers = false) =>
     request<OverviewStats>(
-      `/stats/overview?${rangeQuery(months, { allData, includeTransfers })}`,
+      withQuery("/stats/overview", rangeQueryValues(months, { allData, includeTransfers })),
     ),
   cashflow: (months = 12, allData = false, includeTransfers = false) =>
     request<CashflowPoint[]>(
-      `/stats/cashflow?${rangeQuery(months, { allData, includeTransfers })}`,
+      withQuery("/stats/cashflow", rangeQueryValues(months, { allData, includeTransfers })),
     ),
   byCategory: (
     months = 3,
@@ -56,15 +62,18 @@ export const statsApi = {
     includeTransfers = false,
   ) =>
     request<CategoryBreakdown[]>(
-      `/stats/by-category?${directionalRangeQuery(months, {
-        allData,
-        direction,
-        includeTransfers,
-      })}&limit=${limit}`,
+      withQuery("/stats/by-category", {
+        ...directionalRangeQueryValues(months, {
+          allData,
+          direction,
+          includeTransfers,
+        }),
+        limit,
+      }),
     ),
   networth: (months = 12, allData = false, includeTransfers = false) =>
     request<NetWorthPoint[]>(
-      `/stats/networth?${rangeQuery(months, { allData, includeTransfers })}`,
+      withQuery("/stats/networth", rangeQueryValues(months, { allData, includeTransfers })),
     ),
   topMerchants: (
     months = 3,
@@ -75,11 +84,15 @@ export const statsApi = {
     includeTransfers = false,
   ) =>
     request<MerchantStat[]>(
-      `/stats/top-merchants?${directionalRangeQuery(months, {
-        allData,
-        direction,
-        includeTransfers,
-      })}&limit=${limit}&sort=${sort}`,
+      withQuery("/stats/top-merchants", {
+        ...directionalRangeQueryValues(months, {
+          allData,
+          direction,
+          includeTransfers,
+        }),
+        limit,
+        sort,
+      }),
     ),
   categoryTrend: (
     months = 12,
@@ -89,16 +102,22 @@ export const statsApi = {
     includeTransfers = false,
   ) =>
     request<CategoryTrendPoint[]>(
-      `/stats/category-trend?${directionalRangeQuery(months, {
-        allData,
-        direction,
-        includeTransfers,
-      })}&limit=${limit}`,
+      withQuery("/stats/category-trend", {
+        ...directionalRangeQueryValues(months, {
+          allData,
+          direction,
+          includeTransfers,
+        }),
+        limit,
+      }),
     ),
   recap: (period: "week" | "month" = "month", dateFrom?: string, dateTo?: string) => {
-    const params = new URLSearchParams({ period });
-    if (dateFrom) params.set("date_from", dateFrom);
-    if (dateTo) params.set("date_to", dateTo);
-    return request<Recap>(`/stats/recap?${params}`);
+    return request<Recap>(
+      withQuery("/stats/recap", {
+        period,
+        date_from: dateFrom,
+        date_to: dateTo,
+      }),
+    );
   },
 };

@@ -9,7 +9,7 @@ import { SankeyNodeProps, tooltipStyle } from "./chart-utils";
 export function SankeyFlow({ data }: { data: SankeyData }) {
   const formatted = useMemo(
     () => ({
-      nodes: data.nodes.map((n) => ({ name: n.name })),
+      nodes: data.nodes.map((n) => ({ ...n, name: n.name })),
       links: data.links.map((l) => ({
         source: l.source,
         target: l.target,
@@ -49,7 +49,10 @@ export function SankeyFlow({ data }: { data: SankeyData }) {
           </g>
         )}
       >
-        <Tooltip contentStyle={tooltipStyle()} formatter={(value) => formatCurrency(Number(value))} />
+        <Tooltip
+          contentStyle={tooltipStyle()}
+          formatter={(value) => formatCurrency(Number(value))}
+        />
       </Sankey>
     </ResponsiveContainer>
   );

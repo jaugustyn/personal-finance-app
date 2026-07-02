@@ -1,13 +1,20 @@
 import { request } from "./client";
 import { buildQuery, withQuery, type QueryValue } from "./query";
-import type { CategoryState, FilterSummary, MerchantGroup, ReviewSummary, Transaction } from "./types";
+import type {
+  CategoryState,
+  FilterSummary,
+  MerchantGroup,
+  ReviewSummary,
+  Transaction,
+} from "./types";
 
-type TransactionFilterParams = {
+export type TransactionFilterParams = {
   date_from?: string;
   date_to?: string;
   include_transfers?: boolean;
   import_id?: number;
   merchant?: string;
+  merchant_canonical_key?: string;
   search?: string;
   direction?: "debit" | "credit";
   category?: string;
@@ -19,7 +26,7 @@ type TransactionFilterParams = {
   review_priority?: boolean;
 };
 
-type TransactionListParams = TransactionFilterParams & {
+export type TransactionListParams = TransactionFilterParams & {
   limit?: number;
   offset?: number;
 };
@@ -33,6 +40,7 @@ function transactionFilterQueryValues(
     include_transfers: params.include_transfers === false ? false : undefined,
     import_id: params.import_id,
     merchant: params.merchant,
+    merchant_canonical_key: params.merchant_canonical_key,
     search: params.search,
     direction: params.direction,
     category: params.category,
@@ -100,6 +108,7 @@ export const transactionsApi = {
   bulkCategorize: (payload: {
     ids?: number[];
     merchant?: string;
+    merchant_canonical_key?: string;
     category?: string | null;
     mark_transfer?: boolean;
     transaction_type?: string | null;

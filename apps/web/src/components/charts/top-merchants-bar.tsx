@@ -25,6 +25,7 @@ export function TopMerchantsBar({
 }: {
   data: {
     merchant: string;
+    merchant_display?: string | null;
     amount: number | string;
     category?: string | null;
   }[];
@@ -40,7 +41,7 @@ export function TopMerchantsBar({
   }, [categories]);
 
   const rows = data.map((d) => ({
-    merchant: d.merchant,
+    merchant: d.merchant_display || d.merchant,
     amount: Number(d.amount),
     category: d.category ?? null,
   }));

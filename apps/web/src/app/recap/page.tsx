@@ -30,7 +30,13 @@ type CategoryChangeRow = {
   previous: number;
   delta: number;
 };
-type TopMerchantRow = { merchant: string; amount: number; count: number };
+type TopMerchantRow = {
+  merchant: string;
+  merchant_display?: string | null;
+  merchant_canonical_key?: string | null;
+  amount: number;
+  count: number;
+};
 type LimitBreachRow = {
   category: string;
   spent: number;
@@ -123,19 +129,20 @@ export default function RecapPage() {
     {
       id: "merchant",
       header: t("transactions.column.merchant"),
-      sortValue: (row) => row.merchant,
+      sortValue: (row) => row.merchant_display || row.merchant,
       className: "font-medium",
       cell: (row) => (
         <Link
           href={transactionsHref({
-            search: row.merchant,
+            merchant_canonical_key: row.merchant_canonical_key,
+            search: row.merchant_canonical_key ? undefined : row.merchant,
             direction: "debit",
             date_from: query.data?.current_from,
             date_to: query.data?.current_to,
           })}
           className="text-primary underline-offset-4 hover:underline"
         >
-          {row.merchant}
+          {row.merchant_display || row.merchant}
         </Link>
       ),
     },
@@ -357,7 +364,7 @@ export default function RecapPage() {
                 <DataTable
                   columns={merchantColumns}
                   data={query.data.top_merchants}
-                  rowKey={(row) => row.merchant}
+                  rowKey={(row) => row.merchant_canonical_key || row.merchant}
                   emptyTitle={t("recap.merchants.empty")}
                   initialSort={{ id: "amount", dir: "desc" }}
                 />
