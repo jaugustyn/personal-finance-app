@@ -254,6 +254,7 @@ def test_merchant_groups_only_uncategorized_returns_expense_candidates(db_sessio
     )
 
     assert [group.merchant for group in groups] == ["Allegro"]
+    assert groups[0].sample_merchants == ["Allegro"]
 
 
 def test_transaction_filters_review_priority_orders_uncertain_rows_first(

@@ -19,7 +19,11 @@ from finance.ml.classification.policy import (
     decide_classification,
 )
 from finance.profile.service import effect_for_transaction
-from finance.transactions.merchants import load_merchant_alias_maps, merchant_canonical_key
+from finance.transactions.merchants import (
+    load_merchant_alias_maps,
+    merchant_canonical_key,
+    merchant_identity,
+)
 
 RARE_LABEL_THRESHOLD = 20
 WEAK_LABEL_THRESHOLD = 50
@@ -30,6 +34,8 @@ class ReviewQueueItem:
     transaction_id: int
     booking_date: date
     merchant: str
+    merchant_display: str
+    merchant_canonical_key: str
     title: str
     amount: Decimal
     currency: str
@@ -143,7 +149,7 @@ def review_queue(
     if not rows:
         return []
 
-    alias_map, _label_map = load_merchant_alias_maps(session)
+    alias_map, label_map = load_merchant_alias_maps(session)
     category_counts = _category_counts(session)
     merchant_counts = _merchant_candidate_counts(session, alias_map)
     merchant_feedback = _merchant_feedback_counts(session, alias_map)
@@ -180,7 +186,13 @@ def review_queue(
             tx.category_predicted,
             category_counts,
         )
-        merchant_key = merchant_canonical_key(tx.merchant, tx.title, alias_map=alias_map)
+        merchant_identity_ = merchant_identity(
+            tx.merchant,
+            tx.title,
+            alias_map=alias_map,
+            label_map=label_map,
+        )
+        merchant_key = merchant_identity_.canonical_key
         cluster_count = merchant_counts.get(merchant_key, 0)
         cluster_score = float(min(max(cluster_count - 1, 0) * 3, 15))
         feedback_score = float(min(merchant_feedback.get(merchant_key, 0) * 5, 15))
@@ -215,6 +227,8 @@ def review_queue(
                 transaction_id=int(tx.id),
                 booking_date=tx.booking_date,
                 merchant=str(tx.merchant or ""),
+                merchant_display=merchant_identity_.display_label,
+                merchant_canonical_key=merchant_key,
                 title=str(tx.title or ""),
                 amount=base_amount,
                 currency=str(tx.base_currency or tx.currency),

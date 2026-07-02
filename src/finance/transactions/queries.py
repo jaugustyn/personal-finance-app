@@ -35,6 +35,32 @@ from finance.transactions.types import (
 )
 
 
+def _merchant_canonical_key_filter(filters: TransactionFilters) -> str | None:
+    value = filters.merchant_canonical_key
+    return value.strip() if value else None
+
+
+def _filter_rows_by_merchant_canonical_key(
+    session: Session,
+    rows: list[Transaction],
+    canonical_key: str | None,
+) -> list[Transaction]:
+    if not canonical_key:
+        return rows
+    alias_map, label_map = load_merchant_alias_maps(session)
+    return [
+        tx
+        for tx in rows
+        if merchant_identity(
+            tx.merchant,
+            tx.title,
+            alias_map=alias_map,
+            label_map=label_map,
+        ).canonical_key
+        == canonical_key
+    ]
+
+
 def _category_candidate_conditions():
     return tuple(expense_category_candidate_filters())
 
@@ -146,6 +172,29 @@ def filter_summary(
     filters: TransactionFilters,
 ) -> FilterSummaryResult:
     """Aggregate count + income/expenses/net for the given filter set."""
+    canonical_key = _merchant_canonical_key_filter(filters)
+    if canonical_key:
+        rows = _filter_rows_by_merchant_canonical_key(
+            session,
+            list(session.execute(filtered_transactions_stmt(filters)).scalars().all()),
+            canonical_key,
+        )
+        income = Decimal(0)
+        expenses = Decimal(0)
+        for row in rows:
+            amount = row.amount_base if row.amount_base is not None else row.amount
+            value = abs(Decimal(amount or 0))
+            if row.direction == TransactionDirection.CREDIT.value:
+                income += value
+            elif row.direction == TransactionDirection.DEBIT.value:
+                expenses += value
+        return FilterSummaryResult(
+            count=len(rows),
+            total_income=income,
+            total_expenses=expenses,
+            net=income - expenses,
+        )
+
     base = filtered_transactions_stmt(filters).subquery()
     base_amount = func.coalesce(base.c.amount_base, base.c.amount)
     income_expr = func.coalesce(
@@ -197,8 +246,10 @@ def list_transactions(
     offset: int,
     policy: ClassificationPolicy = DEFAULT_POLICY,
 ) -> list[Transaction]:
+    canonical_key = _merchant_canonical_key_filter(filters)
     if filters.review_priority:
         rows = list(session.execute(filtered_transactions_stmt(filters)).scalars().all())
+        rows = _filter_rows_by_merchant_canonical_key(session, rows, canonical_key)
         rows.sort(
             key=lambda row: (
                 _review_priority(row, policy),
@@ -207,8 +258,28 @@ def list_transactions(
             )
         )
         return rows[offset : offset + limit]
+    if canonical_key:
+        rows = _filter_rows_by_merchant_canonical_key(
+            session,
+            list(session.execute(filtered_transactions_stmt(filters)).scalars().all()),
+            canonical_key,
+        )
+        return rows[offset : offset + limit]
     stmt = filtered_transactions_stmt(filters).offset(offset).limit(limit)
     return list(session.execute(stmt).scalars().all())
+
+
+def matching_transactions(
+    session: Session,
+    filters: TransactionFilters,
+) -> list[Transaction]:
+    """Return all transactions matching filters, including canonical merchant filters."""
+    rows = list(session.execute(filtered_transactions_stmt(filters)).scalars().all())
+    return _filter_rows_by_merchant_canonical_key(
+        session,
+        rows,
+        _merchant_canonical_key_filter(filters),
+    )
 
 
 def summary_by_category(
@@ -283,9 +354,12 @@ def merchant_groups(
             identity.canonical_key,
             {
                 "merchant": label,
+                "merchant_display": label,
+                "merchant_canonical_key": identity.canonical_key,
                 "count": 0,
                 "total_debit": Decimal(0),
                 "total_credit": Decimal(0),
+                "merchants": [],
                 "titles": [],
                 "categories": [],
             },
@@ -296,6 +370,8 @@ def merchant_groups(
             group["total_debit"] += amount or Decimal(0)
         elif tx.direction == TransactionDirection.CREDIT.value:
             group["total_credit"] += amount or Decimal(0)
+        if tx.merchant:
+            group["merchants"].append(tx.merchant)
         if tx.title:
             group["titles"].append(tx.title)
         if tx.category:
@@ -312,16 +388,24 @@ def merchant_groups(
     )[:limit]
     out: list[MerchantGroupSummary] = []
     for group in sorted_groups:
+        merchants = list(
+            dict.fromkeys(
+                str(merchant) for merchant in group["merchants"] if merchant
+            )
+        )[:3]
         titles = list(dict.fromkeys(str(title) for title in group["titles"] if title))[:3]
         cats = [str(category) for category in group["categories"] if category]
         common_cat = max(set(cats), key=cats.count) if cats else None
         out.append(
             MerchantGroupSummary(
                 merchant=str(group["merchant"]),
+                merchant_display=str(group["merchant_display"]),
+                merchant_canonical_key=str(group["merchant_canonical_key"]),
                 count=int(group["count"]),
                 total_debit=Decimal(group["total_debit"]),
                 total_credit=Decimal(group["total_credit"]),
                 common_category=common_cat,
+                sample_merchants=merchants,
                 sample_titles=titles,
             )
         )

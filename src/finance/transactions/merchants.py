@@ -200,6 +200,16 @@ def create_aliases(
     existing = {
         row.alias_key: row for row in session.execute(select(MerchantAlias)).scalars()
     }
+    existing_group_label = next(
+        (
+            row.canonical_label
+            for row in existing.values()
+            if row.canonical_key == canonical_key
+        ),
+        None,
+    )
+    if existing_group_label:
+        canonical_label = existing_group_label
     out: list[MerchantAlias] = []
     for alias_label in aliases:
         label = alias_label.strip()
@@ -356,16 +366,19 @@ def alias_candidates(
 
     candidates: list[MerchantCandidate] = []
     for canonical_key, group in groups.items():
-        aliases = sorted(str(alias) for alias in group.aliases if alias)
-        if len(aliases) < min_variants or len(group.unresolved_aliases) == 0:
+        unresolved_aliases = {
+            alias for alias in group.unresolved_aliases if alias
+        }
+        if not unresolved_aliases:
             continue
-        suggested_label = (
-            label_map.get(canonical_key)
-            or group.labels.most_common(1)[0][0]
-            or canonical_key
-        )
+        is_existing_group = canonical_key in label_map
+        if not is_existing_group and len(unresolved_aliases) < min_variants:
+            continue
+        aliases = sorted(str(alias) for alias in unresolved_aliases)
         variant_rows: list[MerchantCandidateVariant] = []
         for alias_key, variant in group.variants.items():
+            if alias_key not in unresolved_aliases:
+                continue
             alias_label = (
                 variant.labels.most_common(1)[0][0]
                 if variant.labels
@@ -380,14 +393,26 @@ def alias_candidates(
                 )
             )
         variant_rows.sort(key=lambda item: (item.count, item.total_debit), reverse=True)
+        suggested_label = (
+            variant_rows[0].alias_label
+            if variant_rows
+            else canonical_key
+        )
+        canonical_label = label_map.get(canonical_key) or suggested_label
+        unresolved_count = sum(variant.count for variant in variant_rows)
+        unresolved_total = sum(
+            (variant.total_debit for variant in variant_rows),
+            Decimal(0),
+        )
         candidates.append(
             MerchantCandidate(
                 canonical_key=canonical_key,
+                canonical_label=canonical_label,
                 suggested_label=suggested_label,
                 aliases=aliases,
                 variants=variant_rows,
-                count=group.count,
-                total_debit=group.total,
+                count=unresolved_count,
+                total_debit=unresolved_total,
             )
         )
     candidates.sort(key=lambda item: (item.count, item.total_debit), reverse=True)

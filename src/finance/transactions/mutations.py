@@ -92,6 +92,7 @@ def bulk_categorize(
     *,
     ids: list[int] | None,
     merchant: str | None,
+    merchant_canonical_key: str | None = None,
     category: str | None | object = UNCHANGED,
     mark_transfer: bool | None = None,
     transaction_type: str | None = None,
@@ -99,6 +100,7 @@ def bulk_categorize(
     return CategoryAssignmentService(session).bulk_categorize(
         ids=ids,
         merchant=merchant,
+        merchant_canonical_key=merchant_canonical_key,
         category=category,
         mark_transfer=mark_transfer,
         transaction_type=transaction_type,

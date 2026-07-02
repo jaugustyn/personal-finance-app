@@ -7,7 +7,8 @@ from collections.abc import Iterator
 
 from sqlalchemy.orm import Session
 
-from finance.transactions.queries import TransactionFilters, filtered_transactions_stmt
+from finance.transactions.queries import filtered_transactions_stmt, matching_transactions
+from finance.transactions.types import TransactionFilters
 
 CSV_COLUMNS = [
     "id",
@@ -40,14 +41,18 @@ def safe_csv_value(value: object) -> object:
 
 def export_csv_lines(session: Session, filters: TransactionFilters) -> Iterator[str]:
     """Stream matching transactions as CSV lines with formula injection escaping."""
-    stmt = filtered_transactions_stmt(filters)
     buf = io.StringIO()
     writer = csv.writer(buf, lineterminator="\n")
     writer.writerow(CSV_COLUMNS)
     yield buf.getvalue()
     buf.seek(0)
     buf.truncate(0)
-    for tx in session.execute(stmt).scalars():
+    rows = (
+        matching_transactions(session, filters)
+        if filters.merchant_canonical_key
+        else session.execute(filtered_transactions_stmt(filters)).scalars()
+    )
+    for tx in rows:
         writer.writerow([safe_csv_value(getattr(tx, c)) for c in CSV_COLUMNS])
         yield buf.getvalue()
         buf.seek(0)

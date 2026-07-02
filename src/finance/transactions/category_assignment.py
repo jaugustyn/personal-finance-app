@@ -19,6 +19,7 @@ from finance.transactions.mutation_rules import (
     can_assign_expense_category,
     resolve_category_assignment,
 )
+from finance.transactions.merchants import load_merchant_alias_maps, merchant_identity
 from finance.transactions.type_service import TransactionTypeService
 
 
@@ -80,6 +81,7 @@ class CategoryAssignmentService:
         ids: list[int] | None,
         merchant: str | None,
         category: str | None | object,
+        merchant_canonical_key: str | None = None,
         mark_transfer: bool | None = None,
         transaction_type: str | None = None,
         unchanged: object,
@@ -94,6 +96,22 @@ class CategoryAssignmentService:
         if merchant:
             stmt = stmt.where(Transaction.merchant == merchant)
         rows = self.session.execute(stmt).scalars().all()
+        canonical_key = (
+            merchant_canonical_key.strip() if merchant_canonical_key else None
+        )
+        if canonical_key:
+            alias_map, label_map = load_merchant_alias_maps(self.session)
+            rows = [
+                tx
+                for tx in rows
+                if merchant_identity(
+                    tx.merchant,
+                    tx.title,
+                    alias_map=alias_map,
+                    label_map=label_map,
+                ).canonical_key
+                == canonical_key
+            ]
 
         type_service = TransactionTypeService(self.session)
         affected = 0

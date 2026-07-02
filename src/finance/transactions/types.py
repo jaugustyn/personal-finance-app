@@ -24,6 +24,7 @@ class TransactionFilters:
     include_transfers: bool = True
     import_id: int | None = None
     merchant: str | None = None
+    merchant_canonical_key: str | None = None
     search: str | None = None
     direction: str | None = None
     category: str | None = None
@@ -46,10 +47,13 @@ class CategorySummary:
 @dataclass(frozen=True)
 class MerchantGroupSummary:
     merchant: str
+    merchant_display: str
+    merchant_canonical_key: str
     count: int
     total_debit: Decimal
     total_credit: Decimal
     common_category: str | None
+    sample_merchants: list[str]
     sample_titles: list[str]
 
 
@@ -80,6 +84,8 @@ class RareClass:
 @dataclass(frozen=True)
 class RecurringMerchant:
     merchant: str
+    merchant_display: str
+    merchant_canonical_key: str
     count: int
 
 
@@ -111,6 +117,7 @@ class MerchantAliasSuggestion:
 @dataclass(frozen=True)
 class MerchantCandidate:
     canonical_key: str
+    canonical_label: str
     suggested_label: str
     aliases: list[str]
     variants: list[MerchantCandidateVariant]

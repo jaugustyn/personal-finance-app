@@ -19,7 +19,7 @@ from finance.ml.feedback import (
     FeedbackEventInput,
     record_feedback_event,
 )
-from finance.transactions.merchants import merchant_canonical_key
+from finance.transactions.merchants import load_merchant_alias_maps, merchant_identity
 
 AnomalyMode = Literal["review", "suspicious", "all"]
 AnomalyDirection = Literal["debit", "credit", "both"]
@@ -34,6 +34,8 @@ class AnomalyReviewRow:
     amount: Decimal
     direction: str
     merchant: str
+    merchant_display: str
+    merchant_canonical_key: str
     title: str
     category: str | None
     severity: float
@@ -128,10 +130,9 @@ ANOMALY_FEEDBACK_EVENT_TO_STATUS: dict[str, AnomalyFeedbackStatus] = {
 
 def anomaly_feedback_statuses(
     session: Session,
-    merchants: list[str],
+    merchant_keys: list[str],
 ) -> dict[str, AnomalyFeedbackStatus]:
-    keys = {merchant_canonical_key(merchant) for merchant in merchants}
-    keys.discard("")
+    keys = {key for key in merchant_keys if key}
     if not keys:
         return {}
     rows = session.execute(
@@ -151,6 +152,25 @@ def anomaly_feedback_statuses(
     return statuses
 
 
+def _with_merchant_identity(session: Session, flagged: pd.DataFrame) -> pd.DataFrame:
+    if flagged.empty:
+        return flagged
+    alias_map, label_map = load_merchant_alias_maps(session)
+    identities = [
+        merchant_identity(
+            str(row.get("merchant") or ""),
+            str(row.get("title") or ""),
+            alias_map=alias_map,
+            label_map=label_map,
+        )
+        for _, row in flagged.iterrows()
+    ]
+    out = flagged.copy()
+    out["merchant_key"] = [identity.canonical_key for identity in identities]
+    out["merchant_display"] = [identity.display_label for identity in identities]
+    return out
+
+
 def _apply_feedback(
     session: Session,
     flagged: pd.DataFrame,
@@ -163,7 +183,7 @@ def _apply_feedback(
         ignored = ignored_anomaly_merchants(session)
         if ignored:
             flagged = flagged[
-                ~flagged["merchant"].fillna("").map(merchant_canonical_key).isin(ignored)
+                ~flagged["merchant_key"].fillna("").astype(str).isin(ignored)
             ]
     adjustments = anomaly_priority_adjustments(session)
     if adjustments and not flagged.empty:
@@ -175,7 +195,7 @@ def _apply_feedback(
                     1.0,
                     float(row["priority_score"])
                     + adjustments.get(
-                        merchant_canonical_key(str(row.get("merchant") or "")),
+                        str(row.get("merchant_key") or ""),
                         0.0,
                     ),
                 ),
@@ -198,11 +218,16 @@ def _apply_mode(flagged: pd.DataFrame, *, mode: AnomalyMode) -> pd.DataFrame:
     return flagged
 
 
-def _to_row(raw: pd.Series, feedback_status: AnomalyFeedbackStatus | None) -> AnomalyReviewRow:
+def _to_row(
+    raw: pd.Series,
+    feedback_status: AnomalyFeedbackStatus | None,
+) -> AnomalyReviewRow:
     booking_date = raw["booking_date"]
     if hasattr(booking_date, "date"):
         booking_date = booking_date.date()
     merchant = str(_clean(raw.get("merchant")) or "")
+    merchant_display = str(_clean(raw.get("merchant_display")) or merchant)
+    merchant_key = str(_clean(raw.get("merchant_key")) or "")
     category = _clean(raw.get("category"))
     return AnomalyReviewRow(
         id=int(raw["id"]),
@@ -210,6 +235,8 @@ def _to_row(raw: pd.Series, feedback_status: AnomalyFeedbackStatus | None) -> An
         amount=Decimal(str(raw["amount"])),
         direction=str(raw["direction"]),
         merchant=merchant,
+        merchant_display=merchant_display,
+        merchant_canonical_key=merchant_key,
         title=str(_clean(raw.get("title")) or ""),
         category=str(category) if category is not None else None,
         severity=float(raw.get("severity") or 0.0),
@@ -249,15 +276,13 @@ def list_anomaly_rows(
         flagged["anomaly_type"] = "none"
     if not include_model_only:
         flagged = flagged[flagged["anomaly_type"] != "model_only"]
+    flagged = _with_merchant_identity(session, flagged)
     flagged = _apply_feedback(session, flagged, mode=mode)
     flagged = _apply_mode(flagged, mode=mode)
     flagged = flagged.sort_values(["priority_score", "severity"], ascending=False).head(limit)
-    statuses = anomaly_feedback_statuses(
-        session,
-        [str(value or "") for value in flagged["merchant"].tolist()],
-    )
+    statuses = anomaly_feedback_statuses(session, flagged["merchant_key"].tolist())
     return [
-        _to_row(raw, statuses.get(merchant_canonical_key(str(raw.get("merchant") or ""))))
+        _to_row(raw, statuses.get(str(raw.get("merchant_key") or "")))
         for _, raw in flagged.iterrows()
     ]
 
@@ -271,6 +296,8 @@ def record_anomaly_feedback(
     tx = session.get(Transaction, transaction_id)
     if tx is None:
         return None
+    alias_map, _label_map = load_merchant_alias_maps(session)
+    identity = merchant_identity(tx.merchant, tx.title, alias_map=alias_map)
     event_type = {
         "relevant": EVENT_ANOMALY_RELEVANT,
         "not_relevant": EVENT_ANOMALY_NOT_RELEVANT,
@@ -282,7 +309,7 @@ def record_anomaly_feedback(
             event_type=event_type,
             transaction_id=transaction_id,
             entity_type="anomaly_merchant",
-            entity_key=merchant_canonical_key(tx.merchant, tx.title),
+            entity_key=identity.canonical_key,
             source="anomaly_detector",
         ),
     )

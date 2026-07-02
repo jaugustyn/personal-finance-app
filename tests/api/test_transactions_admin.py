@@ -142,6 +142,8 @@ def test_groups_returns_uncategorized_merchants(client, db_session) -> None:
     merchants = {g["merchant"] for g in body}
     assert "Biedronka" in merchants
     assert "Lidl" not in merchants
+    biedronka = next(g for g in body if g["merchant"] == "Biedronka")
+    assert biedronka["sample_merchants"] == ["Biedronka"]
 
 
 def test_groups_min_count_filter(client, db_session) -> None:

@@ -28,6 +28,8 @@ class AnomalyRow(BaseModel):
     amount: Decimal
     direction: str
     merchant: str
+    merchant_display: str
+    merchant_canonical_key: str
     title: str
     category: str | None
     severity: float
@@ -57,6 +59,8 @@ def _to_response(row: AnomalyReviewRow) -> AnomalyRow:
         amount=row.amount,
         direction=row.direction,
         merchant=row.merchant,
+        merchant_display=row.merchant_display,
+        merchant_canonical_key=row.merchant_canonical_key,
         title=row.title,
         category=row.category,
         severity=row.severity,

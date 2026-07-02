@@ -26,7 +26,7 @@ from finance.ml.feedback import (
     feedback_quality,
     subscription_feedback_summary,
 )
-from finance.transactions.merchants import load_merchant_alias_maps, merchant_canonical_key
+from finance.transactions.merchants import load_merchant_alias_maps, merchant_identity
 from finance.transactions.types import RareClass, RecurringMerchant, ReviewCounts
 
 DEFAULT_CONFIDENCE_THRESHOLD = 0.55
@@ -142,14 +142,20 @@ def recurring_unruled_merchants(
         if norm
     ]
 
-    alias_map, _label_map = load_merchant_alias_maps(session)
+    alias_map, label_map = load_merchant_alias_maps(session)
     counts: dict[str, int] = {}
     labels: dict[str, str] = {}
     for row in rows:
-        merchant_key = merchant_canonical_key(row.merchant, row.title, alias_map=alias_map)
+        identity = merchant_identity(
+            row.merchant,
+            row.title,
+            alias_map=alias_map,
+            label_map=label_map,
+        )
+        merchant_key = identity.canonical_key
         if not merchant_key:
             continue
-        labels.setdefault(merchant_key, str(row.merchant))
+        labels.setdefault(merchant_key, identity.display_label or str(row.merchant))
         counts[merchant_key] = counts.get(merchant_key, 0) + 1
 
     out: list[RecurringMerchant] = []
@@ -163,7 +169,14 @@ def recurring_unruled_merchants(
         merchant_norm = merchant_key
         if any(rule in merchant_norm or merchant_norm in rule for rule in rule_norms):
             continue
-        out.append(RecurringMerchant(merchant=labels[merchant_key], count=count))
+        out.append(
+            RecurringMerchant(
+                merchant=labels[merchant_key],
+                merchant_display=labels[merchant_key],
+                merchant_canonical_key=merchant_key,
+                count=count,
+            )
+        )
         if len(out) >= limit:
             break
     return out

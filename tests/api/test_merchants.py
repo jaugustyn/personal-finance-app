@@ -200,6 +200,68 @@ def test_saved_merchant_aliases_disappear_from_candidates(client, db_session) ->
     assert all(row["canonical_key"] != "biedronka" for row in after.json())
 
 
+def test_merchant_candidate_suggests_unresolved_label_without_renaming_group(
+    client,
+    db_session,
+) -> None:
+    for index, merchant in enumerate(
+        [
+            "APTEKA PROMIENNA",
+            "APTEKA PROMIENNA 1111",
+            "APTEKA PROMIENNA 1234",
+            "APTEKA PROMIENNA 5678",
+        ],
+        start=1,
+    ):
+        _tx(
+            db_session,
+            merchant=merchant,
+            amount=Decimal(f"-{index}0"),
+            dedup_hash=f"apteka-promienna-{index}",
+        )
+    created = client.post(
+        "/merchants/aliases",
+        json={
+            "canonical_key": "apteka promienna",
+            "canonical_label": "APTEKA PROMIENNA",
+            "aliases": ["APTEKA PROMIENNA", "APTEKA PROMIENNA 1111"],
+        },
+    )
+    assert created.status_code == 201
+
+    candidates = client.get("/merchants/candidates")
+
+    assert candidates.status_code == 200
+    candidate = next(
+        row for row in candidates.json() if row["canonical_key"] == "apteka promienna"
+    )
+    assert candidate["canonical_label"] == "APTEKA PROMIENNA"
+    assert candidate["suggested_label"] in {
+        "APTEKA PROMIENNA 1234",
+        "APTEKA PROMIENNA 5678",
+    }
+    assert {variant["alias_key"] for variant in candidate["variants"]} == {
+        "apteka promienna 1234",
+        "apteka promienna 5678",
+    }
+
+    accepted = client.post(
+        "/merchants/aliases",
+        json={
+            "canonical_key": candidate["canonical_key"],
+            "canonical_label": candidate["suggested_label"],
+            "aliases": [variant["alias_label"] for variant in candidate["variants"]],
+        },
+    )
+
+    assert accepted.status_code == 201
+    assert {row["canonical_label"] for row in accepted.json()} == {"APTEKA PROMIENNA"}
+    assert {row["alias_label"] for row in accepted.json()} == {
+        "APTEKA PROMIENNA 1234",
+        "APTEKA PROMIENNA 5678",
+    }
+
+
 def test_patch_merchant_alias_group_label_changes_display_only(client) -> None:
     created = client.post(
         "/merchants/aliases",

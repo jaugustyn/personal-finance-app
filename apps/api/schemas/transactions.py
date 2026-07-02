@@ -32,6 +32,10 @@ class TransactionRow(BaseModel):
     fx_rate_source: str | None = None
     direction: str
     merchant: str
+    merchant_raw: str | None = None
+    merchant_display: str | None = None
+    merchant_canonical_key: str | None = None
+    merchant_alias_key: str | None = None
     title: str
     category: str | None
     subcategory: str | None = None
@@ -67,10 +71,13 @@ class FilterSummaryResponse(BaseModel):
 
 class MerchantGroup(BaseModel):
     merchant: str
+    merchant_display: str
+    merchant_canonical_key: str
     count: int
     total_debit: Decimal
     total_credit: Decimal
     common_category: str | None
+    sample_merchants: list[str]
     sample_titles: list[str]
 
 
@@ -90,6 +97,8 @@ class RareClass(BaseModel):
 
 class RecurringMerchant(BaseModel):
     merchant: str
+    merchant_display: str
+    merchant_canonical_key: str
     count: int
 
 
@@ -123,6 +132,7 @@ class AnnotationUpdate(BaseModel):
 class BulkCategorize(BaseModel):
     ids: list[int] | None = None
     merchant: str | None = None
+    merchant_canonical_key: str | None = None
     category: str | None = None
     mark_transfer: bool | None = None
     transaction_type: TransactionType | None = None

@@ -35,6 +35,7 @@ from finance.ml.classification.policy import (
 )
 from finance.ml.classification.status import REPORTS_DIR, load_latest_report
 from finance.transactions import service as tx_service
+from finance.transactions.merchants import load_merchant_alias_maps, merchant_identity
 
 router = APIRouter(prefix="/transactions", tags=["transactions"])
 
@@ -56,12 +57,34 @@ def _classification_decision(tx: Any, policy: ClassificationPolicy):
     )
 
 
-def _transaction_row(tx: Any, policy: ClassificationPolicy) -> TransactionRow:
+def _transaction_row(
+    tx: Any,
+    policy: ClassificationPolicy,
+    *,
+    alias_map: dict[str, str] | None = None,
+    label_map: dict[str, str] | None = None,
+) -> TransactionRow:
     row = TransactionRow.model_validate(tx)
+    identity = merchant_identity(
+        tx.merchant,
+        tx.title,
+        alias_map=alias_map,
+        label_map=label_map,
+    )
+    row.merchant_raw = tx.merchant
+    row.merchant_display = identity.display_label
+    row.merchant_canonical_key = identity.canonical_key or None
+    row.merchant_alias_key = identity.alias_key or None
     row.classification_decision = ClassificationDecisionResponse(
         **_classification_decision(tx, policy).__dict__,
     )
     return row
+
+
+def _transaction_response(session: Session, tx: Any) -> TransactionRow:
+    policy = _classification_policy()
+    alias_map, label_map = load_merchant_alias_maps(session)
+    return _transaction_row(tx, policy, alias_map=alias_map, label_map=label_map)
 
 
 @router.get("", response_model=list[TransactionRow])
@@ -79,7 +102,11 @@ def list_transactions(
         offset=offset,
         policy=policy,
     )
-    return [_transaction_row(r, policy) for r in rows]
+    alias_map, label_map = load_merchant_alias_maps(session)
+    return [
+        _transaction_row(r, policy, alias_map=alias_map, label_map=label_map)
+        for r in rows
+    ]
 
 
 @router.get("/export.csv")
@@ -200,7 +227,7 @@ def update_category(
         raise validation_error(str(exc)) from exc
     if tx is None:
         raise not_found("Transaction not found")
-    return _transaction_row(tx, _classification_policy())
+    return _transaction_response(session, tx)
 
 
 @router.patch("/{tx_id}/type", response_model=TransactionRow)
@@ -215,7 +242,7 @@ def update_type(
     )
     if tx is None:
         raise not_found("Transaction not found or invalid type")
-    return _transaction_row(tx, _classification_policy())
+    return _transaction_response(session, tx)
 
 
 @router.patch("/{tx_id}/annotations", response_model=TransactionRow)
@@ -234,7 +261,7 @@ def update_annotations(
     )
     if tx is None:
         raise not_found("Transaction not found")
-    return _transaction_row(tx, _classification_policy())
+    return _transaction_response(session, tx)
 
 
 @router.post("/bulk/categorize", response_model=BulkResult)
@@ -245,13 +272,16 @@ def bulk_categorize(
 
     Selection by ``ids`` and/or ``merchant`` (combined with AND when both set).
     """
-    if not payload.ids and not payload.merchant:
-        raise validation_error("Provide ids or merchant for bulk update.")
+    if not payload.ids and not payload.merchant and not payload.merchant_canonical_key:
+        raise validation_error(
+            "Provide ids, merchant or merchant_canonical_key for bulk update."
+        )
     try:
         affected = tx_service.bulk_categorize(
             session,
             ids=payload.ids,
             merchant=payload.merchant,
+            merchant_canonical_key=payload.merchant_canonical_key,
             category=(
                 payload.category
                 if "category" in payload.model_fields_set

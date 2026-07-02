@@ -17,6 +17,7 @@ from finance.transactions.queries import (
     filter_summary,
     filtered_transactions_stmt,
     list_transactions,
+    matching_transactions,
     merchant_groups,
     summary_by_category,
 )
@@ -60,6 +61,7 @@ __all__ = [
     "filter_summary",
     "filtered_transactions_stmt",
     "list_transactions",
+    "matching_transactions",
     "merchant_groups",
     "reject_suggestions",
     "restore_suggestions",

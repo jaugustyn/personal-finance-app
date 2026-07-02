@@ -27,6 +27,7 @@ class TransactionFilterParams:
         include_transfers: bool = Query(default=True),
         import_id: int | None = None,
         merchant: str | None = None,
+        merchant_canonical_key: str | None = None,
         search: str | None = None,
         direction: TransactionDirection | None = None,
         category: str | None = None,
@@ -42,6 +43,7 @@ class TransactionFilterParams:
         self.include_transfers = include_transfers
         self.import_id = import_id
         self.merchant = merchant
+        self.merchant_canonical_key = merchant_canonical_key
         self.search = search
         self.direction = direction
         self.category = category
@@ -59,6 +61,7 @@ class TransactionFilterParams:
             include_transfers=self.include_transfers,
             import_id=self.import_id,
             merchant=self.merchant,
+            merchant_canonical_key=self.merchant_canonical_key,
             search=self.search,
             direction=enum_value(self.direction),
             category=self.category,

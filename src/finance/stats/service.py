@@ -271,6 +271,7 @@ def top_merchants(
             {
                 "amount": Decimal(0),
                 "count": 0,
+                "merchant_canonical_key": key,
                 "labels": {},
                 "categories": {},
             },
@@ -307,6 +308,8 @@ def top_merchants(
         out.append(
             MerchantSpend(
                 merchant=label,
+                merchant_display=label,
+                merchant_canonical_key=str(group["merchant_canonical_key"]),
                 amount=group["amount"],
                 count=int(group["count"]),
                 category=dominant_category,

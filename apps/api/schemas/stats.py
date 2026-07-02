@@ -39,6 +39,8 @@ class RecapCategoryChange(BaseModel):
 
 class RecapMerchant(BaseModel):
     merchant: str
+    merchant_display: str | None = None
+    merchant_canonical_key: str | None = None
     amount: Decimal
     count: int
 

@@ -55,6 +55,8 @@ class CategoryChange:
 @dataclass(frozen=True)
 class MerchantSpend:
     merchant: str
+    merchant_display: str
+    merchant_canonical_key: str
     amount: Decimal
     count: int
 
@@ -172,7 +174,12 @@ def _top_merchants(
             continue
         group = groups.setdefault(
             identity.canonical_key,
-            {"amount": Decimal(0), "count": 0, "labels": {}},
+            {
+                "amount": Decimal(0),
+                "count": 0,
+                "labels": {},
+                "merchant_canonical_key": identity.canonical_key,
+            },
         )
         value = Decimal(amount or 0)
         group["amount"] += value
@@ -196,6 +203,8 @@ def _top_merchants(
         out.append(
             MerchantSpend(
                 merchant=label,
+                merchant_display=label,
+                merchant_canonical_key=str(group["merchant_canonical_key"]),
                 amount=Decimal(group["amount"]),
                 count=int(group["count"]),
             )

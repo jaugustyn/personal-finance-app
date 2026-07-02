@@ -39,6 +39,8 @@ class NetWorthPoint(BaseModel):
 
 class MerchantSpend(BaseModel):
     merchant: str
+    merchant_display: str | None = None
+    merchant_canonical_key: str | None = None
     amount: Decimal
     count: int
     category: str | None = None

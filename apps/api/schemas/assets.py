@@ -57,6 +57,10 @@ class HistoryPoint(BaseModel):
 
 class SankeyNode(BaseModel):
     name: str
+    node_type: str | None = None
+    category: str | None = None
+    merchant_display: str | None = None
+    merchant_canonical_key: str | None = None
 
 
 class SankeyLink(BaseModel):

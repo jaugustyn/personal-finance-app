@@ -96,6 +96,7 @@ def alias_candidates(
     return [
         MerchantCandidateRow(
             canonical_key=row.canonical_key,
+            canonical_label=row.canonical_label,
             suggested_label=row.suggested_label,
             aliases=row.aliases,
             variants=[

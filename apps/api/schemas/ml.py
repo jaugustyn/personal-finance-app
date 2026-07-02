@@ -183,6 +183,8 @@ class ReviewQueueItemResponse(BaseModel):
     transaction_id: int
     booking_date: date
     merchant: str
+    merchant_display: str
+    merchant_canonical_key: str
     title: str
     amount: Decimal
     currency: str

@@ -38,6 +38,7 @@ class MerchantCandidateVariantRow(BaseModel):
 
 class MerchantCandidateRow(BaseModel):
     canonical_key: str
+    canonical_label: str
     suggested_label: str
     aliases: list[str]
     variants: list[MerchantCandidateVariantRow]
