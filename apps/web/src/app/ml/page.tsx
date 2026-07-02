@@ -3,18 +3,13 @@
 import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import {
-  api,
-  type MlDashboard,
-  type MlModelComparison,
-  type MlModelRecommendation,
-} from "@/lib/api";
+import { api } from "@/lib/api";
 import { tCategory, useT } from "@/lib/i18n";
-import { cn, formatNumber, formatPercent } from "@/lib/utils";
+import { showErrorToast } from "@/lib/toasts";
+import { cn, formatNumber } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { DataTable, type DataTableColumn } from "@/components/data-table";
 import { ErrorState } from "@/components/error-state";
 import { PageHeader } from "@/components/page-header";
 import { CardGridSkeleton } from "@/components/ui/skeleton";
@@ -25,426 +20,20 @@ import {
   Database,
   Loader2,
   RotateCcw,
-  Sparkles,
 } from "lucide-react";
-
-function formatDateTime(value: string | null): string {
-  if (!value) return "—";
-  return new Intl.DateTimeFormat("pl-PL", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(new Date(value));
-}
-
-function percent(value: number | null | undefined): string {
-  return typeof value === "number" ? formatPercent(value) : "—";
-}
-
-function numberFromRecord(
-  data: Record<string, unknown>,
-  key: string,
-): number | null {
-  const value = data[key];
-  return typeof value === "number" && Number.isFinite(value) ? value : null;
-}
-
-function readinessLabel(level: string, t: ReturnType<typeof useT>["t"]) {
-  switch (level) {
-    case "insufficient":
-      return t("ml.readiness.insufficient");
-    case "minimum":
-      return t("ml.readiness.minimum");
-    case "good":
-      return t("ml.readiness.good");
-    case "thesis_ready":
-      return t("ml.readiness.thesis_ready");
-    default:
-      return t("ml.readiness.unknown");
-  }
-}
-
-function readinessVariant(level: string) {
-  if (level === "good" || level === "thesis_ready") return "success" as const;
-  if (level === "minimum") return "warning" as const;
-  return "destructive" as const;
-}
-
-function statusLabel(data: MlDashboard, t: ReturnType<typeof useT>["t"]) {
-  if (data.status.load_error) return t("ml.status.error");
-  if (!data.status.exists) return t("ml.status.missing");
-  if (data.status.missing_categories.length > 0) return t("ml.status.outdated");
-  return t("ml.status.ready");
-}
-
-function statusVariant(data: MlDashboard) {
-  if (data.status.load_error || !data.status.exists) return "destructive" as const;
-  if (data.status.missing_categories.length > 0) return "warning" as const;
-  return "success" as const;
-}
-
-function MetricCard({
-  label,
-  value,
-  hint,
-}: {
-  label: string;
-  value: string;
-  hint?: string;
-}) {
-  return (
-    <Card>
-      <CardContent className="p-4">
-        <div className="text-xs text-muted-foreground">{label}</div>
-        <div className="mt-1 text-2xl font-semibold tabular-nums">{value}</div>
-        {hint ? (
-          <div className="mt-1 truncate text-xs text-muted-foreground">{hint}</div>
-        ) : null}
-      </CardContent>
-    </Card>
-  );
-}
-
-function recommendationReason(
-  code: string,
-  t: ReturnType<typeof useT>["t"],
-): string {
-  switch (code) {
-    case "best_calibrated_macro_f1":
-      return t("ml.recommendation.reason.best_calibrated_macro_f1");
-    case "prefer_calibrated_close":
-      return t("ml.recommendation.reason.prefer_calibrated_close");
-    case "best_macro_f1":
-      return t("ml.recommendation.reason.best_macro_f1");
-    case "no_report":
-      return t("ml.recommendation.reason.no_report");
-    default:
-      return code;
-  }
-}
-
-function ModelComparisonCard({
-  rows,
-  recommendation,
-}: {
-  rows: MlModelComparison[];
-  recommendation: MlModelRecommendation;
-}) {
-  const { t } = useT();
-  const hasRows = rows.length > 0;
-  const columns: DataTableColumn<MlModelComparison>[] = [
-    {
-      id: "model",
-      header: t("ml.comparison.model"),
-      sortValue: (row) => row.rank ?? 999,
-      className: "font-medium",
-      cell: (row) => (
-        <>
-          <span className="mr-2 text-xs text-muted-foreground">
-            #{row.rank}
-          </span>
-          {row.estimator}
-        </>
-      ),
-    },
-    {
-      id: "features",
-      header: t("ml.comparison.features"),
-      sortValue: (row) => row.feature_set,
-      className: "text-muted-foreground",
-      cell: (row) => row.feature_set,
-    },
-    {
-      id: "macro",
-      header: t("ml.comparison.macro"),
-      align: "right",
-      className: "tabular-nums",
-      sortValue: (row) => row.macro_f1,
-      cell: (row) => percent(row.macro_f1),
-    },
-    {
-      id: "weighted",
-      header: t("ml.comparison.weighted"),
-      align: "right",
-      className: "tabular-nums",
-      sortValue: (row) => row.weighted_f1,
-      cell: (row) => percent(row.weighted_f1),
-    },
-    {
-      id: "stability",
-      header: t("ml.comparison.stability"),
-      align: "right",
-      className: "tabular-nums",
-      sortValue: (row) => row.stability_score,
-      cell: (row) => percent(row.stability_score),
-    },
-    {
-      id: "coverage",
-      header: t("ml.comparison.coverage"),
-      align: "right",
-      className: "tabular-nums",
-      sortValue: (row) => row.coverage_at_055,
-      cell: (row) => percent(row.coverage_at_055),
-    },
-    {
-      id: "accuracy",
-      header: t("ml.comparison.accuracy"),
-      align: "right",
-      className: "tabular-nums",
-      sortValue: (row) => row.accuracy_at_055,
-      cell: (row) => percent(row.accuracy_at_055),
-    },
-    {
-      id: "status",
-      header: t("ml.comparison.status"),
-      cell: (row) => (
-        <div className="flex flex-wrap gap-1">
-          {row.is_recommended ? (
-            <Badge variant="success">{t("ml.comparison.recommended")}</Badge>
-          ) : null}
-          {row.is_current ? (
-            <Badge variant="secondary">{t("ml.comparison.current")}</Badge>
-          ) : null}
-          {row.skipped ? (
-            <Badge variant="warning">{t("ml.comparison.skipped")}</Badge>
-          ) : null}
-        </div>
-      ),
-    },
-  ];
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base text-foreground">
-          <Sparkles className="h-4 w-4 text-primary" />
-          {t("ml.comparison.title")}
-        </CardTitle>
-        <p className="text-xs text-muted-foreground">
-          {t("ml.comparison.help")}
-        </p>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="rounded-md border bg-muted/20 p-3">
-          <div className="space-y-2">
-            <div>
-              <div className="flex flex-wrap items-center gap-2">
-                <div className="text-xs font-medium text-muted-foreground">
-                  {t("ml.comparison.nextTraining")}
-                </div>
-                <Badge variant="info">{t("ml.comparison.recommended")}</Badge>
-              </div>
-              <div className="mt-1 font-medium">
-                {recommendation.estimator} · {recommendation.feature_set}
-              </div>
-            </div>
-            <p className="text-sm text-muted-foreground">
-              {recommendationReason(recommendation.reason_code, t)}
-            </p>
-            <p className="text-xs text-muted-foreground">
-              {t("ml.comparison.activeModelNote")}
-            </p>
-          </div>
-        </div>
-
-        {hasRows ? (
-          <DataTable
-            columns={columns}
-            data={rows}
-            rowKey={(row) => `${row.feature_set}-${row.estimator}`}
-            initialSort={{ id: "model", dir: "asc" }}
-            tableClassName="min-w-[840px]"
-            getRowClassName={(row) =>
-              row.is_recommended ? "bg-primary/5" : undefined
-            }
-          />
-        ) : (
-          <p className="text-sm text-muted-foreground">
-            {t("ml.comparison.noReport")}
-          </p>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
-function FeedbackQualityCard({
-  quality,
-  hotspots,
-}: {
-  quality: Record<string, unknown>;
-  hotspots: Record<string, unknown>[];
-}) {
-  const { t } = useT();
-  const accepted = numberFromRecord(quality, "accepted_suggestions") ?? 0;
-  const rejected = numberFromRecord(quality, "rejected_suggestions") ?? 0;
-  const manual = numberFromRecord(quality, "manual_category_events") ?? 0;
-  const acceptanceRate = numberFromRecord(quality, "acceptance_rate");
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-base text-foreground">
-          {t("ml.feedback.title")}
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="grid gap-4 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
-        <div className="grid grid-cols-2 gap-3 text-sm">
-          <div className="rounded-md border bg-muted/20 p-3">
-            <div className="text-xs text-muted-foreground">
-              {t("ml.feedback.accepted")}
-            </div>
-            <div className="mt-1 text-lg font-semibold tabular-nums">
-              {formatNumber(accepted)}
-            </div>
-          </div>
-          <div className="rounded-md border bg-muted/20 p-3">
-            <div className="text-xs text-muted-foreground">
-              {t("ml.feedback.rejected")}
-            </div>
-            <div className="mt-1 text-lg font-semibold tabular-nums">
-              {formatNumber(rejected)}
-            </div>
-          </div>
-          <div className="rounded-md border bg-muted/20 p-3">
-            <div className="text-xs text-muted-foreground">
-              {t("ml.feedback.manual")}
-            </div>
-            <div className="mt-1 text-lg font-semibold tabular-nums">
-              {formatNumber(manual)}
-            </div>
-          </div>
-          <div className="rounded-md border bg-muted/20 p-3">
-            <div className="text-xs text-muted-foreground">
-              {t("ml.feedback.acceptanceRate")}
-            </div>
-            <div className="mt-1 text-lg font-semibold tabular-nums">
-              {percent(acceptanceRate)}
-            </div>
-          </div>
-        </div>
-        <div className="space-y-2">
-          <div className="text-xs font-medium text-muted-foreground">
-            {t("ml.feedback.hotspots")}
-          </div>
-          {hotspots.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              {t("ml.feedback.noHotspots")}
-            </p>
-          ) : (
-            <div className="space-y-2">
-              {hotspots.slice(0, 5).map((row, index) => {
-                const predicted = String(row.predicted_category ?? "—");
-                const final = row.final_category ? String(row.final_category) : null;
-                const merchant = row.merchant ? String(row.merchant) : "—";
-                const count =
-                  typeof row.count === "number" ? row.count : Number(row.count ?? 0);
-                return (
-                  <div
-                    key={`${predicted}-${final}-${merchant}-${index}`}
-                    className="flex items-center justify-between gap-3 rounded-md border px-3 py-2 text-sm"
-                  >
-                    <div className="min-w-0">
-                      <div className="truncate font-medium">
-                        {tCategory(t, predicted)} →{" "}
-                        {final ? tCategory(t, final) : t("ml.feedback.rejectedLabel")}
-                      </div>
-                      <div className="truncate text-xs text-muted-foreground">
-                        {merchant}
-                      </div>
-                    </div>
-                    <Badge variant="warning">{formatNumber(count)}</Badge>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
-function retrainReasonLabel(code: string, t: ReturnType<typeof useT>["t"]) {
-  switch (code) {
-    case "label_growth_since_training":
-      return t("ml.retrainSignal.reason.labelGrowth");
-    case "feedback_since_training":
-      return t("ml.retrainSignal.reason.feedback");
-    case "high_rejection_rate":
-      return t("ml.retrainSignal.reason.rejectionRate");
-    default:
-      return code;
-  }
-}
-
-function RetrainSignalCard({ signal }: { signal: Record<string, unknown> }) {
-  const { t } = useT();
-  const recommended = signal.retrain_recommended === true;
-  const reasons = Array.isArray(signal.reason_codes)
-    ? signal.reason_codes.map(String)
-    : [];
-  const newLabels = numberFromRecord(signal, "new_labels_since_training") ?? 0;
-  const labelGrowth = numberFromRecord(signal, "new_labels_since_training_ratio");
-  const feedbackSince = numberFromRecord(signal, "feedback_events_since_model") ?? 0;
-  const rejectionRate = numberFromRecord(signal, "rejection_rate");
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base text-foreground">
-          <BrainCircuit className="h-4 w-4 text-muted-foreground" />
-          {t("ml.retrainSignal.title")}
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <Badge variant={recommended ? "warning" : "success"}>
-          {recommended
-            ? t("ml.retrainSignal.recommended")
-            : t("ml.retrainSignal.stable")}
-        </Badge>
-        <div className="grid gap-3 sm:grid-cols-3">
-          <div className="rounded-md border bg-muted/20 p-3">
-            <div className="text-xs text-muted-foreground">
-              {t("ml.retrainSignal.newLabels")}
-            </div>
-            <div className="mt-1 text-lg font-semibold tabular-nums">
-              {formatNumber(newLabels)}
-            </div>
-            <div className="text-xs text-muted-foreground">
-              {percent(labelGrowth)}
-            </div>
-          </div>
-          <div className="rounded-md border bg-muted/20 p-3">
-            <div className="text-xs text-muted-foreground">
-              {t("ml.retrainSignal.feedback")}
-            </div>
-            <div className="mt-1 text-lg font-semibold tabular-nums">
-              {formatNumber(feedbackSince)}
-            </div>
-          </div>
-          <div className="rounded-md border bg-muted/20 p-3">
-            <div className="text-xs text-muted-foreground">
-              {t("ml.retrainSignal.rejectionRate")}
-            </div>
-            <div className="mt-1 text-lg font-semibold tabular-nums">
-              {percent(rejectionRate)}
-            </div>
-          </div>
-        </div>
-        {reasons.length > 0 ? (
-          <div className="flex flex-wrap gap-1">
-            {reasons.map((reason) => (
-              <Badge key={reason} variant="muted">
-                {retrainReasonLabel(reason, t)}
-              </Badge>
-            ))}
-          </div>
-        ) : null}
-      </CardContent>
-    </Card>
-  );
-}
+import { ClassList } from "./_components/class-list";
+import { FeedbackQualityCard } from "./_components/feedback-quality-card";
+import { MetricCard } from "./_components/metric-card";
+import { ModelComparisonCard } from "./_components/model-comparison-card";
+import { RetrainSignalCard } from "./_components/retrain-signal-card";
+import {
+  formatDateTime,
+  percent,
+  readinessLabel,
+  readinessVariant,
+  statusLabel,
+  statusVariant,
+} from "./_lib/ml-format";
 
 export default function MlPage() {
   const { t } = useT();
@@ -461,7 +50,7 @@ export default function MlPage() {
       qc.invalidateQueries({ queryKey: ["mlDashboard"] });
       toast.success(t("ml.retrainStarted"));
     },
-    onError: () => toast.error(t("toast.error")),
+    onError: (error) => showErrorToast(error, t("toast.error")),
   });
 
   const reclassify = useMutation({
@@ -471,7 +60,7 @@ export default function MlPage() {
       qc.invalidateQueries({ queryKey: ["transactions"] });
       toast.success(t("ml.reclassifyDone", { n: result.updated }));
     },
-    onError: () => toast.error(t("toast.error")),
+    onError: (error) => showErrorToast(error, t("toast.error")),
   });
 
   const data = query.data;
@@ -825,34 +414,6 @@ export default function MlPage() {
             </div>
           </div>
         </>
-      )}
-    </div>
-  );
-}
-
-function ClassList({
-  title,
-  values,
-  variant,
-}: {
-  title: string;
-  values: string[];
-  variant: "secondary" | "destructive" | "outline";
-}) {
-  const { t } = useT();
-  return (
-    <div className="space-y-2">
-      <div className="text-xs font-medium text-muted-foreground">{title}</div>
-      {values.length === 0 ? (
-        <span className="text-sm text-muted-foreground">—</span>
-      ) : (
-        <div className="flex flex-wrap gap-1.5">
-          {values.map((value) => (
-            <Badge key={value} variant={variant}>
-              {tCategory(t, value)}
-            </Badge>
-          ))}
-        </div>
       )}
     </div>
   );

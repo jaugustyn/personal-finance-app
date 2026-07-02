@@ -1,39 +1,19 @@
 "use client";
 
-import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
-import { useMemo, type ComponentType, type ReactNode } from "react";
+import { useMemo } from "react";
 import {
-  AlertTriangle,
   ArrowDownCircle,
   ArrowUpCircle,
-  CalendarClock,
-  ListChecks,
-  Loader2,
-  PieChart,
   PiggyBank,
-  ReceiptText,
   RotateCcw,
-  ShoppingBag,
   Wallet,
 } from "lucide-react";
-import {
-  api,
-  type Anomaly,
-  type CategoryBreakdown,
-  type Direction,
-  type MerchantStat,
-  type ReviewQueueItem,
-  type SubscriptionOverview,
-  type SubscriptionUpcomingPayment,
-  type Transaction,
-} from "@/lib/api";
+import { api } from "@/lib/api";
 import { KpiCard } from "@/components/kpi-card";
 import { PageHeader } from "@/components/page-header";
-import { Money } from "@/components/money";
 import { EmptyState } from "@/components/empty-state";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Tabs,
@@ -43,32 +23,41 @@ import {
 } from "@/components/ui/tabs";
 import {
   CashflowChart,
-  CategoryDonut,
   CategoryMoMChart,
   CategoryTrendChart,
   FrequentMerchantsBar,
   NetWorthChart,
   TopMerchantsBar,
 } from "@/components/charts";
-import { cn, formatCurrency, formatDate, formatPercent } from "@/lib/utils";
-import { useT, tCategory } from "@/lib/i18n";
+import { cn, formatCurrency, formatPercent } from "@/lib/utils";
+import { useT } from "@/lib/i18n";
 import { useLocalStorageState } from "@/hooks/use-local-storage-state";
-import { transactionsHref } from "@/lib/transaction-links";
-
-type DashboardRange = "1m" | "3m" | "6m" | "12m" | "all";
-type DashboardDirection = Exclude<Direction, "all">;
-type DashboardLimit = 5 | 8 | 12;
-type DashboardTab = "overview" | "review" | "explore";
-
-const RANGE_MONTHS: Record<DashboardRange, number> = {
-  "1m": 1,
-  "3m": 3,
-  "6m": 6,
-  "12m": 12,
-  all: 12,
-};
-const RANGE_OPTIONS: DashboardRange[] = ["1m", "3m", "6m", "12m", "all"];
-const LIMIT_OPTIONS: DashboardLimit[] = [5, 8, 12];
+import { CategoryPanel } from "./_components/dashboard-category-panel";
+import { InsightStrip } from "./_components/dashboard-insights";
+import {
+  OperationalHeader,
+  OperationalPanels,
+} from "./_components/dashboard-operational";
+import {
+  ChartCard,
+  ChartSkeleton,
+  ContextRow,
+  SectionIntro,
+} from "./_components/dashboard-section";
+import {
+  FilterChip,
+  ToolbarButton,
+  ToolbarGroup,
+} from "./_components/dashboard-toolbar";
+import {
+  LIMIT_OPTIONS,
+  RANGE_MONTHS,
+  RANGE_OPTIONS,
+  type DashboardDirection,
+  type DashboardLimit,
+  type DashboardRange,
+  type DashboardTab,
+} from "./_lib/dashboard-types";
 
 export default function DashboardPage() {
   const { t } = useT();
@@ -596,566 +585,6 @@ export default function DashboardPage() {
           </div>
         </TabsContent>
       </Tabs>
-    </div>
-  );
-}
-
-function ToolbarGroup({
-  label,
-  children,
-}: {
-  label: string;
-  children: ReactNode;
-}) {
-  return (
-    <div className="min-w-0 space-y-1">
-      <div className="px-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-        {label}
-      </div>
-      <div className="inline-flex max-w-full flex-wrap rounded-lg border bg-background p-1">
-        {children}
-      </div>
-    </div>
-  );
-}
-
-function ToolbarButton({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        "h-8 rounded-md px-3 text-xs font-medium transition-colors",
-        active
-          ? "bg-accent text-accent-foreground shadow-sm"
-          : "text-muted-foreground hover:text-foreground",
-      )}
-    >
-      {children}
-    </button>
-  );
-}
-
-function FilterChip({ label }: { label: string }) {
-  return (
-    <span className="inline-flex h-7 items-center rounded-md border bg-background px-2.5 text-muted-foreground">
-      {label}
-    </span>
-  );
-}
-
-function SectionIntro({
-  title,
-  description,
-  badge,
-}: {
-  title: string;
-  description: string;
-  badge: string;
-}) {
-  return (
-    <div className="flex flex-wrap items-start justify-between gap-3 rounded-lg border bg-muted/30 p-4">
-      <div className="min-w-0">
-        <h2 className="text-base font-semibold text-foreground">{title}</h2>
-        <p className="mt-1 text-sm text-muted-foreground">{description}</p>
-      </div>
-      <Badge variant="accent">{badge}</Badge>
-    </div>
-  );
-}
-
-function InsightStrip({
-  topCategory,
-  topMerchant,
-  transactionCount,
-  reviewCount,
-  anomalyCount,
-  baseCurrency,
-}: {
-  topCategory: CategoryBreakdown | null;
-  topMerchant: MerchantStat | null;
-  transactionCount: number;
-  reviewCount: number;
-  anomalyCount: number;
-  baseCurrency: string;
-}) {
-  const { t } = useT();
-  return (
-    <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-5">
-      <InsightItem
-        icon={PieChart}
-        label={t("dashboard.insight.topCategory")}
-        value={
-          topCategory?.category
-            ? tCategory(t, topCategory.category)
-            : t("common.empty")
-        }
-        detail={
-          topCategory
-            ? `${formatCurrency(Number(topCategory.amount), baseCurrency)} · ${formatPercent(
-                Number(topCategory.share),
-              )}`
-            : undefined
-        }
-      />
-      <InsightItem
-        icon={ShoppingBag}
-        label={t("dashboard.insight.topMerchant")}
-        value={topMerchant?.merchant ?? t("common.empty")}
-        detail={
-          topMerchant
-            ? formatCurrency(Number(topMerchant.amount), baseCurrency)
-            : undefined
-        }
-      />
-      <InsightItem
-        icon={ReceiptText}
-        label={t("dashboard.insight.transactions")}
-        value={String(transactionCount)}
-        detail={t("dashboard.insight.transactionsHint")}
-      />
-      <InsightItem
-        icon={ListChecks}
-        label={t("dashboard.insight.review")}
-        value={String(reviewCount)}
-        detail={t("dashboard.insight.reviewHint")}
-      />
-      <InsightItem
-        icon={AlertTriangle}
-        label={t("dashboard.insight.alerts")}
-        value={String(anomalyCount)}
-        detail={t("dashboard.insight.alertsHint")}
-      />
-    </div>
-  );
-}
-
-function InsightItem({
-  icon: Icon,
-  label,
-  value,
-  detail,
-}: {
-  icon: ComponentType<{ className?: string }>;
-  label: string;
-  value: string;
-  detail?: string;
-}) {
-  return (
-    <div className="flex min-w-0 items-center gap-3 rounded-lg border bg-card p-3">
-      <div
-        className={cn(
-          "flex h-9 w-9 shrink-0 items-center justify-center rounded-md",
-          "bg-accent-soft text-accent-soft-foreground",
-        )}
-      >
-        <Icon className="h-4 w-4" />
-      </div>
-      <div className="min-w-0">
-        <div className="text-xs text-muted-foreground">{label}</div>
-        <div className="truncate text-sm font-semibold text-foreground">{value}</div>
-        {detail && (
-          <div className="truncate text-xs text-muted-foreground">{detail}</div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function ChartCard({
-  title,
-  children,
-  className,
-}: {
-  title: string;
-  children: ReactNode;
-  className?: string;
-}) {
-  return (
-    <Card className={className}>
-      <CardHeader>
-        <CardTitle className="text-base text-foreground">{title}</CardTitle>
-      </CardHeader>
-      <CardContent>{children}</CardContent>
-    </Card>
-  );
-}
-
-function CategoryPanel({
-  data,
-  isLoading,
-  currency,
-}: {
-  data: CategoryBreakdown[] | undefined;
-  isLoading: boolean;
-  currency: string;
-}) {
-  const { t } = useT();
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-base text-foreground">
-          {t("dashboard.byCategoryTitle")}
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        {isLoading ? (
-          <ChartSkeleton />
-        ) : data && data.length > 0 ? (
-          <>
-            <CategoryDonut data={data} />
-            <div className="space-y-2">
-              {data.slice(0, 5).map((row) => (
-                <div
-                  key={row.category ?? "none"}
-                  className="flex items-center justify-between gap-3 text-sm"
-                >
-                  <div className="min-w-0 truncate font-medium">
-                    {row.category ? tCategory(t, row.category) : t("common.unknown")}
-                  </div>
-                  <div className="shrink-0 text-right tabular-nums text-muted-foreground">
-                    {formatCurrency(Number(row.amount), currency)}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </>
-        ) : (
-          <EmptyState title={t("common.empty")} />
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
-function OperationalHeader() {
-  const { t } = useT();
-  return (
-    <div className="mb-3 flex items-start justify-between gap-3 xl:mb-0">
-      <div>
-        <h2 className="text-base font-semibold text-foreground">
-          {t("dashboard.section.operational")}
-        </h2>
-        <p className="text-sm text-muted-foreground">
-          {t("dashboard.section.operationalShortHint")}
-        </p>
-      </div>
-      <Badge variant="muted">{t("dashboard.filters.independent")}</Badge>
-    </div>
-  );
-}
-
-function OperationalPanels({
-  reviewRows,
-  anomalies,
-  subscriptions,
-  recent,
-  baseCurrency,
-  reviewLoading,
-  anomaliesLoading,
-  subscriptionsLoading,
-  recentLoading,
-  layout,
-}: {
-  reviewRows: ReviewQueueItem[] | undefined;
-  anomalies: Anomaly[] | undefined;
-  subscriptions: SubscriptionOverview | undefined;
-  recent: Transaction[] | undefined;
-  baseCurrency: string;
-  reviewLoading: boolean;
-  anomaliesLoading: boolean;
-  subscriptionsLoading: boolean;
-  recentLoading: boolean;
-  layout: "rail" | "grid";
-}) {
-  return (
-    <div
-      className={cn(
-        layout === "grid"
-          ? "grid gap-4 md:grid-cols-2 xl:grid-cols-4"
-          : "space-y-3",
-      )}
-    >
-      <ReviewPanel rows={reviewRows} isLoading={reviewLoading} />
-      <AnomaliesPanel
-        rows={anomalies}
-        isLoading={anomaliesLoading}
-        currency={baseCurrency}
-      />
-      <UpcomingPanel
-        overview={subscriptions}
-        isLoading={subscriptionsLoading}
-      />
-      <RecentPanel rows={recent} isLoading={recentLoading} />
-    </div>
-  );
-}
-
-function ReviewPanel({
-  rows,
-  isLoading,
-}: {
-  rows: ReviewQueueItem[] | undefined;
-  isLoading: boolean;
-}) {
-  const { t } = useT();
-  return (
-    <ListCard
-      title={t("dashboard.operational.review")}
-      icon={ListChecks}
-      href="/review"
-      footer={t("dashboard.operational.openReview")}
-    >
-      {isLoading ? (
-        <ListLoading />
-      ) : rows && rows.length > 0 ? (
-        rows.slice(0, 5).map((row) => (
-          <Link
-            key={row.transaction_id}
-            href={transactionsHref({ view: "review", search: row.merchant || row.title })}
-            className="block rounded-md px-2 py-1.5 transition-colors hover:bg-muted"
-          >
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <div className="truncate text-sm font-medium">
-                  {row.merchant || row.title}
-                </div>
-                <div className="truncate text-xs text-muted-foreground">
-                  {row.predicted_category
-                    ? tCategory(t, row.predicted_category)
-                    : t("review.queue.reason.missing_prediction")}
-                </div>
-              </div>
-              <Money
-                amount={Number(row.amount)}
-                currency={row.currency}
-                direction={row.direction}
-                className="shrink-0 text-xs"
-              />
-            </div>
-          </Link>
-        ))
-      ) : (
-        <ListEmpty />
-      )}
-    </ListCard>
-  );
-}
-
-function AnomaliesPanel({
-  rows,
-  isLoading,
-  currency,
-}: {
-  rows: Anomaly[] | undefined;
-  isLoading: boolean;
-  currency: string;
-}) {
-  const { t } = useT();
-  return (
-    <ListCard
-      title={t("dashboard.operational.alerts")}
-      icon={AlertTriangle}
-      href="/anomalies"
-      footer={t("dashboard.operational.openAnomalies")}
-    >
-      {isLoading ? (
-        <ListLoading />
-      ) : rows && rows.length > 0 ? (
-        rows.slice(0, 3).map((row) => (
-          <Link
-            key={row.id}
-            href={transactionsHref({ search: row.merchant || row.title })}
-            className="block rounded-md px-2 py-1.5 transition-colors hover:bg-muted"
-          >
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <div className="truncate text-sm font-medium">
-                  {row.merchant || row.title}
-                </div>
-                <div className="truncate text-xs text-muted-foreground">
-                  {row.reasons[0] ?? row.anomaly_type}
-                </div>
-              </div>
-              <div className="shrink-0 text-xs font-medium tabular-nums text-negative">
-                {formatCurrency(Number(row.amount), currency)}
-              </div>
-            </div>
-          </Link>
-        ))
-      ) : (
-        <ListEmpty />
-      )}
-    </ListCard>
-  );
-}
-
-function UpcomingPanel({
-  overview,
-  isLoading,
-}: {
-  overview: SubscriptionOverview | undefined;
-  isLoading: boolean;
-}) {
-  const { t } = useT();
-  const rows = overview?.upcoming ?? [];
-  return (
-    <ListCard
-      title={t("dashboard.operational.payments")}
-      icon={CalendarClock}
-      href="/subscriptions"
-      footer={t("dashboard.operational.openSubscriptions")}
-    >
-      {isLoading ? (
-        <ListLoading />
-      ) : rows.length > 0 ? (
-        rows.slice(0, 3).map((row) => <UpcomingRow key={row.subscription_key} row={row} />)
-      ) : (
-        <ListEmpty />
-      )}
-    </ListCard>
-  );
-}
-
-function UpcomingRow({ row }: { row: SubscriptionUpcomingPayment }) {
-  return (
-    <Link
-      href="/subscriptions"
-      className="block rounded-md px-2 py-1.5 transition-colors hover:bg-muted"
-    >
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="truncate text-sm font-medium">{row.display_name}</div>
-          <div className="text-xs text-muted-foreground">
-            {formatDate(row.due_date)}
-          </div>
-        </div>
-        <div className="shrink-0 text-xs font-medium tabular-nums">
-          {formatCurrency(Number(row.amount_base), row.base_currency)}
-        </div>
-      </div>
-    </Link>
-  );
-}
-
-function RecentPanel({
-  rows,
-  isLoading,
-}: {
-  rows: Transaction[] | undefined;
-  isLoading: boolean;
-}) {
-  const { t } = useT();
-  return (
-    <ListCard
-      title={t("dashboard.recentTitle")}
-      icon={ReceiptText}
-      href="/transactions"
-      footer={t("dashboard.operational.openTransactions")}
-    >
-      {isLoading ? (
-        <ListLoading />
-      ) : rows && rows.length > 0 ? (
-        rows.slice(0, 5).map((row) => (
-          <Link
-            key={row.id}
-            href={transactionsHref({ search: row.merchant || row.title })}
-            className="block rounded-md px-2 py-1.5 transition-colors hover:bg-muted"
-          >
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <div className="truncate text-sm font-medium">
-                  {row.merchant || row.title}
-                </div>
-                <div className="text-xs text-muted-foreground">
-                  {formatDate(row.booking_date)}
-                </div>
-              </div>
-              <Money
-                amount={Number(row.amount)}
-                currency={row.currency}
-                direction={row.direction}
-                className="shrink-0 text-xs"
-              />
-            </div>
-          </Link>
-        ))
-      ) : (
-        <ListEmpty />
-      )}
-    </ListCard>
-  );
-}
-
-function ListCard({
-  title,
-  icon: Icon,
-  href,
-  footer,
-  children,
-}: {
-  title: string;
-  icon: ComponentType<{ className?: string }>;
-  href: string;
-  footer: string;
-  children: ReactNode;
-}) {
-  return (
-    <Card>
-      <CardHeader className="pb-2">
-        <CardTitle className="flex items-center gap-2 text-sm text-foreground">
-          <Icon className="h-4 w-4 text-muted-foreground" />
-          {title}
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-2">
-        <div className="space-y-1">{children}</div>
-        <Button asChild variant="link" size="sm" className="h-auto px-0 text-xs">
-          <Link href={href}>{footer}</Link>
-        </Button>
-      </CardContent>
-    </Card>
-  );
-}
-
-function ContextRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-center justify-between gap-3 rounded-md border px-3 py-2">
-      <span className="text-muted-foreground">{label}</span>
-      <span className="font-medium">{value}</span>
-    </div>
-  );
-}
-
-function ListLoading() {
-  return (
-    <div className="flex h-24 items-center justify-center text-muted-foreground">
-      <Loader2 className="h-4 w-4 animate-spin" />
-    </div>
-  );
-}
-
-function ListEmpty() {
-  const { t } = useT();
-  return (
-    <div className="rounded-md border border-dashed px-3 py-6 text-center text-xs text-muted-foreground">
-      {t("common.empty")}
-    </div>
-  );
-}
-
-function ChartSkeleton() {
-  return (
-    <div className="flex h-72 items-center justify-center text-muted-foreground">
-      <Loader2 className="h-5 w-5 animate-spin" />
     </div>
   );
 }

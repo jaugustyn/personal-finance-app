@@ -1,32 +1,22 @@
 "use client";
 
-import Link from "next/link";
 import { useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Upload,
   FileSpreadsheet,
   AlertCircle,
-  CheckCircle2,
   HelpCircle,
   Loader2,
-  Trash2,
-  History,
-  Receipt,
 } from "lucide-react";
 import {
   api,
-  type ImportQualityReport,
   type ImportPreview,
-  type ImportSummary,
-  type ImportHistoryRow,
 } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { DataTable, type DataTableColumn } from "@/components/data-table";
 import { PageHeader } from "@/components/page-header";
-import { useConfirm } from "@/components/confirm-dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
@@ -51,59 +41,18 @@ import {
 } from "@/components/ui/tooltip";
 import { toast } from "sonner";
 import { useT, type TranslationKey } from "@/lib/i18n";
-import { transactionsHref } from "@/lib/transaction-links";
-
-const LOGICAL_FIELDS = [
-  { key: "date", required: true, recommended: false, description: "" },
-  { key: "amount", required: true, recommended: false, description: "" },
-  { key: "currency", required: false, recommended: false, description: "" },
-  { key: "merchant", required: false, recommended: true, description: "" },
-  { key: "title", required: false, recommended: true, description: "" },
-  { key: "category", required: false, recommended: false, description: "" },
-  { key: "external_id", required: false, recommended: false, description: "" },
-] as const;
-
-type FieldKey = (typeof LOGICAL_FIELDS)[number]["key"];
-type FieldSpec = {
-  key: FieldKey;
-  required: boolean;
-  recommended: boolean;
-  description: string;
-};
-
-const LOGICAL_FIELD_KEYS = new Set<string>(LOGICAL_FIELDS.map((field) => field.key));
-
-const fieldSpecsFromPreview = (preview: ImportPreview | null): FieldSpec[] => {
-  if (!preview?.field_specs?.length) return [...LOGICAL_FIELDS];
-  return preview.field_specs
-    .filter((spec) => LOGICAL_FIELD_KEYS.has(spec.key))
-    .map((spec) => ({
-      key: spec.key as FieldKey,
-      required: spec.required,
-      recommended: spec.recommended,
-      description: spec.description,
-    }));
-};
-
-const buildCustomWarnings = (
-  mapping: Record<FieldKey, string>,
-  t: (key: TranslationKey) => string,
-) => {
-  const warnings: string[] = [];
-  if (!mapping.merchant && !mapping.title) {
-    warnings.push(t("imports.warning.merchantOrTitle"));
-  }
-  if (!mapping.currency) {
-    warnings.push(t("imports.warning.currencyDefault"));
-  }
-  if (!mapping.external_id) {
-    warnings.push(t("imports.warning.externalId"));
-  }
-  return Array.from(new Set(warnings));
-};
-
-const fieldHintKey = (key: FieldKey): TranslationKey =>
-  `imports.fieldHint.${key}` as TranslationKey;
+import { showErrorToast } from "@/lib/toasts";
+import { Dropzone } from "./_components/dropzone";
+import { ImportQualityPanel } from "./_components/import-quality-panel";
+import { ImportsHistory } from "./_components/imports-history";
+import { SuccessBox } from "./_components/success-box";
+import {
+  buildCustomWarnings,
+  fieldHintKey,
+  fieldSpecsFromPreview,
+  LOGICAL_FIELDS,
+  type FieldKey,
+} from "./_lib/import-fields";
 
 export default function ImportsPage() {
   const { t } = useT();
@@ -145,7 +94,7 @@ export default function ImportsPage() {
       qc.invalidateQueries();
       toast.success(t("toast.imported"));
     },
-    onError: () => toast.error(t("toast.error")),
+    onError: (error) => showErrorToast(error, t("toast.error")),
   });
 
   const onChooseFile = (f: File | null) => {
@@ -395,273 +344,5 @@ export default function ImportsPage() {
 
       <ImportsHistory />
     </div>
-  );
-}
-
-function Dropzone({
-  onFile,
-  label,
-  disabled,
-}: {
-  onFile: (f: File | null) => void;
-  label: string;
-  disabled?: boolean;
-}) {
-  const [hover, setHover] = useState(false);
-  return (
-    <label
-      onDragOver={(e) => {
-        e.preventDefault();
-        setHover(true);
-      }}
-      onDragLeave={() => setHover(false)}
-      onDrop={(e) => {
-        e.preventDefault();
-        setHover(false);
-        const f = e.dataTransfer.files?.[0];
-        if (f) onFile(f);
-      }}
-      className={`flex h-32 cursor-pointer flex-col items-center justify-center gap-2 rounded-md border-2 border-dashed text-sm transition-colors ${
-        hover ? "border-primary bg-primary/5" : "border-muted-foreground/30"
-      } ${disabled ? "pointer-events-none opacity-50" : ""}`}
-    >
-      <Upload className="h-6 w-6 text-muted-foreground" />
-      <span className="text-muted-foreground">{label}</span>
-      <input
-        type="file"
-        accept=".csv,.tsv,.txt,text/csv,text/plain,text/tab-separated-values"
-        className="hidden"
-        onChange={(e) => onFile(e.target.files?.[0] ?? null)}
-      />
-    </label>
-  );
-}
-
-function SuccessBox({ summary }: { summary: ImportSummary }) {
-  const { t } = useT();
-  return (
-    <div className="flex items-center gap-2 rounded-md border border-emerald-500/40 bg-emerald-500/10 p-3 text-sm text-emerald-700 dark:text-emerald-400">
-      <CheckCircle2 className="h-4 w-4" />
-      {t("imports.success", {
-        inserted: summary.inserted,
-        duplicates: summary.duplicates,
-      })}
-    </div>
-  );
-}
-
-function ImportQualityPanel({ report }: { report: ImportQualityReport }) {
-  const { t } = useT();
-  const statusVariant = report.blocking_issues > 0 ? "destructive" : "success";
-  const statusLabel =
-    report.blocking_issues > 0
-      ? t("imports.quality.statusIssues")
-      : t("imports.quality.statusOk");
-
-  return (
-    <div className="rounded-md border bg-muted/20 p-4">
-      <div className="flex flex-wrap items-center gap-2">
-        <h3 className="text-sm font-semibold">{t("imports.quality.title")}</h3>
-        <Badge variant={statusVariant}>{statusLabel}</Badge>
-      </div>
-      <div className="mt-3 grid gap-3 sm:grid-cols-3">
-        <QualityMetric
-          label={t("imports.quality.validRows")}
-          value={report.valid_rows}
-          variant="success"
-        />
-        <QualityMetric
-          label={t("imports.quality.blocking")}
-          value={report.blocking_issues}
-          variant={report.blocking_issues > 0 ? "destructive" : "muted"}
-        />
-        <QualityMetric
-          label={t("imports.quality.warnings")}
-          value={report.warnings}
-          variant={report.warnings > 0 ? "warning" : "muted"}
-        />
-      </div>
-      {report.issues.length > 0 ? (
-        <div className="mt-3 space-y-2">
-          {report.issues.slice(0, 6).map((issue) => (
-            <div
-              key={`${issue.severity}:${issue.code}`}
-              className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm"
-            >
-              <Badge variant={issue.severity === "error" ? "destructive" : "warning"}>
-                {issue.count}
-              </Badge>
-              <span>{t(importQualityIssueKey(issue.code))}</span>
-              {issue.sample_rows.length > 0 ? (
-                <span className="text-xs text-muted-foreground">
-                  {t("imports.quality.rows", {
-                    rows: issue.sample_rows.join(", "),
-                  })}
-                </span>
-              ) : null}
-            </div>
-          ))}
-        </div>
-      ) : (
-        <p className="mt-3 text-sm text-muted-foreground">
-          {t("imports.quality.noIssues")}
-        </p>
-      )}
-    </div>
-  );
-}
-
-function QualityMetric({
-  label,
-  value,
-  variant,
-}: {
-  label: string;
-  value: number;
-  variant: "success" | "warning" | "destructive" | "muted";
-}) {
-  return (
-    <div className="rounded-md border bg-background p-3">
-      <div className="text-xs text-muted-foreground">{label}</div>
-      <Badge variant={variant} className="mt-2 text-sm tabular-nums">
-        {value}
-      </Badge>
-    </div>
-  );
-}
-
-function importQualityIssueKey(code: string): TranslationKey {
-  return `imports.quality.issue.${code}` as TranslationKey;
-}
-
-const IMPORTS_QUERY_KEY = ["imports", "history"] as const;
-
-function ImportsHistory() {
-  const { t } = useT();
-  const qc = useQueryClient();
-  const confirm = useConfirm();
-  const { data: imports = [], isLoading } = useQuery<ImportHistoryRow[]>({
-    queryKey: IMPORTS_QUERY_KEY,
-    queryFn: () => api.listImports(),
-  });
-
-  const deleteMut = useMutation({
-    mutationFn: (id: number) => api.deleteImport(id),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: IMPORTS_QUERY_KEY });
-      qc.invalidateQueries({ queryKey: ["transactions"] });
-      qc.invalidateQueries({ queryKey: ["overview"] });
-      qc.invalidateQueries({ queryKey: ["byCategory"] });
-      toast.success(t("toast.deleted"));
-    },
-    onError: () => toast.error(t("toast.error")),
-  });
-
-  const onDelete = async (row: ImportHistoryRow) => {
-    const ok = await confirm({
-      title: t("imports.history.deleteConfirm", {
-        filename: row.filename,
-        n: row.inserted,
-      }),
-      destructive: true,
-    });
-    if (ok) deleteMut.mutate(row.id);
-  };
-  const columns: DataTableColumn<ImportHistoryRow>[] = [
-    {
-      id: "created_at",
-      header: t("imports.history.created"),
-      sortValue: (row) => new Date(row.created_at).getTime(),
-      className: "text-xs whitespace-nowrap text-muted-foreground",
-      cell: (row) => new Date(row.created_at).toLocaleString(),
-    },
-    {
-      id: "filename",
-      header: t("imports.history.filename"),
-      sortValue: (row) => row.filename,
-      className: "font-medium",
-      cell: (row) => row.filename,
-    },
-    {
-      id: "source",
-      header: t("imports.history.source"),
-      sortValue: (row) => row.source,
-      cell: (row) => <Badge variant="outline">{row.source}</Badge>,
-    },
-    {
-      id: "total_rows",
-      header: t("imports.history.totalRows"),
-      align: "right",
-      className: "tabular-nums",
-      sortValue: (row) => row.total_rows,
-      cell: (row) => row.total_rows,
-    },
-    {
-      id: "inserted",
-      header: t("imports.history.inserted"),
-      align: "right",
-      className: "tabular-nums text-positive",
-      sortValue: (row) => row.inserted,
-      cell: (row) => row.inserted,
-    },
-    {
-      id: "duplicates",
-      header: t("imports.history.duplicates"),
-      align: "right",
-      className: "tabular-nums text-muted-foreground",
-      sortValue: (row) => row.duplicates,
-      cell: (row) => row.duplicates,
-    },
-    {
-      id: "actions",
-      header: "",
-      align: "right",
-      headerClassName: "w-24",
-      className: "w-24",
-      cell: (row) => (
-        <div className="flex justify-end gap-1">
-          <Button
-            size="icon"
-            variant="ghost"
-            asChild
-            aria-label={t("imports.history.openTransactions")}
-          >
-            <Link href={transactionsHref({ import_id: row.id })}>
-              <Receipt className="h-4 w-4" />
-            </Link>
-          </Button>
-          <Button
-            size="icon"
-            variant="ghost"
-            onClick={() => onDelete(row)}
-            disabled={deleteMut.isPending}
-            aria-label={t("common.delete")}
-          >
-            <Trash2 className="h-4 w-4 text-destructive" />
-          </Button>
-        </div>
-      ),
-    },
-  ];
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base">
-          <History className="h-4 w-4" /> {t("imports.history.title")}
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="p-0">
-        <DataTable
-          columns={columns}
-          data={imports}
-          rowKey={(row) => row.id}
-          isLoading={isLoading}
-          emptyTitle={t("imports.history.empty")}
-          initialSort={{ id: "created_at", dir: "desc" }}
-          className="rounded-none border-0"
-        />
-      </CardContent>
-    </Card>
   );
 }
