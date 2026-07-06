@@ -105,22 +105,17 @@ export function ListView({ reviewMode, initialFilters }: ListViewProps) {
 
   useEffect(() => {
     if (!initialFilters?.key) return;
-    if (initialFilters.search !== undefined) setSearch(initialFilters.search);
-    if (initialFilters.category !== undefined) setCategory(initialFilters.category);
+    setSearch(initialFilters.search ?? "");
+    setCategory(initialFilters.category ?? "");
     setMerchantCanonicalKey(initialFilters.merchantCanonicalKey);
-    if (initialFilters.direction !== undefined) setDirection(initialFilters.direction);
-    if (initialFilters.transactionType !== undefined) {
-      setTransactionType(initialFilters.transactionType);
-    }
-    if (initialFilters.dateFrom !== undefined) setDateFrom(initialFilters.dateFrom);
-    if (initialFilters.dateTo !== undefined) setDateTo(initialFilters.dateTo);
-    if (initialFilters.importId !== undefined) setImportId(initialFilters.importId);
-    if (initialFilters.reviewState !== undefined) {
-      setReviewState(initialFilters.reviewState);
-    }
-    if (initialFilters.includeTransfers !== undefined) {
-      setIncludeTransfers(initialFilters.includeTransfers);
-    }
+    setDirection(initialFilters.direction ?? "all");
+    setTransactionType(initialFilters.transactionType ?? "");
+    setDateFrom(initialFilters.dateFrom ?? "");
+    setDateTo(initialFilters.dateTo ?? "");
+    setImportId(initialFilters.importId);
+    setMinConfidence("");
+    setReviewState(initialFilters.reviewState ?? "assignable");
+    setIncludeTransfers(initialFilters.includeTransfers ?? !reviewMode);
     setPage(0);
   }, [
     initialFilters?.key,
@@ -134,11 +129,13 @@ export function ListView({ reviewMode, initialFilters }: ListViewProps) {
     initialFilters?.importId,
     initialFilters?.reviewState,
     initialFilters?.includeTransfers,
+    reviewMode,
     setCategory,
     setDateFrom,
     setDateTo,
     setDirection,
     setIncludeTransfers,
+    setMinConfidence,
     setReviewState,
     setSearch,
     setTransactionType,

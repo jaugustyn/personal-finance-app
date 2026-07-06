@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/page-header";
 import { useConfirm } from "@/components/confirm-dialog";
 import { useT, tCategory } from "@/lib/i18n";
+import { showErrorToast } from "@/lib/toasts";
 import { cn } from "@/lib/utils";
 import { CATEGORIES_QUERY_KEY } from "@/hooks/use-categories";
 
@@ -59,7 +60,7 @@ export default function CategoriesPage() {
       qc.invalidateQueries({ queryKey: CATEGORIES_QUERY_KEY });
       toast.success(t("toast.deleted"));
     },
-    onError: () => toast.error(t("toast.error")),
+    onError: (err) => showErrorToast(err, t("toast.error")),
   });
 
   const patchMut = useMutation({
@@ -69,7 +70,7 @@ export default function CategoriesPage() {
       qc.invalidateQueries({ queryKey: CATEGORIES_QUERY_KEY });
       toast.success(t("toast.saved"));
     },
-    onError: () => toast.error(t("toast.error")),
+    onError: (err) => showErrorToast(err, t("toast.error")),
   });
 
   const onDelete = async (cat: CategoryDef) => {
