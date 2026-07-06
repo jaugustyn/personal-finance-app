@@ -162,12 +162,13 @@ def sample_evidence(
         for value in pd.to_datetime(samples["booking_date"]).sort_values().tail(6).tolist()
     ]
     amount_stability = None
-    amounts = samples["amount_base"].abs().astype(float).tolist()
+    amounts = [
+        round(value, 2)
+        for value in samples["amount_base"].abs().astype(float).tolist()
+    ]
     if amounts:
-        median = float(pd.Series(amounts).median())
-        if median > 0:
-            max_dev = max(abs(value - median) / median for value in amounts)
-            amount_stability = round(max(0.0, 1.0 - max_dev), 3)
+        most_common_count = pd.Series(amounts).value_counts().iloc[0]
+        amount_stability = round(float(most_common_count) / len(amounts), 3)
     return {
         "source": source,
         "occurrences": int(len(samples)),
@@ -199,6 +200,10 @@ def transaction_samples(samples: pd.DataFrame) -> list[SubscriptionTransactionSa
                 id=int(row.transaction_id),
                 booking_date=booking_date,
                 merchant=str(row.merchant or ""),
+                merchant_display=str(
+                    getattr(row, "merchant_display", "") or row.merchant or ""
+                ),
+                merchant_canonical_key=str(getattr(row, "merchant_norm", "") or ""),
                 title=str(row.title or ""),
                 amount=round(float(row.amount), 2),
                 currency=str(row.currency or ""),
@@ -276,6 +281,8 @@ def row_from_samples(
     return SubscriptionReviewRow(
         merchant=merchant,
         merchant_key=merchant_key,
+        merchant_display=merchant,
+        merchant_canonical_key=merchant_key.split("|")[0],
         currency=currency,
         base_currency=selected_base_currency,
         cadence=cadence,

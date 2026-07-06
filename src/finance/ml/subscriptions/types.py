@@ -26,6 +26,8 @@ class SubscriptionTransactionSample:
     id: int
     booking_date: date
     merchant: str
+    merchant_display: str
+    merchant_canonical_key: str
     title: str
     amount: float
     currency: str
@@ -39,6 +41,8 @@ class SubscriptionTransactionSample:
 class SubscriptionReviewRow:
     merchant: str
     merchant_key: str
+    merchant_display: str
+    merchant_canonical_key: str
     currency: str
     base_currency: str
     cadence: str

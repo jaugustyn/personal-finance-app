@@ -11,6 +11,8 @@ class SubscriptionTransactionRow(BaseModel):
     id: int
     booking_date: date
     merchant: str
+    merchant_display: str
+    merchant_canonical_key: str
     title: str
     amount: float
     currency: str
@@ -23,6 +25,8 @@ class SubscriptionTransactionRow(BaseModel):
 class SubscriptionRow(BaseModel):
     merchant: str
     merchant_key: str
+    merchant_display: str
+    merchant_canonical_key: str
     display_name: str
     currency: str
     base_currency: str
@@ -47,7 +51,8 @@ class SubscriptionRow(BaseModel):
 
 
 class SubscriptionFeedbackRequest(BaseModel):
-    merchant: str
+    merchant: str | None = None
+    merchant_canonical_key: str | None = None
     action: Literal["confirm"]
     subscription_key: str | None = None
 

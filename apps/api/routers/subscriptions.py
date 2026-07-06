@@ -3,6 +3,7 @@
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
+from apps.api.errors import validation_error
 from apps.api.schemas.subscriptions import (
     FeedbackResponse,
     PreferenceResponse,
@@ -32,6 +33,8 @@ def _to_response(row: SubscriptionReviewRow) -> SubscriptionRow:
     return SubscriptionRow(
         merchant=row.merchant,
         merchant_key=row.merchant_key,
+        merchant_display=row.merchant_display,
+        merchant_canonical_key=row.merchant_canonical_key,
         display_name=row.display_name,
         currency=row.currency,
         base_currency=row.base_currency,
@@ -57,6 +60,8 @@ def _to_response(row: SubscriptionReviewRow) -> SubscriptionRow:
                 id=item.id,
                 booking_date=item.booking_date,
                 merchant=item.merchant,
+                merchant_display=item.merchant_display,
+                merchant_canonical_key=item.merchant_canonical_key,
                 title=item.title,
                 amount=item.amount,
                 currency=item.currency,
@@ -142,10 +147,15 @@ def record_subscription_feedback(
     req: SubscriptionFeedbackRequest,
     session: Session = Depends(get_session),
 ) -> FeedbackResponse:
+    if not req.subscription_key and not req.merchant_canonical_key and not req.merchant:
+        raise validation_error(
+            "Provide subscription_key, merchant_canonical_key or merchant."
+        )
     event = record_subscription_feedback_event(
         session,
         merchant=req.merchant,
         action=req.action,
+        merchant_canonical_key=req.merchant_canonical_key,
         subscription_key=req.subscription_key,
     )
     return FeedbackResponse(id=event.id)

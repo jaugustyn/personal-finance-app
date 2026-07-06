@@ -80,17 +80,20 @@ def upsert_subscription_preference(
 def record_subscription_feedback(
     session: Session,
     *,
-    merchant: str,
+    merchant: str | None,
     action: SubscriptionFeedbackAction,
+    merchant_canonical_key: str | None = None,
     subscription_key: str | None = None,
 ) -> MlFeedbackEvent:
-    normalized = normalize_subscription_merchant(merchant)
+    merchant_value = merchant or merchant_canonical_key or ""
+    normalized = normalize_subscription_merchant(merchant_value)
+    entity_key = subscription_key or merchant_canonical_key or normalized
     event = record_feedback_event(
         session,
         FeedbackEventInput(
             event_type=EVENT_SUBSCRIPTION_CONFIRMED,
             entity_type="subscription_merchant",
-            entity_key=subscription_key or normalized,
+            entity_key=entity_key,
             source="subscription_detector",
         ),
     )
@@ -98,13 +101,18 @@ def record_subscription_feedback(
         keys = {subscription_key} if subscription_key else set()
         if not keys:
             alias_map, label_map = load_merchant_alias_maps(session)
-            identity = merchant_identity(merchant, alias_map=alias_map, label_map=label_map)
+            identity = merchant_identity(
+                merchant_value,
+                alias_map=alias_map,
+                label_map=label_map,
+            )
             candidate_keys = {
                 value
                 for value in {
                     normalized,
+                    merchant_canonical_key,
                     identity.canonical_key,
-                    merchant_key(merchant),
+                    merchant_key(merchant_value),
                 }
                 if value
             }
@@ -118,7 +126,12 @@ def record_subscription_feedback(
                     | display_keys.isin(candidate_keys)
                 ]
                 for row in matches.itertuples():
-                    keys.add(make_subscription_key(str(row.merchant_norm), str(row.currency or "")))
+                    keys.add(
+                        make_subscription_key(
+                            str(row.merchant_norm),
+                            str(row.currency or ""),
+                        )
+                    )
             if not keys:
                 keys.add(normalized)
         for key in keys:
@@ -126,7 +139,7 @@ def record_subscription_feedback(
                 session,
                 subscription_key=key,
                 action="confirm",
-                display_name=merchant,
+                display_name=merchant or merchant_canonical_key or key,
             )
     session.commit()
     session.refresh(event)
