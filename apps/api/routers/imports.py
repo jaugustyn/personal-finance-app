@@ -122,29 +122,57 @@ def _quality_report_response(report: ImportQualityReport) -> ImportQualityReport
     )
 
 
+def _parse_column_map(column_map: str | None) -> dict[str, str] | None:
+    if not column_map:
+        return None
+    try:
+        parsed = json.loads(column_map)
+    except json.JSONDecodeError as exc:
+        raise validation_error(f"Invalid column_map JSON: {exc}") from exc
+    if not isinstance(parsed, dict):
+        raise validation_error("column_map must be an object.")
+    return clean_column_map(parsed)
+
+
 @router.post("/preview", response_model=PreviewResponse)
 def preview_import(
     file: UploadFile = File(...),
+    source: str | None = Form(None),
+    column_map: str | None = Form(None),
+    fx_mode: Literal["require_existing", "prefetch_missing"] = Form("prefetch_missing"),
     session: Session = Depends(get_session),
 ) -> PreviewResponse:
     raw = _read_validated(file)
     try:
-        prev = preview_csv(io.BytesIO(raw))
+        prev = preview_csv(io.BytesIO(raw), max_rows=100)
     except Exception as exc:  # noqa: BLE001
         raise validation_error(f"Cannot parse CSV: {exc}") from exc
     detected_source = detect_source(prev.headers)
-    quality_source = detected_source or BankSource.UNKNOWN
-    quality_parser = (
-        get_parser(detected_source)
-        if detected_source is not None
-        else GenericCsvParser({k: v for k, v in prev.detected_mapping.items() if v})
-    )
+    requested_source = (source or "").strip().lower()
+    requested_mapping = _parse_column_map(column_map)
+
+    if requested_source == "generic" or requested_mapping is not None:
+        quality_source = BankSource.UNKNOWN
+        quality_mapping = requested_mapping or clean_column_map(prev.detected_mapping)
+        quality_parser = GenericCsvParser(quality_mapping)
+        quality_warnings = import_quality_warnings(quality_mapping)
+    else:
+        quality_source = detected_source or BankSource.UNKNOWN
+        quality_mapping = clean_column_map(prev.detected_mapping)
+        quality_parser = (
+            get_parser(detected_source)
+            if detected_source is not None
+            else GenericCsvParser(quality_mapping)
+        )
+        quality_warnings = import_quality_warnings(quality_mapping)
+
     quality_report = assess_import_quality(
         session,
         source=quality_source,
         filename=file.filename or "uploaded.csv",
         raw=raw,
         parser=quality_parser,
+        missing_fx_severity="error" if fx_mode == "require_existing" else "warning",
     )
     return PreviewResponse(
         headers=prev.headers,
@@ -154,9 +182,7 @@ def preview_import(
         detected_source=detected_source,
         detected_mapping=prev.detected_mapping,
         field_specs=import_field_specs_payload(),
-        quality_warnings=import_quality_warnings(
-            {k: v for k, v in prev.detected_mapping.items() if v}
-        ),
+        quality_warnings=quality_warnings,
         quality_report=_quality_report_response(quality_report),
         supported_extensions=list(ALLOWED_EXTENSIONS),
     )
@@ -196,13 +222,7 @@ def upload_import(
         except Exception as exc:  # noqa: BLE001
             raise validation_error(f"Cannot parse CSV: {exc}") from exc
         if column_map:
-            try:
-                parsed = json.loads(column_map)
-            except json.JSONDecodeError as exc:
-                raise validation_error(f"Invalid column_map JSON: {exc}") from exc
-            if not isinstance(parsed, dict):
-                raise validation_error("column_map must be an object.")
-            mapping = clean_column_map(parsed)
+            mapping = _parse_column_map(column_map)
         else:
             mapping = clean_column_map(prev.detected_mapping)
         errors = validate_column_map(mapping or {}, headers=prev.headers)

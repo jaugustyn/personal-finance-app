@@ -1,55 +1,22 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import {
-  Upload,
-  FileSpreadsheet,
-  AlertCircle,
-  HelpCircle,
-  Loader2,
-} from "lucide-react";
+import { AlertCircle, FileSpreadsheet, Loader2 } from "lucide-react";
 import {
   api,
   type ImportPreview,
 } from "@/lib/api";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { PageHeader } from "@/components/page-header";
-import { Checkbox } from "@/components/ui/checkbox";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 import { toast } from "sonner";
-import { useT, type TranslationKey } from "@/lib/i18n";
+import { useT } from "@/lib/i18n";
 import { showErrorToast } from "@/lib/toasts";
 import { Dropzone } from "./_components/dropzone";
-import { ImportQualityPanel } from "./_components/import-quality-panel";
+import { ImportPreviewDialog } from "./_components/import-preview-dialog";
 import { ImportsHistory } from "./_components/imports-history";
-import { SuccessBox } from "./_components/success-box";
 import {
-  buildCustomWarnings,
-  fieldHintKey,
-  fieldSpecsFromPreview,
   LOGICAL_FIELDS,
   type FieldKey,
 } from "./_lib/import-fields";
@@ -59,6 +26,8 @@ export default function ImportsPage() {
   const qc = useQueryClient();
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<ImportPreview | null>(null);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const latestMappingPreviewKey = useRef<string | null>(null);
   const [mapping, setMapping] = useState<Record<FieldKey, string>>(
     {} as Record<FieldKey, string>,
   );
@@ -75,6 +44,23 @@ export default function ImportsPage() {
         if (v) seeded[key] = v;
       }
       setMapping(seeded);
+    },
+  });
+
+  const mappingPreviewMut = useMutation({
+    mutationFn: (args: {
+      file: File;
+      columnMap: Record<string, string>;
+      mappingKey: string;
+    }) =>
+      api.previewImport(args.file, {
+        source: "generic",
+        columnMap: args.columnMap,
+      }),
+    onSuccess: (p, args) => {
+      if (latestMappingPreviewKey.current === args.mappingKey) {
+        setPreview(p);
+      }
     },
   });
 
@@ -100,9 +86,12 @@ export default function ImportsPage() {
   const onChooseFile = (f: File | null) => {
     setFile(f);
     setPreview(null);
+    setPreviewOpen(!!f);
+    latestMappingPreviewKey.current = null;
     setMapping({} as Record<FieldKey, string>);
     setSkipCategories(false);
     uploadMut.reset();
+    mappingPreviewMut.reset();
     if (f) previewMut.mutate(f);
   };
 
@@ -116,10 +105,7 @@ export default function ImportsPage() {
         skipCategories,
       });
     } else {
-      const cleaned: Record<string, string> = {};
-      for (const [k, v] of Object.entries(mapping)) {
-        if (v) cleaned[k] = v;
-      }
+      const cleaned = cleanImportMapping(mapping);
       uploadMut.mutate({
         file,
         source: "generic",
@@ -129,13 +115,33 @@ export default function ImportsPage() {
     }
   };
 
-  const requiredOk = !!mapping.date && !!mapping.amount;
-  const customWarnings = preview
-    ? buildCustomWarnings(mapping, t)
-    : [];
+  const updateMapping = (key: FieldKey, value: string) => {
+    const next = {
+      ...mapping,
+      [key]: value === "none" ? "" : value,
+    };
+    setMapping(next);
+    refreshGenericQuality(next);
+  };
+
+  const refreshGenericQuality = (nextMapping: Record<FieldKey, string>) => {
+    if (!file || preview?.detected_source) return;
+    const cleaned = cleanImportMapping(nextMapping);
+    if (!cleaned.date || !cleaned.amount) {
+      latestMappingPreviewKey.current = null;
+      return;
+    }
+    const mappingKey = JSON.stringify(cleaned);
+    latestMappingPreviewKey.current = mappingKey;
+    mappingPreviewMut.mutate({ file, columnMap: cleaned, mappingKey });
+  };
+
+  const requiredOk = !!mapping.date && !!mapping.amount && !!mapping.merchant;
   const canCommit =
     !!file &&
     !uploadMut.isPending &&
+    !mappingPreviewMut.isPending &&
+    !mappingPreviewMut.error &&
     (preview?.quality_report.blocking_issues ?? 0) === 0 &&
     (preview?.detected_source ? true : requiredOk);
 
@@ -153,196 +159,72 @@ export default function ImportsPage() {
         </CardContent>
       </Card>
 
-      {previewMut.isPending && (
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Loader2 className="h-4 w-4 animate-spin" /> {t("common.loading")}
-        </div>
-      )}
-
-      {previewMut.error && (
-        <div className="flex items-center gap-2 rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive">
-          <AlertCircle className="h-4 w-4" />
-          {(previewMut.error as Error).message}
-        </div>
-      )}
-
-      {preview && (
+      {(previewMut.isPending || previewMut.error || preview) && (
         <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-base">
-              <FileSpreadsheet className="h-4 w-4" /> {t("imports.preview")}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex items-center gap-2 text-sm">
-              {preview.detected_source ? (
-                <>
-                  <span className="text-muted-foreground">
-                    {t("imports.detectedSource")}:
-                  </span>
-                  <Badge>{preview.detected_source}</Badge>
-                </>
+          <CardContent className="flex flex-col gap-3 pt-6 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex min-w-0 items-center gap-3">
+              {previewMut.isPending ? (
+                <Loader2 className="h-4 w-4 shrink-0 animate-spin text-muted-foreground" />
+              ) : previewMut.error ? (
+                <AlertCircle className="h-4 w-4 shrink-0 text-destructive" />
               ) : (
-                <span className="text-muted-foreground">
-                  {t("imports.detectedNone")}
-                </span>
+                <FileSpreadsheet className="h-4 w-4 shrink-0 text-muted-foreground" />
               )}
-              <span className="ml-auto text-xs text-muted-foreground">
-                {preview.encoding} · &quot;{preview.delimiter}&quot;
-              </span>
-            </div>
-
-            <ImportQualityPanel report={preview.quality_report} />
-
-            <div className="overflow-x-auto rounded-md border">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    {preview.headers.map((h) => (
-                      <TableHead key={h}>{h}</TableHead>
-                    ))}
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {preview.sample_rows.map((row, i) => (
-                    <TableRow key={i}>
-                      {preview.headers.map((h) => (
-                        <TableCell key={h} className="text-xs">
-                          {row[h] ?? ""}
-                        </TableCell>
-                      ))}
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-
-            {!preview.detected_source && (
-              <div className="space-y-3">
-                <div>
-                  <h3 className="text-sm font-semibold">
-                    {t("imports.columnMap.title")}
-                  </h3>
-                  <p className="text-xs text-muted-foreground">
-                    {t("imports.columnMap.help")}
-                  </p>
-                </div>
-                <TooltipProvider delayDuration={150}>
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    {fieldSpecsFromPreview(preview).map((spec) => {
-                      const { key, required, recommended } = spec;
-                      const labelKey: TranslationKey =
-                        `imports.field.${key}` as TranslationKey;
-                      const hint = t(fieldHintKey(key));
-                      return (
-                        <label key={key} className="flex flex-col gap-1 text-sm">
-                          <span className="flex items-center gap-1.5 font-medium">
-                            <span>
-                              {t(labelKey)}
-                              {required && (
-                                <span
-                                  className="text-destructive"
-                                  aria-label={t("imports.required")}
-                                >
-                                  {" "}
-                                  *
-                                </span>
-                              )}
-                            </span>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <HelpCircle className="h-3.5 w-3.5 cursor-help text-muted-foreground" />
-                              </TooltipTrigger>
-                              <TooltipContent className="max-w-64">
-                                <p>{hint}</p>
-                                {!required && recommended ? (
-                                  <p className="mt-1 text-muted-foreground">
-                                    {t("imports.recommended")}
-                                  </p>
-                                ) : null}
-                              </TooltipContent>
-                            </Tooltip>
-                          </span>
-                          <Select
-                            value={mapping[key] || "none"}
-                            onValueChange={(v) =>
-                              setMapping((m) => ({
-                                ...m,
-                                [key]: v === "none" ? "" : v,
-                              }))
-                            }
-                          >
-                            <SelectTrigger>
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="none">
-                                {t("imports.fieldNone")}
-                              </SelectItem>
-                              {preview.headers.map((h) => (
-                                <SelectItem key={h} value={h}>
-                                  {h}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </label>
-                      );
-                    })}
-                  </div>
-                </TooltipProvider>
-                {customWarnings.length > 0 && (
-                  <div className="space-y-1 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-800 dark:text-amber-300">
-                    {customWarnings.map((warning) => (
-                      <p key={warning}>{warning}</p>
-                    ))}
-                  </div>
-                )}
+              <div className="min-w-0">
+                <p className="truncate text-sm font-medium">
+                  {file?.name ?? t("imports.preview")}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {previewMut.isPending
+                    ? t("common.loading")
+                    : previewMut.error
+                      ? (previewMut.error as Error).message
+                      : t("imports.previewReady", {
+                          rows: preview?.quality_report.total_rows ?? 0,
+                        })}
+                </p>
               </div>
-            )}
-
-            {uploadMut.error && (
-              <div className="flex items-center gap-2 rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive">
-                <AlertCircle className="h-4 w-4" />
-                {t("imports.error")}: {(uploadMut.error as Error).message}
-              </div>
-            )}
-
-            {uploadMut.data && <SuccessBox summary={uploadMut.data} />}
-
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-t pt-4">
-              <label className="flex items-start gap-2.5 text-sm cursor-pointer select-none text-muted-foreground hover:text-foreground transition-colors max-w-xl">
-                <Checkbox
-                  id="skip-categories-checkbox"
-                  checked={skipCategories}
-                  onCheckedChange={(c) => setSkipCategories(c === true)}
-                  disabled={uploadMut.isPending}
-                  className="mt-1"
-                />
-                <div className="grid gap-1">
-                  <span className="font-semibold text-foreground text-sm leading-none">
-                    {t("imports.skipCategories")}
-                  </span>
-                  <span className="text-xs text-muted-foreground leading-normal">
-                    {t("imports.skipCategoriesHelp")}
-                  </span>
-                </div>
-              </label>
-
-              <Button onClick={onCommit} disabled={!canCommit} className="sm:self-end">
-                {uploadMut.isPending ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <Upload className="mr-2 h-4 w-4" />
-                )}
-                {t("imports.upload")}
-              </Button>
             </div>
+            <Button
+              variant="outline"
+              onClick={() => setPreviewOpen(true)}
+              disabled={!preview && !previewMut.error}
+            >
+              {t("imports.openPreview")}
+            </Button>
           </CardContent>
         </Card>
       )}
 
+      <ImportPreviewDialog
+        open={previewOpen}
+        onOpenChange={setPreviewOpen}
+        file={file}
+        preview={preview}
+        mapping={mapping}
+        skipCategories={skipCategories}
+        previewPending={previewMut.isPending}
+        previewError={previewMut.error}
+        qualityPending={mappingPreviewMut.isPending}
+        qualityError={mappingPreviewMut.error}
+        uploadPending={uploadMut.isPending}
+        uploadError={uploadMut.error}
+        uploadData={uploadMut.data}
+        canCommit={canCommit}
+        onMappingChange={updateMapping}
+        onSkipCategoriesChange={setSkipCategories}
+        onCommit={onCommit}
+      />
+
       <ImportsHistory />
     </div>
   );
+}
+
+function cleanImportMapping(mapping: Record<FieldKey, string>): Record<string, string> {
+  const cleaned: Record<string, string> = {};
+  for (const [key, value] of Object.entries(mapping)) {
+    if (value) cleaned[key] = value;
+  }
+  return cleaned;
 }

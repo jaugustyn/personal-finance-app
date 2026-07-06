@@ -5,7 +5,7 @@ export const LOGICAL_FIELDS = [
   { key: "date", required: true, recommended: false, description: "" },
   { key: "amount", required: true, recommended: false, description: "" },
   { key: "currency", required: false, recommended: false, description: "" },
-  { key: "merchant", required: false, recommended: true, description: "" },
+  { key: "merchant", required: true, recommended: false, description: "" },
   { key: "title", required: false, recommended: true, description: "" },
   { key: "category", required: false, recommended: false, description: "" },
   { key: "external_id", required: false, recommended: false, description: "" },
@@ -38,14 +38,8 @@ export function buildCustomWarnings(
   t: (key: TranslationKey) => string,
 ) {
   const warnings: string[] = [];
-  if (!mapping.merchant && !mapping.title) {
-    warnings.push(t("imports.warning.merchantOrTitle"));
-  }
   if (!mapping.currency) {
     warnings.push(t("imports.warning.currencyDefault"));
-  }
-  if (!mapping.external_id) {
-    warnings.push(t("imports.warning.externalId"));
   }
   return Array.from(new Set(warnings));
 }

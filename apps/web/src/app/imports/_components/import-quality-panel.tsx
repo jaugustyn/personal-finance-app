@@ -1,22 +1,34 @@
 "use client";
 
+import { CheckCircle2, CircleAlert, XCircle } from "lucide-react";
 import type { ImportQualityReport } from "@/lib/api";
 import { useT, type TranslationKey } from "@/lib/i18n";
 import { Badge } from "@/components/ui/badge";
 
 export function ImportQualityPanel({ report }: { report: ImportQualityReport }) {
   const { t } = useT();
-  const statusVariant = report.blocking_issues > 0 ? "destructive" : "success";
+  const hasBlockingIssues = report.blocking_issues > 0;
+  const hasWarnings = report.warnings > 0;
   const statusLabel =
-    report.blocking_issues > 0
+    hasBlockingIssues
       ? t("imports.quality.statusIssues")
+      : hasWarnings
+        ? t("imports.quality.warnings")
       : t("imports.quality.statusOk");
 
   return (
     <div className="rounded-md border bg-muted/20 p-4">
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex items-center justify-between gap-3">
         <h3 className="text-sm font-semibold">{t("imports.quality.title")}</h3>
-        <Badge variant={statusVariant}>{statusLabel}</Badge>
+        <div aria-label={statusLabel} title={statusLabel}>
+          {hasBlockingIssues ? (
+            <XCircle className="h-7 w-7 fill-destructive/10 text-destructive" />
+          ) : hasWarnings ? (
+            <CircleAlert className="h-7 w-7 fill-warning/15 text-warning" />
+          ) : (
+            <CheckCircle2 className="h-7 w-7 fill-positive/10 text-positive" />
+          )}
+        </div>
       </div>
       <div className="mt-3 grid gap-3 sm:grid-cols-3">
         <QualityMetric
@@ -75,9 +87,11 @@ function QualityMetric({
   variant: "success" | "warning" | "destructive" | "muted";
 }) {
   return (
-    <div className="rounded-md border bg-background p-3">
-      <div className="text-xs text-muted-foreground">{label}</div>
-      <Badge variant={variant} className="mt-2 text-sm tabular-nums">
+    <div className="flex min-h-24 flex-col items-center justify-center gap-2 rounded-md border bg-background p-3 text-center">
+      <div className="flex min-h-10 items-center text-xs leading-5 text-muted-foreground">
+        {label}
+      </div>
+      <Badge variant={variant} className="text-sm tabular-nums">
         {value}
       </Badge>
     </div>

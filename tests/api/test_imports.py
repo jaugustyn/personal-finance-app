@@ -215,6 +215,42 @@ def test_preview_quality_report_flags_invalid_rows(client) -> None:
     assert issues["missing_counterparty"]["sample_rows"] == [5]
 
 
+def test_preview_quality_uses_explicit_generic_column_map(client) -> None:
+    raw = (
+        b"When,Cash,Curr,Vendor\n"
+        b"2026-04-01,-50.00,PLN,Carrefour\n"
+        b"2026-04-02,3000.00,PLN,Acme Corp\n"
+    )
+
+    auto = client.post(
+        "/imports/preview",
+        files={"file": ("custom.csv", io.BytesIO(raw), "text/csv")},
+    )
+    assert auto.status_code == 200
+    assert auto.json()["quality_report"]["blocking_issues"] > 0
+
+    mapped = client.post(
+        "/imports/preview",
+        files={"file": ("custom.csv", io.BytesIO(raw), "text/csv")},
+        data={
+            "source": "generic",
+            "column_map": json.dumps(
+                {
+                    "date": "When",
+                    "amount": "Cash",
+                    "currency": "Curr",
+                    "merchant": "Vendor",
+                }
+            ),
+        },
+    )
+
+    assert mapped.status_code == 200
+    report = mapped.json()["quality_report"]
+    assert report["valid_rows"] == 2
+    assert report["blocking_issues"] == 0
+
+
 def test_preview_detects_pekao(client) -> None:
     r = client.post(
         "/imports/preview",

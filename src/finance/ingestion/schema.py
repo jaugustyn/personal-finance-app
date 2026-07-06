@@ -19,7 +19,7 @@ IMPORT_FIELD_SPECS: tuple[ImportFieldSpec, ...] = (
     ImportFieldSpec("currency", description="Currency code; defaults to PLN."),
     ImportFieldSpec(
         "merchant",
-        recommended=True,
+        required=True,
         description="Merchant or counterparty; improves deduplication and ML.",
     ),
     ImportFieldSpec(
@@ -87,16 +87,6 @@ def validate_column_map(
 def import_quality_warnings(mapping: dict[str, str]) -> list[str]:
     """Warnings for imports that can run but will produce lower-quality analytics."""
     warnings: list[str] = []
-    if not any(mapping.get(key) for key in RECOMMENDED_IMPORT_FIELDS):
-        warnings.append(
-            "Map at least merchant or title for better deduplication, ML "
-            "classification, subscriptions and anomaly detection."
-        )
-    if not mapping.get("external_id"):
-        warnings.append(
-            "External transaction id is optional, but improves duplicate detection "
-            "for overlapping exports."
-        )
     if not mapping.get("currency"):
         warnings.append("Currency is optional; missing values will default to PLN.")
     return warnings

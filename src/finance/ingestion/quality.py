@@ -37,6 +37,7 @@ def assess_import_quality(
     filename: str,
     raw: bytes,
     parser: BankParser,
+    missing_fx_severity: IssueSeverity = "error",
 ) -> ImportQualityReport:
     """Inspect an upload before committing it to the database."""
     total_rows = _csv_data_row_count(raw)
@@ -69,6 +70,7 @@ def assess_import_quality(
             dtos,
             source=source,
             include_content_issues=generic_mapping is None,
+            missing_fx_severity=missing_fx_severity,
         )
     )
     return _report(total_rows=total_rows, valid_rows=len(dtos), issues=issues)
@@ -217,6 +219,7 @@ def _dto_issues(
     *,
     source: BankSource,
     include_content_issues: bool = True,
+    missing_fx_severity: IssueSeverity = "error",
 ) -> list[ImportQualityIssue]:
     if not dtos:
         return []
@@ -274,7 +277,7 @@ def _dto_issues(
         issues.append(
             ImportQualityIssue(
                 "missing_fx_rate",
-                "error",
+                missing_fx_severity,
                 len(missing_fx),
                 [],
             )

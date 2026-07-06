@@ -120,7 +120,7 @@ def test_generic_parser_maps_source_categories() -> None:
 
 
 def test_generic_parser_handles_european_decimals() -> None:
-    raw = b"Data,Kwota\n2026-04-01,\"1 234,56\"\n"
+    raw = b"Data,Kwota,Merchant\n2026-04-01,\"1 234,56\",Shop\n"
     dtos = GenericCsvParser().parse(io.BytesIO(raw))
     assert len(dtos) == 1
     assert float(dtos[0].amount) == 1234.56
@@ -128,10 +128,10 @@ def test_generic_parser_handles_european_decimals() -> None:
 
 def test_generic_parser_skips_unparseable_rows() -> None:
     raw = (
-        b"Date,Amount\n"
-        b"not-a-date,-50.00\n"           # bad date → skipped
-        b"2026-04-01,not-a-number\n"     # bad amount → skipped
-        b"2026-04-02,-50.00\n"           # ok
+        b"Date,Amount,Merchant\n"
+        b"not-a-date,-50.00,Shop\n"           # bad date → skipped
+        b"2026-04-01,not-a-number,Shop\n"     # bad amount → skipped
+        b"2026-04-02,-50.00,Shop\n"           # ok
     )
     dtos = GenericCsvParser().parse(io.BytesIO(raw))
     assert len(dtos) == 1
@@ -148,15 +148,15 @@ def test_column_map_validation_and_quality_warnings() -> None:
         "date": "Date",
         "amount": "Amount",
         "unknown": "Ignored",
-        "merchant": "",
+        "merchant": "Merchant",
         "title": None,
     })
 
-    assert mapping == {"date": "Date", "amount": "Amount"}
-    assert validate_column_map(mapping, headers=["Date", "Amount"]) == []
+    assert mapping == {"date": "Date", "amount": "Amount", "merchant": "Merchant"}
+    assert validate_column_map(mapping, headers=["Date", "Amount", "Merchant"]) == []
     assert validate_column_map({"date": "Missing", "amount": "Amount"}, headers=["Amount"])
     warnings = import_quality_warnings(mapping)
-    assert any("merchant or title" in warning for warning in warnings)
+    assert any("Currency is optional" in warning for warning in warnings)
 
 
 def test_generic_parser_decodes_cp1250() -> None:
