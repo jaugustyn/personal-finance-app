@@ -92,6 +92,7 @@ def test_sankey_returns_income_and_category_nodes(db_session) -> None:
         top_merchants_per_cat=2,
     )
 
-    assert {"name": "Przychody"} in nodes
-    assert {"name": "food"} in nodes
+    node_names = {node["name"] for node in nodes}
+    assert "Przychody" in node_names
+    assert "food" in node_names
     assert links

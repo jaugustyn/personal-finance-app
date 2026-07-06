@@ -14,12 +14,12 @@ from finance.ml.feedback import (
     record_transaction_feedback,
 )
 from finance.profile.service import remember_merchant_category
+from finance.transactions.merchants import load_merchant_alias_maps, merchant_identity
 from finance.transactions.mutation_rules import (
     InvalidCategoryAssignment,
     can_assign_expense_category,
     resolve_category_assignment,
 )
-from finance.transactions.merchants import load_merchant_alias_maps, merchant_identity
 from finance.transactions.type_service import TransactionTypeService
 
 

@@ -279,6 +279,8 @@ def list_anomaly_rows(
     flagged = _with_merchant_identity(session, flagged)
     flagged = _apply_feedback(session, flagged, mode=mode)
     flagged = _apply_mode(flagged, mode=mode)
+    if flagged.empty:
+        return []
     flagged = flagged.sort_values(["priority_score", "severity"], ascending=False).head(limit)
     statuses = anomaly_feedback_statuses(session, flagged["merchant_key"].tolist())
     return [

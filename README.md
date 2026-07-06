@@ -76,7 +76,8 @@ Backend:
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
-python -m pip install -e ".[dev,augment]"
+python -m pip install -e .
+$env:PYTHONPATH="$PWD\src"
 .\.venv\Scripts\python.exe -m uvicorn apps.api.main:app --reload --port 8000
 ```
 
