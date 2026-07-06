@@ -14,7 +14,7 @@ dependencies = [
     "pydantic-settings>=2.6",
     # db
     "sqlalchemy>=2.0",
-    "alembic>=1.13",
+    "alembic>=1.18.4",
     "psycopg[binary]>=3.2",
     # data / ml
     "pandas>=2.2",
