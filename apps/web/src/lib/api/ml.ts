@@ -11,6 +11,7 @@ import type {
   MlFeedbackResponse,
   MlReclassifyResponse,
   MlRetrainResponse,
+  MlRetrainStatus,
   ReviewQueueItem,
   Subscription,
   SubscriptionOverview,
@@ -20,6 +21,10 @@ import type {
 export const mlApi = {
   mlDashboard: () => request<MlDashboard>("/ml/dashboard"),
   mlComparison: () => request<MlComparison>("/ml/comparison"),
+  mlLatestReportFileUrl: (download = false) =>
+    `/api/proxy${withQuery("/ml/report/latest/file", {
+      download: download ? true : undefined,
+    })}`,
   reviewQueue: (limit = 20) =>
     request<ReviewQueueItem[]>(withQuery("/ml/review-queue", { limit })),
   feedbackReport: () => request<FeedbackReport>("/ml/feedback-report"),
@@ -40,6 +45,7 @@ export const mlApi = {
       }),
       { method: "POST" },
     ),
+  retrainStatus: () => request<MlRetrainStatus>("/ml/retrain/status"),
   forecast: (category: string | null, horizon = 3) =>
     request<ForecastResponse>(withQuery("/forecast", { horizon, category })),
   anomalies: (

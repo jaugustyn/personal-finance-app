@@ -637,7 +637,20 @@ export interface MlModelStatus {
   load_error: string | null;
   artifact_metadata: Record<string, unknown>;
   compatibility_warnings: string[];
-  retrain_signal: Record<string, unknown> | null;
+  retrain_signal: MlRetrainSignal | null;
+}
+
+export interface MlRetrainSignal {
+  retrain_recommended: boolean;
+  reason_codes: string[];
+  model_updated_at: string | null;
+  labels_used_in_current_model: number | null;
+  current_label_count: number | null;
+  new_labels_since_training: number;
+  new_labels_since_training_ratio: number | null;
+  feedback_events_since_model: number;
+  rejection_rate: number | null;
+  suggestion_feedback_total: number;
 }
 
 export interface MlReadiness {
@@ -675,7 +688,7 @@ export interface MlDashboard {
   confidence_policy: Record<string, unknown>;
   feedback_quality: Record<string, unknown>;
   feedback_report: FeedbackReport;
-  retrain_signal: Record<string, unknown>;
+  retrain_signal: MlRetrainSignal;
   confusion_hotspots: Record<string, unknown>[];
 }
 
@@ -703,6 +716,15 @@ export interface MlComparison {
 export interface MlRetrainResponse {
   status: string;
   message: string;
+}
+
+export interface MlRetrainStatus {
+  status: "idle" | "running" | "completed" | "aborted" | "failed" | string;
+  message: string | null;
+  estimator: string | null;
+  feature_set: string | null;
+  started_at: string | null;
+  finished_at: string | null;
 }
 
 export interface MlReclassifyResponse {

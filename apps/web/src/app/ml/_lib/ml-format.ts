@@ -27,37 +27,16 @@ export function numberFromRecord(
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
-export function readinessLabel(level: string, t: TFn): string {
-  switch (level) {
-    case "insufficient":
-      return t("ml.readiness.insufficient");
-    case "minimum":
-      return t("ml.readiness.minimum");
-    case "good":
-      return t("ml.readiness.good");
-    case "thesis_ready":
-      return t("ml.readiness.thesis_ready");
-    default:
-      return t("ml.readiness.unknown");
-  }
-}
-
-export function readinessVariant(level: string) {
-  if (level === "good" || level === "thesis_ready") return "success" as const;
-  if (level === "minimum") return "warning" as const;
-  return "destructive" as const;
-}
-
 export function statusLabel(data: MlDashboard, t: TFn): string {
   if (data.status.load_error) return t("ml.status.error");
   if (!data.status.exists) return t("ml.status.missing");
-  if (data.status.missing_categories.length > 0) return t("ml.status.outdated");
+  if (data.retrain_signal.retrain_recommended) return t("ml.status.outdated");
   return t("ml.status.ready");
 }
 
 export function statusVariant(data: MlDashboard) {
   if (data.status.load_error || !data.status.exists) return "destructive" as const;
-  if (data.status.missing_categories.length > 0) return "warning" as const;
+  if (data.retrain_signal.retrain_recommended) return "warning" as const;
   return "success" as const;
 }
 

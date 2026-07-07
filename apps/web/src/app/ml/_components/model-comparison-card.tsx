@@ -1,19 +1,13 @@
 import { Sparkles } from "lucide-react";
 
-import type { MlModelComparison, MlModelRecommendation } from "@/lib/api";
+import type { MlModelComparison } from "@/lib/api";
 import { useT } from "@/lib/i18n";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DataTable, type DataTableColumn } from "@/components/data-table";
-import { percent, recommendationReason } from "../_lib/ml-format";
+import { percent } from "../_lib/ml-format";
 
-export function ModelComparisonCard({
-  rows,
-  recommendation,
-}: {
-  rows: MlModelComparison[];
-  recommendation: MlModelRecommendation;
-}) {
+export function ModelComparisonCard({ rows }: { rows: MlModelComparison[] }) {
   const { t } = useT();
   const hasRows = rows.length > 0;
   const columns: DataTableColumn<MlModelComparison>[] = [
@@ -102,31 +96,8 @@ export function ModelComparisonCard({
           <Sparkles className="h-4 w-4 text-primary" />
           {t("ml.comparison.title")}
         </CardTitle>
-        <p className="text-xs text-muted-foreground">{t("ml.comparison.help")}</p>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="rounded-md border bg-muted/20 p-3">
-          <div className="space-y-2">
-            <div>
-              <div className="flex flex-wrap items-center gap-2">
-                <div className="text-xs font-medium text-muted-foreground">
-                  {t("ml.comparison.nextTraining")}
-                </div>
-                <Badge variant="info">{t("ml.comparison.recommended")}</Badge>
-              </div>
-              <div className="mt-1 font-medium">
-                {recommendation.estimator} · {recommendation.feature_set}
-              </div>
-            </div>
-            <p className="text-sm text-muted-foreground">
-              {recommendationReason(recommendation.reason_code, t)}
-            </p>
-            <p className="text-xs text-muted-foreground">
-              {t("ml.comparison.activeModelNote")}
-            </p>
-          </div>
-        </div>
-
         {hasRows ? (
           <DataTable
             columns={columns}

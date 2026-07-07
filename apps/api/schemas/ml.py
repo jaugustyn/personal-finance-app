@@ -56,6 +56,15 @@ class RetrainResponse(BaseModel):
     message: str
 
 
+class RetrainStatusResponse(BaseModel):
+    status: str = "idle"
+    message: str | None = None
+    estimator: str | None = None
+    feature_set: str | None = None
+    started_at: str | None = None
+    finished_at: str | None = None
+
+
 class MlFeedbackRequest(BaseModel):
     event_type: str = Field(min_length=1, max_length=48)
     transaction_id: int | None = None

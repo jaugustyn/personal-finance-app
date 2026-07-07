@@ -16,6 +16,8 @@ export function FeedbackQualityCard({
   const rejected = numberFromRecord(quality, "rejected_suggestions") ?? 0;
   const manual = numberFromRecord(quality, "manual_category_events") ?? 0;
   const acceptanceRate = numberFromRecord(quality, "acceptance_rate");
+  const hasCounters =
+    accepted > 0 || rejected > 0 || manual > 0 || acceptanceRate != null;
   return (
     <Card>
       <CardHeader>
@@ -23,41 +25,7 @@ export function FeedbackQualityCard({
           {t("ml.feedback.title")}
         </CardTitle>
       </CardHeader>
-      <CardContent className="grid gap-4 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
-        <div className="grid grid-cols-2 gap-3 text-sm">
-          <div className="rounded-md border bg-muted/20 p-3">
-            <div className="text-xs text-muted-foreground">
-              {t("ml.feedback.accepted")}
-            </div>
-            <div className="mt-1 text-lg font-semibold tabular-nums">
-              {formatNumber(accepted)}
-            </div>
-          </div>
-          <div className="rounded-md border bg-muted/20 p-3">
-            <div className="text-xs text-muted-foreground">
-              {t("ml.feedback.rejected")}
-            </div>
-            <div className="mt-1 text-lg font-semibold tabular-nums">
-              {formatNumber(rejected)}
-            </div>
-          </div>
-          <div className="rounded-md border bg-muted/20 p-3">
-            <div className="text-xs text-muted-foreground">
-              {t("ml.feedback.manual")}
-            </div>
-            <div className="mt-1 text-lg font-semibold tabular-nums">
-              {formatNumber(manual)}
-            </div>
-          </div>
-          <div className="rounded-md border bg-muted/20 p-3">
-            <div className="text-xs text-muted-foreground">
-              {t("ml.feedback.acceptanceRate")}
-            </div>
-            <div className="mt-1 text-lg font-semibold tabular-nums">
-              {percent(acceptanceRate)}
-            </div>
-          </div>
-        </div>
+      <CardContent className="space-y-4">
         <div className="space-y-2">
           <div className="text-xs font-medium text-muted-foreground">
             {t("ml.feedback.hotspots")}
@@ -95,6 +63,34 @@ export function FeedbackQualityCard({
             </div>
           )}
         </div>
+        {hasCounters ? (
+          <div className="flex flex-wrap gap-x-4 gap-y-1 border-t pt-3 text-xs text-muted-foreground">
+            <span>
+              {t("ml.feedback.accepted")}:{" "}
+              <span className="font-medium text-foreground">
+                {formatNumber(accepted)}
+              </span>
+            </span>
+            <span>
+              {t("ml.feedback.rejected")}:{" "}
+              <span className="font-medium text-foreground">
+                {formatNumber(rejected)}
+              </span>
+            </span>
+            <span>
+              {t("ml.feedback.manual")}:{" "}
+              <span className="font-medium text-foreground">
+                {formatNumber(manual)}
+              </span>
+            </span>
+            <span>
+              {t("ml.feedback.acceptanceRate")}:{" "}
+              <span className="font-medium text-foreground">
+                {percent(acceptanceRate)}
+              </span>
+            </span>
+          </div>
+        ) : null}
       </CardContent>
     </Card>
   );

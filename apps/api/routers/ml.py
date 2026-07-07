@@ -3,14 +3,16 @@ POST /ml/reclassify — bulk-predict for rows without a ground-truth category.
 POST /ml/retrain    — refit the classifier on current DB labels (background).
 """
 import logging
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 import joblib  # noqa: F401 - tests use apps.api.routers.ml.joblib for artifacts.
 from fastapi import APIRouter, BackgroundTasks, Depends, Query
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
-from apps.api.errors import bad_request, service_unavailable
+from apps.api.errors import bad_request, not_found, service_unavailable
 from apps.api.schemas.ml import (
     ClassificationDecisionResponse,
     ClassifyRequest,
@@ -25,6 +27,7 @@ from apps.api.schemas.ml import (
     MlReadinessResponse,
     ReclassifyResponse,
     RetrainResponse,
+    RetrainStatusResponse,
     ReviewQueueItemResponse,
 )
 from finance.db import SessionLocal, get_session
@@ -44,6 +47,7 @@ from finance.ml.classification.status import (
     DEFAULT_RECOMMENDED_FEATURE_SET,
     comparison_summary,
     dashboard_summary,
+    latest_report_path,
     load_latest_report,
     model_status_from_disk,
     readiness_summary,
@@ -68,6 +72,16 @@ router = APIRouter(prefix="/ml", tags=["ml"])
 
 MODEL_PATH: Path = DEFAULT_MODEL_PATH
 REPORTS_DIR: Path = DEFAULT_REPORTS_DIR
+_retrain_state: dict[str, Any] = {"status": "idle"}
+
+
+def _now_iso() -> str:
+    return datetime.now(UTC).isoformat()
+
+
+def _set_retrain_state(**updates: Any) -> None:
+    _retrain_state.clear()
+    _retrain_state.update(updates)
 
 
 def _classification_policy() -> ClassificationPolicy:
@@ -92,6 +106,19 @@ def readiness(session: Session = Depends(get_session)) -> MlReadinessResponse:
 @router.get("/report/latest", response_model=MlLatestReportResponse)
 def latest_report() -> MlLatestReportResponse:
     return MlLatestReportResponse(**load_latest_report(REPORTS_DIR))
+
+
+@router.get("/report/latest/file")
+def latest_report_file(download: bool = Query(default=False)) -> FileResponse:
+    path = latest_report_path(REPORTS_DIR)
+    if path is None:
+        raise not_found("No classification report available.")
+    return FileResponse(
+        path,
+        media_type="application/json",
+        filename=path.name,
+        content_disposition_type="attachment" if download else "inline",
+    )
 
 
 @router.get("/comparison", response_model=MlComparisonResponse)
@@ -226,7 +253,7 @@ def _retrain_job(
 ) -> None:
     """Background wrapper around the classifier retraining use case."""
     try:
-        retrain_classifier(
+        result = retrain_classifier(
             session_factory=SessionLocal,
             estimator=estimator,
             feature_set=feature_set,
@@ -234,8 +261,29 @@ def _retrain_job(
             reports_dir=REPORTS_DIR,
             logger=logger,
         )
+        _set_retrain_state(
+            status=result.status,
+            message=result.message,
+            estimator=estimator,
+            feature_set=feature_set,
+            started_at=_retrain_state.get("started_at"),
+            finished_at=_now_iso(),
+        )
     except Exception:
         logger.exception("Retrain job failed")
+        _set_retrain_state(
+            status="failed",
+            message="Retrain job failed. Check API logs for details.",
+            estimator=estimator,
+            feature_set=feature_set,
+            started_at=_retrain_state.get("started_at"),
+            finished_at=_now_iso(),
+        )
+
+
+@router.get("/retrain/status", response_model=RetrainStatusResponse)
+def retrain_status() -> RetrainStatusResponse:
+    return RetrainStatusResponse(**_retrain_state)
 
 
 @router.post("/retrain", response_model=RetrainResponse, status_code=202)
@@ -248,6 +296,19 @@ def retrain(
         raise bad_request(f"Unknown estimator '{estimator}'. Choose: {list(ESTIMATORS)}")
     if feature_set not in {"baseline", "feature_v2"}:
         raise bad_request("Unknown feature_set. Choose: ['baseline', 'feature_v2']")
+    if _retrain_state.get("status") == "running":
+        return RetrainResponse(
+            status="running",
+            message="Retrain is already running in background.",
+        )
+    _set_retrain_state(
+        status="running",
+        message="Retrain started in background.",
+        estimator=estimator,
+        feature_set=feature_set,
+        started_at=_now_iso(),
+        finished_at=None,
+    )
     background.add_task(_retrain_job, estimator, feature_set)
     return RetrainResponse(
         status="scheduled",

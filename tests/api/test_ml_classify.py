@@ -43,6 +43,7 @@ def _isolated_reports_dir(monkeypatch, tmp_path):
     reports_dir = tmp_path / "reports"
     reports_dir.mkdir()
     monkeypatch.setattr(ml_router, "REPORTS_DIR", reports_dir)
+    ml_router._set_retrain_state(status="idle")
     return reports_dir
 
 
@@ -251,6 +252,47 @@ def test_ml_status_reports_artifact_metadata(client, monkeypatch, tmp_path) -> N
     assert "sklearn" in body["artifact_metadata"]["runtime_versions"]
     assert body["compatibility_warnings"] == []
     assert body["retrain_signal"]["retrain_recommended"] is False
+
+
+def test_latest_report_file_can_be_downloaded(client, _isolated_reports_dir) -> None:
+    report_path = _isolated_reports_dir / "classification_20260101_120000.json"
+    report_path.write_text(json.dumps({"models": {}, "labels": ["food"]}), encoding="utf-8")
+
+    response = client.get("/ml/report/latest/file?download=true")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/json")
+    assert "attachment" in response.headers["content-disposition"]
+    assert report_path.name in response.headers["content-disposition"]
+    assert response.json() == {"models": {}, "labels": ["food"]}
+
+
+def test_retrain_status_defaults_to_idle(client) -> None:
+    response = client.get("/ml/retrain/status")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "idle"
+    assert body["message"] is None
+    assert body["finished_at"] is None
+
+
+def test_retrain_does_not_schedule_second_job_while_running(client) -> None:
+    ml_router._set_retrain_state(
+        status="running",
+        message="Retrain started in background.",
+        estimator="linear_svc_calibrated",
+        feature_set="feature_v2",
+        started_at="2026-01-10T10:00:00+00:00",
+        finished_at=None,
+    )
+
+    response = client.post("/ml/retrain")
+
+    assert response.status_code == 202
+    body = response.json()
+    assert body["status"] == "running"
+    assert body["message"] == "Retrain is already running in background."
 
 
 def test_ml_status_recommends_retraining_after_label_growth(
