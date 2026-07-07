@@ -25,8 +25,6 @@ from datetime import date, timedelta
 from decimal import Decimal
 from pathlib import Path
 
-import ollama
-
 logger = logging.getLogger(__name__)
 
 DEFAULT_MODEL = "llama3.1:8b-instruct-q4_K_M"
@@ -181,6 +179,14 @@ def generate_for_category(
     host: str | None = None,
     temperature: float = 0.85,
 ) -> list[str]:
+    try:
+        import ollama
+    except ImportError as exc:
+        raise ImportError(
+            "LLM augmentation requires the optional augment extra. "
+            'Install it with `pip install -e ".[augment]"`.'
+        ) from exc
+
     client = ollama.Client(host=host) if host else ollama
     prompt = _build_prompt(category, n)
     resp = client.generate(

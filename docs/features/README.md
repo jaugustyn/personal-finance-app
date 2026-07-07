@@ -102,8 +102,8 @@ category review and fresh evidence reports built on local real data.
 
 ### Phase 13 - Data Quality And External Dataset Experiments
 
-- Add a local workflow for external datasets in `scripts/`: HuggingFace/Kaggle
-  / Plaid-like data -> normalized transactions -> mapping to 9 categories.
+- Add a local workflow for external datasets in `scripts`: Kaggle-like CSV data
+  -> normalized transactions -> mapping to 9 categories.
 - Compare `real_only`, `external_only`, `mixed` and `mixed + calibration`.
 - Document the mapping from external categories to the local 9-class taxonomy.
 - Keep raw external files in `data/external/` or outside the repository.
@@ -115,9 +115,6 @@ Implementation status:
   `scripts/prepare_external_classification_data.py`.
 - The dataset is mapped to the local classification schema and can be reported
   as `external_only` and `real_plus_external`.
-- HF `mitulshah/transaction-categorization` currently has metadata and category
-  mapping in the repository; the actual parquet must be added locally before
-  integration.
 
 Example local commands:
 
