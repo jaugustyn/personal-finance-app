@@ -70,38 +70,38 @@
 }
 
 .dark {
-  --background: 222 47% 5%;
-  --foreground: 210 40% 98%;
+  --background: 222 32% 9%;
+  --foreground: 210 32% 96%;
 
-  --card: 222 40% 8%;
-  --card-foreground: 210 40% 98%;
+  --card: 222 28% 12%;
+  --card-foreground: 210 32% 96%;
 
-  --popover: 222 40% 8%;
-  --popover-foreground: 210 40% 98%;
+  --popover: 222 28% 12%;
+  --popover-foreground: 210 32% 96%;
 
-  --secondary: 217 33% 15%;
-  --secondary-foreground: 210 40% 98%;
+  --secondary: 220 22% 16%;
+  --secondary-foreground: 210 32% 96%;
 
-  --muted: 217 33% 15%;
-  --muted-foreground: 215 20% 65%;
+  --muted: 220 20% 17%;
+  --muted-foreground: 215 18% 67%;
 
-  --accent: 217 33% 16%;
-  --accent-foreground: 210 40% 98%;
+  --accent: 220 22% 18%;
+  --accent-foreground: 210 32% 96%;
 
   --destructive: 0 63% 50%;
   --destructive-foreground: 0 0% 100%;
 
-  --border: 217 33% 18%;
-  --input: 217 33% 20%;
+  --border: 220 18% 22%;
+  --input: 220 18% 24%;
 
   --positive: 152 56% 45%;
-  --positive-foreground: 222 47% 6%;
+  --positive-foreground: 222 32% 9%;
   --negative: 0 72% 60%;
   --negative-foreground: 0 0% 100%;
   --warning: 38 92% 55%;
-  --warning-foreground: 222 47% 6%;
+  --warning-foreground: 222 32% 9%;
   --info: 213 90% 65%;
-  --info-foreground: 222 47% 6%;
+  --info-foreground: 222 32% 9%;
 
   --chart-1: 158 64% 47%;
   --chart-2: 213 90% 65%;
@@ -112,8 +112,8 @@
   --chart-positive: 152 56% 45%;
   --chart-negative: 0 72% 62%;
 
-  --sidebar: 222 44% 7%;
-  --sidebar-foreground: 210 40% 98%;
+  --sidebar: 222 30% 10%;
+  --sidebar-foreground: 210 32% 96%;
 }
 
 /* ── Accent themes ────────────────────────────── */
@@ -147,7 +147,7 @@
 }
 .dark[data-accent="emerald"] {
   --primary: 158 64% 47%;
-  --primary-foreground: 222 47% 6%;
+  --primary-foreground: 222 32% 9%;
   --ring: 158 64% 47%;
   --accent-soft: 158 50% 16%;
   --accent-soft-foreground: 152 60% 70%;
@@ -155,7 +155,7 @@
 }
 .dark[data-accent="teal"] {
   --primary: 172 66% 48%;
-  --primary-foreground: 222 47% 6%;
+  --primary-foreground: 222 32% 9%;
   --ring: 172 66% 48%;
   --accent-soft: 175 55% 15%;
   --accent-soft-foreground: 172 60% 70%;
@@ -163,7 +163,7 @@
 }
 .dark[data-accent="blue"] {
   --primary: 213 90% 62%;
-  --primary-foreground: 222 47% 6%;
+  --primary-foreground: 222 32% 9%;
   --ring: 213 90% 62%;
   --accent-soft: 217 50% 18%;
   --accent-soft-foreground: 213 90% 78%;
@@ -171,7 +171,7 @@
 }
 .dark[data-accent="violet"] {
   --primary: 263 85% 70%;
-  --primary-foreground: 222 47% 6%;
+  --primary-foreground: 222 32% 9%;
   --ring: 263 85% 70%;
   --accent-soft: 263 45% 22%;
   --accent-soft-foreground: 263 85% 84%;
@@ -241,6 +241,18 @@
   }
   :focus-visible {
     outline: none;
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    :root.theme-transitioning,
+    :root.theme-transitioning * {
+      transition-duration: 160ms;
+      transition-property:
+        background-color,
+        border-color,
+        color,
+        outline-color;
+      transition-timing-function: ease-out;
+    }
   }
 }
 

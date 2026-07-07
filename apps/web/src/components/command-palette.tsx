@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/command";
 import { NAV_ITEMS } from "@/lib/nav";
 import { useT } from "@/lib/i18n";
+import { withThemeTransition } from "@/lib/theme-transition";
 
 export function CommandPalette({
   open,
@@ -57,21 +58,27 @@ export function CommandPalette({
         <CommandGroup heading={t("command.theme")}>
           <CommandItem
             value="light"
-            onSelect={() => run(() => setTheme("light"))}
+            onSelect={() =>
+              run(() => withThemeTransition(() => setTheme("light")))
+            }
           >
             <Sun className="h-4 w-4 text-muted-foreground" />
             {t("command.theme.light")}
           </CommandItem>
           <CommandItem
             value="dark"
-            onSelect={() => run(() => setTheme("dark"))}
+            onSelect={() =>
+              run(() => withThemeTransition(() => setTheme("dark")))
+            }
           >
             <Moon className="h-4 w-4 text-muted-foreground" />
             {t("command.theme.dark")}
           </CommandItem>
           <CommandItem
             value="system"
-            onSelect={() => run(() => setTheme("system"))}
+            onSelect={() =>
+              run(() => withThemeTransition(() => setTheme("system")))
+            }
           >
             <Monitor className="h-4 w-4 text-muted-foreground" />
             {t("command.theme.system")}
