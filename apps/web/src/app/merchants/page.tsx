@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Search } from "lucide-react";
 import type { MerchantCandidate } from "@/lib/api";
 import { useT } from "@/lib/i18n";
@@ -18,7 +18,10 @@ import { useMerchantAliases } from "./_lib/use-merchant-aliases";
 
 export default function MerchantsPage() {
   const { t } = useT();
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState(() => {
+    if (typeof window === "undefined") return "";
+    return new URLSearchParams(window.location.search).get("search") ?? "";
+  });
   const [mergeCandidate, setMergeCandidate] = useState<MerchantCandidate | null>(
     null,
   );
@@ -32,10 +35,6 @@ export default function MerchantsPage() {
   } = useMerchantAliases({
     onCreateSuccess: () => setMergeCandidate(null),
   });
-
-  useEffect(() => {
-    setSearch(new URLSearchParams(window.location.search).get("search") ?? "");
-  }, []);
 
   const groups = useMemo(
     () => groupAliases(aliasesQuery.data ?? []),

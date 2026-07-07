@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Loader2, Plus, Save, Store, Trash2 } from "lucide-react";
 
 import type { MerchantAlias, MerchantAliasGroup } from "@/lib/api";
@@ -32,14 +32,6 @@ export function AliasGroupsPanel({
   const { t } = useT();
   const [labels, setLabels] = useState<Record<string, string>>({});
   const [newAliases, setNewAliases] = useState<Record<string, string>>({});
-
-  useEffect(() => {
-    setLabels(
-      Object.fromEntries(
-        groups.map((group) => [group.canonical_key, group.canonical_label]),
-      ),
-    );
-  }, [groups]);
 
   if (groups.length === 0) {
     return (

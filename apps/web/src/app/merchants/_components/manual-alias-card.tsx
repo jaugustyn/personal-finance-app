@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Loader2, Plus } from "lucide-react";
 
 import type { MerchantAliasGroup } from "@/lib/api";
@@ -29,12 +29,12 @@ export function ManualAliasCard({
   const { t } = useT();
   const [aliasLabel, setAliasLabel] = useState("");
   const [groupKey, setGroupKey] = useState(NEW_GROUP);
+  const [customCanonicalLabel, setCustomCanonicalLabel] = useState<string | null>(
+    null,
+  );
   const selectedGroup = groups.find((group) => group.canonical_key === groupKey);
-  const [canonicalLabel, setCanonicalLabel] = useState("");
-
-  useEffect(() => {
-    if (selectedGroup) setCanonicalLabel(selectedGroup.canonical_label);
-  }, [selectedGroup]);
+  const canonicalLabel =
+    customCanonicalLabel ?? selectedGroup?.canonical_label ?? "";
 
   const canSave = aliasLabel.trim() && canonicalLabel.trim();
   return (
@@ -56,8 +56,7 @@ export function ManualAliasCard({
             value={groupKey}
             onValueChange={(value) => {
               setGroupKey(value);
-              const group = groups.find((item) => item.canonical_key === value);
-              setCanonicalLabel(group?.canonical_label ?? "");
+              setCustomCanonicalLabel(null);
             }}
           >
             <SelectTrigger>
@@ -74,7 +73,7 @@ export function ManualAliasCard({
           </Select>
           <Input
             value={canonicalLabel}
-            onChange={(event) => setCanonicalLabel(event.target.value)}
+            onChange={(event) => setCustomCanonicalLabel(event.target.value)}
             placeholder={t("merchants.displayLabelPlaceholder")}
           />
           <Button
@@ -86,7 +85,7 @@ export function ManualAliasCard({
                 aliases: [aliasLabel.trim()],
               });
               setAliasLabel("");
-              if (!selectedGroup) setCanonicalLabel("");
+              if (!selectedGroup) setCustomCanonicalLabel("");
             }}
           >
             {isPending ? (
