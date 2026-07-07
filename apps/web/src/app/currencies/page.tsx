@@ -274,8 +274,8 @@ export default function CurrenciesPage() {
             <CardTitle className="text-base">{t("currencies.manualRate")}</CardTitle>
           </CardHeader>
           <CardContent>
-            <form onSubmit={submitRate} className="space-y-3">
-              <label className="space-y-1 text-sm">
+            <form onSubmit={submitRate} className="space-y-4">
+              <label className="block space-y-1.5 text-sm">
                 <span>{t("currencies.currency")}</span>
                 <Input
                   value={currency}
@@ -283,7 +283,7 @@ export default function CurrenciesPage() {
                   maxLength={3}
                 />
               </label>
-              <label className="space-y-1 text-sm">
+              <label className="block space-y-1.5 text-sm">
                 <span>{t("currencies.rateDate")}</span>
                 <Input
                   type="date"
@@ -291,7 +291,7 @@ export default function CurrenciesPage() {
                   onChange={(event) => setRateDate(event.target.value)}
                 />
               </label>
-              <label className="space-y-1 text-sm">
+              <label className="block space-y-1.5 text-sm">
                 <span>{t("currencies.rateToBase", { base: baseCurrency })}</span>
                 <Input
                   value={rate}
@@ -300,12 +300,8 @@ export default function CurrenciesPage() {
                   placeholder="4.0000"
                 />
               </label>
-              <div className="pt-1">
-                <Button
-                  type="submit"
-                  className="w-full sm:w-auto"
-                  disabled={addRate.isPending}
-                >
+              <div className="flex justify-center pt-1">
+                <Button type="submit" disabled={addRate.isPending}>
                   {addRate.isPending ? (
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   ) : (
