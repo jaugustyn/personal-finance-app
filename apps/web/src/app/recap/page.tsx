@@ -16,7 +16,6 @@ import {
   TrendingUp,
   Store,
   AlertTriangle,
-  PiggyBank,
 } from "lucide-react";
 
 import { Input } from "@/components/ui/input";
@@ -36,12 +35,6 @@ type TopMerchantRow = {
   merchant_canonical_key?: string | null;
   amount: number;
   count: number;
-};
-type LimitBreachRow = {
-  category: string;
-  spent: number;
-  limit: number;
-  overshoot: number;
 };
 
 /** Tone for spending deltas: more spending is negative (red), less is green. */
@@ -163,43 +156,6 @@ export default function RecapPage() {
       cell: (row) => formatCurrency(row.amount),
     },
   ];
-  const breachColumns: DataTableColumn<LimitBreachRow>[] = [
-    {
-      id: "category",
-      header: t("transactions.column.category"),
-      sortValue: (row) => tCategory(t, row.category),
-      cell: (row) => (
-        <Link
-          href={transactionsHref({
-            category: row.category,
-            direction: "debit",
-            date_from: query.data?.current_from,
-            date_to: query.data?.current_to,
-          })}
-          className="text-primary underline-offset-4 hover:underline"
-        >
-          {tCategory(t, row.category)}
-        </Link>
-      ),
-    },
-    {
-      id: "spent",
-      header: t("recap.spent"),
-      align: "right",
-      className: "tabular-nums",
-      sortValue: (row) => row.spent,
-      cell: (row) => formatCurrency(row.spent),
-    },
-    {
-      id: "limit",
-      header: t("recap.limit"),
-      align: "right",
-      className: "tabular-nums text-muted-foreground",
-      sortValue: (row) => row.limit,
-      cell: (row) => formatCurrency(row.limit),
-    },
-  ];
-
   return (
     <div className="space-y-6">
       <PageHeader title={t("recap.title")} description={t("recap.subtitle")} />
@@ -368,61 +324,6 @@ export default function RecapPage() {
                   emptyTitle={t("recap.merchants.empty")}
                   initialSort={{ id: "amount", dir: "desc" }}
                 />
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-base text-foreground">
-                  <AlertTriangle className="h-4 w-4 text-muted-foreground" />
-                  {t("recap.breaches.title")}
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <DataTable
-                  columns={breachColumns}
-                  data={query.data.limit_breaches}
-                  rowKey={(row) => row.category}
-                  emptyTitle={t("recap.breaches.empty")}
-                  initialSort={{ id: "spent", dir: "desc" }}
-                />
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-base text-foreground">
-                  <PiggyBank className="h-4 w-4 text-muted-foreground" />
-                  {t("recap.savings.title")}
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                {!query.data.savings_progress ? (
-                  <p className="text-sm text-muted-foreground">
-                    {t("common.unknown")}
-                  </p>
-                ) : (
-                  <div className="space-y-2">
-                    <div className="text-2xl font-semibold tabular-nums">
-                      {formatCurrency(query.data.savings_progress.net)}
-                      <span className="ml-1 text-sm font-normal text-muted-foreground">
-                        / {formatCurrency(query.data.savings_progress.goal)}
-                      </span>
-                    </div>
-                    <p
-                      className={cn(
-                        "text-sm",
-                        query.data.savings_progress.met
-                          ? "text-positive"
-                          : "text-muted-foreground",
-                      )}
-                    >
-                      {query.data.savings_progress.met
-                        ? t("recap.savings.met")
-                        : t("recap.savings.missed")}
-                    </p>
-                  </div>
-                )}
               </CardContent>
             </Card>
           </div>
