@@ -242,16 +242,23 @@
   :focus-visible {
     outline: none;
   }
+  :root.theme-transitioning,
+  :root.theme-transitioning *,
+  :root.theme-transitioning *::before,
+  :root.theme-transitioning *::after {
+    transition: none !important;
+  }
   @media (prefers-reduced-motion: no-preference) {
-    :root.theme-transitioning,
-    :root.theme-transitioning * {
-      transition-duration: 160ms;
-      transition-property:
-        background-color,
-        border-color,
-        color,
-        outline-color;
-      transition-timing-function: ease-out;
+    :root.theme-fading body {
+      animation: theme-fade-in 170ms ease-out both;
+    }
+  }
+  @keyframes theme-fade-in {
+    from {
+      opacity: 0.94;
+    }
+    to {
+      opacity: 1;
     }
   }
 }
