@@ -71,6 +71,23 @@ export const statsApi = {
         limit,
       }),
     ),
+  byTransactionType: (
+    months = 3,
+    limit = 8,
+    allData = false,
+    direction: StatsDirection = "credit",
+    includeTransfers = false,
+  ) =>
+    request<CategoryBreakdown[]>(
+      withQuery("/stats/by-transaction-type", {
+        ...directionalRangeQueryValues(months, {
+          allData,
+          direction,
+          includeTransfers,
+        }),
+        limit,
+      }),
+    ),
   networth: (months = 12, allData = false, includeTransfers = false) =>
     request<NetWorthPoint[]>(
       withQuery("/stats/networth", rangeQueryValues(months, { allData, includeTransfers })),

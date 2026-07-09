@@ -217,6 +217,40 @@ def test_by_category_can_include_predictions_explicitly(
     assert Decimal(rows[0]["amount"]) == Decimal("80.00")
 
 
+def test_by_transaction_type_groups_income_without_expense_categories(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    _add_tx(
+        db_session,
+        amount=Decimal("5000.00"),
+        direction="credit",
+        merchant="Employer",
+        transaction_type="salary",
+        category=None,
+        dedup_hash="stats-type-salary",
+    )
+    _add_tx(
+        db_session,
+        amount=Decimal("300.00"),
+        direction="credit",
+        merchant="Tax Office",
+        transaction_type="refund",
+        category=None,
+        dedup_hash="stats-type-refund",
+    )
+    db_session.commit()
+
+    response = client.get(
+        "/stats/by-transaction-type?months=120&direction=credit&limit=10"
+    )
+
+    assert response.status_code == 200
+    rows = {row["category"]: row for row in response.json()}
+    assert Decimal(rows["salary"]["amount"]) == Decimal("5000.00")
+    assert Decimal(rows["refund"]["amount"]) == Decimal("300.00")
+
+
 def test_top_merchants_excludes_transfers_by_default(
     client: TestClient,
     db_session: Session,

@@ -35,6 +35,7 @@ __all__ = [
     "overview",
     "cashflow",
     "by_category",
+    "by_transaction_type",
     "networth",
     "top_merchants",
     "category_trend",
@@ -198,6 +199,43 @@ def by_category(
         .limit(limit)
     )
     rows = session.execute(stmt).all()
+    total = sum((Decimal(row.amount or 0) for row in rows), Decimal(0))
+    out: list[CategorySpend] = []
+    for row in rows:
+        value = Decimal(row.amount or 0)
+        out.append(
+            CategorySpend(
+                category=row.category,
+                amount=value,
+                share=float(value / total) if total > 0 else 0.0,
+                count=int(row.cnt),
+            )
+        )
+    return out
+
+
+def by_transaction_type(
+    session: Session,
+    *,
+    months: int | None,
+    direction: str,
+    limit: int,
+    include_transfers: bool = False,
+) -> list[CategorySpend]:
+    start = _period_start(months)
+    transaction_type = func.coalesce(Transaction.transaction_type, "other")
+    amount = _abs_amount_sum().label("amount")
+    count = func.count().label("cnt")
+    rows = session.execute(
+        select(transaction_type.label("category"), amount, count)
+        .where(
+            *_base_filters(start, include_transfers=include_transfers),
+            Transaction.direction == direction,
+        )
+        .group_by(transaction_type)
+        .order_by(amount.desc())
+        .limit(limit)
+    ).all()
     total = sum((Decimal(row.amount or 0) for row in rows), Decimal(0))
     out: list[CategorySpend] = []
     for row in rows:

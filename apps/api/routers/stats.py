@@ -76,6 +76,24 @@ def by_category(
     )
 
 
+@router.get("/by-transaction-type", response_model=list[CategorySpend])
+def by_transaction_type(
+    session: Session = Depends(get_session),
+    months: int = Query(default=3, ge=1, le=120),
+    direction: TransactionDirection = Query(default=TransactionDirection.CREDIT),
+    limit: int = Query(default=20, ge=1, le=100),
+    include_transfers: bool = Query(default=False),
+    all_data: bool = Query(default=False),
+) -> list[CategorySpend]:
+    return stats_service.by_transaction_type(
+        session,
+        months=None if all_data else months,
+        direction=direction.value,
+        limit=limit,
+        include_transfers=include_transfers,
+    )
+
+
 @router.get("/networth", response_model=list[NetWorthPoint])
 def networth(
     session: Session = Depends(get_session),

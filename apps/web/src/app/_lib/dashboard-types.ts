@@ -3,7 +3,6 @@ import type { Direction } from "@/lib/api";
 export type DashboardRange = "1m" | "3m" | "6m" | "12m" | "all";
 export type DashboardDirection = Exclude<Direction, "all">;
 export type DashboardLimit = 5 | 8 | 12;
-export type DashboardTab = "overview" | "review" | "explore";
 
 export const RANGE_MONTHS: Record<DashboardRange, number> = {
   "1m": 1,
