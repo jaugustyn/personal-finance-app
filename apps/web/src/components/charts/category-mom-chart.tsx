@@ -18,23 +18,27 @@ import { formatCurrency } from "@/lib/utils";
 import { tooltipStyle } from "./chart-utils";
 
 /**
- * Diverging horizontal bars of month-over-month spend change per category. The
- * delta is computed from the two most recent months present in the trend data;
- * increases point right (warm), decreases point left (cool).
+ * Diverging horizontal bars for either latest month-over-month change or
+ * first-vs-last month change inside the selected dashboard period.
  */
 export function CategoryMoMChart({
   data,
   currency = "PLN",
+  comparisonMode = "latest",
 }: {
   data: CategoryTrendPoint[];
   currency?: string;
+  comparisonMode?: "latest" | "period";
 }) {
   const { t } = useT();
 
   const { rows } = useMemo(() => {
     const months = Array.from(new Set(data.map((d) => d.month))).sort();
     if (months.length < 2) return { rows: [] };
-    const [prev, curr] = [months[months.length - 2], months[months.length - 1]];
+    const [prev, curr] =
+      comparisonMode === "period"
+        ? [months[0], months[months.length - 1]]
+        : [months[months.length - 2], months[months.length - 1]];
     const prevByCat = new Map<string, number>();
     const currByCat = new Map<string, number>();
     for (const point of data) {
@@ -52,9 +56,15 @@ export function CategoryMoMChart({
       .filter((r) => r.delta !== 0)
       .sort((a, b) => b.delta - a.delta);
     return { rows };
-  }, [data]);
+  }, [comparisonMode, data]);
 
-  if (rows.length === 0) return null;
+  if (rows.length === 0) {
+    return (
+      <div className="flex h-[220px] items-center justify-center text-sm text-muted-foreground">
+        {t("dashboard.noChange")}
+      </div>
+    );
+  }
 
   return (
     <div className="relative">
