@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Loader2, Plus, Save, Store, Trash2 } from "lucide-react";
+import { ChevronDown, Loader2, Plus, Save, Store, Trash2 } from "lucide-react";
 
 import type { MerchantAlias, MerchantAliasGroup } from "@/lib/api";
 import { useT } from "@/lib/i18n";
@@ -59,24 +59,27 @@ export function AliasGroupsPanel({
           return (
             <details
               key={group.canonical_key}
-              className="group rounded-lg border"
+              className="group rounded-lg border transition-colors open:border-2 open:border-foreground/25 open:shadow-sm"
             >
-              <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2">
-                <div className="min-w-0">
-                  <div className="truncate text-sm font-medium">
-                    {group.canonical_label}
-                  </div>
-                  <div className="mt-1 flex flex-wrap gap-1">
-                    {group.aliases.slice(0, 4).map((alias) => (
-                      <Badge key={alias.id} variant="muted" className="text-[10px]">
-                        {alias.alias_label}
-                      </Badge>
-                    ))}
-                    {group.aliases.length > 4 ? (
-                      <Badge variant="outline" className="text-[10px]">
-                        +{group.aliases.length - 4}
-                      </Badge>
-                    ) : null}
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2 transition-colors hover:bg-muted/40 group-open:border-b group-open:border-border group-open:bg-muted/25">
+                <div className="flex min-w-0 items-center gap-2">
+                  <ChevronDown className="h-4 w-4 shrink-0 -rotate-90 text-muted-foreground transition-transform group-open:rotate-0 group-open:text-foreground" />
+                  <div className="min-w-0">
+                    <div className="truncate text-sm font-medium">
+                      {group.canonical_label}
+                    </div>
+                    <div className="mt-1 flex flex-wrap gap-1">
+                      {group.aliases.slice(0, 4).map((alias) => (
+                        <Badge key={alias.id} variant="muted" className="text-[10px]">
+                          {alias.alias_label}
+                        </Badge>
+                      ))}
+                      {group.aliases.length > 4 ? (
+                        <Badge variant="outline" className="text-[10px]">
+                          +{group.aliases.length - 4}
+                        </Badge>
+                      ) : null}
+                    </div>
                   </div>
                 </div>
                 <Badge variant="secondary" className="shrink-0">
@@ -116,9 +119,6 @@ export function AliasGroupsPanel({
                         )}
                         {t("common.save")}
                       </Button>
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      {group.canonical_key}
                     </div>
                   </div>
                 </div>
