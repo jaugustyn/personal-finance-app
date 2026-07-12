@@ -35,7 +35,8 @@ python scripts/build_ml_evidence.py \
   --external-kaggle data/external/kaggle_personal_finance_data/Personal_Finance_Dataset.csv
 ```
 
-Kaggle data is reported only as `external_only` and `real_plus_external`. It
+Kaggle data is reported only as `external_only` and
+`real_plus_external_training_only`. It
 does not replace manually confirmed Polish labels and should not automatically
 switch the production model.
 
@@ -50,11 +51,12 @@ The script writes:
   The production model remains on the base pipeline until the results are
   reviewed.
 - `data/reports/transaction_type_classification_*.json` - a separate
-  supervised multiclass experiment for `Transaction.transaction_type` on silver
-  labels. It includes `dummy_most_frequent`, `logreg`, `linear_svc`, macro-F1,
+  supervised multiclass experiment for `Transaction.transaction_type` on
+  manually confirmed labels. It includes `dummy_most_frequent`, `logreg`,
+  `linear_svc`, macro-F1,
   weighted-F1, per-class metrics, a confusion matrix, class counts and classes
-  dropped due to low support. Runtime behavior is unchanged: transaction type
-  detection during import still uses rules.
+  dropped due to low support. The experiment is evidence-only; runtime type
+  suggestions use deterministic rules and direction fallback.
 - `data/reports/eda_*.json` - safe aggregates for visualization: category
   distributions, monthly cash flow, missing values and top merchants as aliases.
 - `data/reports/forecasting_*.json` - walk-forward CV for Naive, Mean3, SES and
@@ -65,10 +67,11 @@ The script writes:
   report: detected subscription count, estimated monthly cost, cadence
   distribution and examples as aliases.
 - `data/reports/evidence_package_*.json` - the main combined package using
-  `schema_version = "2.0"`. Evidence sections are stored under `sections`:
+  `schema_version = "3.0"`. Evidence sections are stored under `sections`:
   `category_classification`, `transaction_type_classification`, `forecasting`,
   `anomaly_detection` and `subscriptions`. The package also contains `source`,
-  `semantic_note` and `privacy_check`.
+  `semantic_note`, `privacy_check`, environment/code manifest, currency
+  diagnostics and explicit `section_status` values.
 - `data/reports/latest_*.json` and `data/reports/summary.md` - stable files for
   citation.
 - `data/private/anomaly_review_*.csv` - private row-level review for top
@@ -83,13 +86,20 @@ python scripts/build_ml_evidence.py \
   --review-file data/private/latest_anomaly_review.csv
 ```
 
+`precision@20` or `precision@50` remains `null` until every row in the
+corresponding top-k has been reviewed. `reviewed_at_20/50` exposes completeness;
+the denominator is never silently reduced to the labelled subset.
+
 After report generation, run the inspector:
 
 ```bash
-python scripts/inspect_report.py --strict
+python scripts/inspect_report.py --profile classification-strict
 ```
 
-Strict mode requires a complete package: `latest_classification.json`,
+`classification-strict` requires a complete category-classification section
+while allowing transaction type, forecasting, anomalies and subscriptions to
+remain explicitly `provisional`. `thesis-strict` requires every declared thesis
+section to be complete. Both profiles require: `latest_classification.json`,
 `latest_transaction_type_classification.json`, `latest_eda.json`,
 `latest_forecasting.json`, `latest_anomaly_summary.json`,
 `latest_subscriptions.json`, `latest_evidence_package.json`,
@@ -108,18 +118,18 @@ before citing results in the thesis or presentation.
 4. Run retraining and `reclassify`.
 5. Generate reports with `build_ml_evidence.py --from-db`.
 6. Complete the private anomaly review and rerun the report with `--review-file`.
-7. Confirm `inspect_report.py --strict`.
+7. Confirm `inspect_report.py --profile classification-strict`.
 
 ## Data Volume Guidelines
 
 The priority is real Polish transactions with a manually confirmed `category`.
 `category_predicted` is a suggestion, not ground truth.
 
-- Technical minimum: `300-500` confirmed transactions.
-- Useful working range: `800-1500` labels.
-- Strong evidence target: `~2000+` labels across `6-12` months.
-- Per category: `20-30` examples for rare classes and `50-100` for common
-  classes.
+- Technical activation: at least 300 confirmed transactions in total. Class
+  support is checked only for split/CV feasibility; there is no separate
+  20-per-class activation gate.
+- Thesis data readiness: at least 800 labels, 50 per class, 12 represented
+  calendar months and a span of at least 365 days.
 
 The `label_readiness` report shows which categories are below thresholds and
 what should enter the review queue: missing categories, low confidence, rare
@@ -127,16 +137,16 @@ classes and repeated merchants with errors.
 
 ## Interpretation Criteria
 
-- Classification should clearly beat `dummy_most_frequent`; the working target
-  is `macro_f1 >= 0.75` for `linear_svc`.
+- Technical macro-F1 must be at least 0.60 on both primary holdouts; the
+  thesis-ready threshold is 0.75 on both.
 - `category_classification` and `transaction_type_classification` must be
   interpreted separately. The first layer classifies the budget expense
-  category. The second describes money-flow semantics. `transaction_type` v1 is
-  an experiment on `silver_transaction_type`, not a production replacement for
-  rules.
-- `confidence_curve` shows the coverage vs accuracy trade-off for thresholds
-  `0.50`, `0.55`, `0.60`, `0.70`, `0.80`, `0.90`; for `LinearSVC` this is a
-  margin-derived proxy, not a calibrated probability.
+  category. The second describes money-flow semantics and is trained only on
+  manual decisions and accepted suggestions. Its runtime output still requires
+  explicit user confirmation.
+- Runtime confidence comes only from Logistic Regression or calibrated
+  LinearSVC. Thresholds are derived from real OOF probabilities with minimum
+  support and evaluated unchanged on both holdouts.
 - Rare-class augmentation is experimental. Report the result even when the
   improvement is small or neutral.
 - Forecasting selects the model with the lowest RMSE in walk-forward CV. ARIMA

@@ -11,7 +11,7 @@ assistant backed by deterministic domain tools.
 - Separate `transaction_type` semantics from budget expense categories.
 - Dashboard with KPIs, cash flow, categories, top merchants and net worth.
 - ML suggestions for expense categories using TF-IDF and linear models.
-- Evidence-only `transaction_type` multiclass experiment on silver labels.
+- Rule-based `transaction_type` suggestions with explicit user confirmation.
 - Expense forecasting with simple time-series models: naive, mean, SES and ARIMA.
 - Anomaly detection with IsolationForest, deterministic rules and user feedback.
 - Subscription detection based on payment cadence and amount stability.
@@ -25,16 +25,35 @@ assistant backed by deterministic domain tools.
 - LLM: local Ollama, optional.
 - Runtime: Docker Compose.
 
+## Current Development Status
+
+This repository is an in-progress thesis project prepared for preliminary
+review. Transaction import, editing, analytics, the dashboard and the
+classification lifecycle are operational. No private transactions or trained
+model are bundled with the project.
+
+On a clean database the ML screen intentionally reports that no active model is
+available. Category training becomes available after collecting at least 300
+explicitly confirmed labels and enough class support to construct valid
+validation splits. Model activation is always manual. The private frozen thesis
+test remains implemented in the backend but is intentionally hidden from the UI
+until the final evaluation stage.
+
+Forecasting, anomaly detection, subscription detection and the
+`transaction_type` experiment are useful working modules, but their thesis
+evidence status remains explicitly provisional.
+
 ## Quick Start
 
 Requirements:
 
 - Docker Desktop
+- Python 3.12 and uv for local backend development
 - Optional Ollama, if you want to use the LLM assistant
 
 ```powershell
 copy .env.example .env
-docker compose --env-file .env.example -p personal-finance-app -f docker/docker-compose.yml up -d --build
+docker compose --env-file .env -p personal-finance-app -f docker/docker-compose.yml up -d --build
 ```
 
 URLs:
@@ -62,6 +81,7 @@ AUTH_PASSWORD=
 DATABASE_URL=postgresql+psycopg://finance:finance@localhost:5432/finance
 OLLAMA_BASE_URL=http://localhost:11434
 LLM_ENABLED=true
+LLM_FALLBACK_ENABLED=false
 SCHEDULER_ENABLED=false
 ```
 
@@ -73,27 +93,30 @@ Compose on the host machine.
 Backend:
 
 ```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip
-python -m pip install -e .
+py -3.12 -m pip install uv==0.8.15
+uv sync --frozen --extra dev
 $env:PYTHONPATH="$PWD\src"
-.\.venv\Scripts\python.exe -m uvicorn apps.api.main:app --reload --port 8000
+uv run alembic upgrade head
+uv run uvicorn apps.api.main:app --reload --port 8000
 ```
+
+For a local (non-Compose) backend, create `.env` first and set `DATABASE_URL`
+to credentials accepted by your PostgreSQL instance. Verify
+`http://localhost:8000/health/ready` before starting the frontend.
 
 Frontend:
 
 ```powershell
 cd apps/web
-npm install
+npm ci
 npm run dev
 ```
 
 Checks:
 
 ```powershell
-.\.venv\Scripts\python.exe -m pytest
-.\.venv\Scripts\python.exe -m ruff check .
+uv run pytest
+uv run ruff check .
 cd apps/web
 npm run typecheck
 npm run lint
@@ -107,18 +130,34 @@ docker compose -f docker/docker-compose.yml config
 The project has two classification layers:
 
 - `category` - the budget expense category, for example food, transport, health.
-- `transaction_type` - the money-flow semantics, for example purchase, salary,
+- `transaction_type` - the money-flow semantics, for example expense, salary,
   refund or own transfer.
 
-At runtime, `transaction_type` is still detected by rules. The
-`transaction_type` model is an evidence-only experiment on silver labels, used
-for ML reporting and comparison.
+At runtime, bank/system rules create transaction-type suggestions only.
+The ordinary debit/credit fallback is used silently and does not enter the
+review queue. A user-created personal rule may still explicitly auto-apply a
+type. Only manual decisions and accepted suggestions are training labels; the
+transaction-type model remains an evidence-only experiment and is not used by
+runtime classification.
 
 Build evidence reports:
 
 ```powershell
-.\.venv\Scripts\python.exe scripts\build_ml_evidence.py --from-db
+uv run python scripts\build_ml_evidence.py --from-db
+uv run python scripts\inspect_report.py --profile classification-strict
 ```
+
+Category training uses only explicitly confirmed 9-class expense labels.
+`POST /ml/retrain` creates versioned candidates; it never overwrites the active
+model. Review gates and activate or roll back a compatible version from the ML
+screen. Bank/system categories and model/LLM output remain suggestions until
+the user accepts them.
+
+Routine retraining evaluates Logistic Regression with the baseline feature
+set. The broader research matrix is added explicitly with
+`POST /ml/retrain?include_benchmarks=true`. The database model registry is the
+runtime source of truth; JSON reports are evidence outputs and never select the
+active artifact.
 
 Reports are written to `data/reports/`. Private anomaly review files are written
 to `data/private/`. Both directories are ignored by Git.
@@ -135,6 +174,8 @@ Do not commit:
 - caches or build artifacts.
 
 Keep real data locally in `data/raw/`, `data/private/` or outside the repository.
+When sending the project as an archive, exclude the entire `data/` directory and
+all `.env` files; Git already ignores these paths.
 
 ## Repository Layout
 
@@ -147,7 +188,6 @@ tests/          backend, ML and domain tests
 scripts/        evidence and maintenance scripts
 docker/         Dockerfiles and docker-compose
 docs/           project documentation, model card and demo notes
-notebooks/      README only; .ipynb files are ignored by default
 ```
 
 ## Documentation

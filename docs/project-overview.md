@@ -66,7 +66,7 @@ src/finance/      Importable domain package used by API, scripts and tests
   domain/           SQLAlchemy models, Pydantic DTOs, enums
   ml/
     classification/   category classifier, training, prediction, augmentation
-    transaction_type/  evidence-only multiclass model on silver labels
+    transaction_type/  evidence-only experiments on confirmed labels
     anomaly/          IsolationForest + robust z-score + rules
     forecasting/      Naive, Mean, SES, ARIMA + walk-forward CV
     subscriptions/    cadence detector
@@ -75,7 +75,6 @@ alembic/          database migrations
 docs/             ADRs, model card, evidence docs and demo notes
 tests/            backend, ML and domain tests
 data/             private/runtime artifacts, ignored by Git
-notebooks/        README only; .ipynb files are ignored by default
 scripts/          evidence and maintenance helpers
 ```
 
@@ -126,16 +125,15 @@ Indicative results are documented in `docs/model-card.md`.
 ### 5.2 Transaction Type Classification
 
 The second supervised experiment covers multiclass `transaction_type` analysis.
-Target classes are `purchase`, `own_transfer`, `person_transfer`, `salary`,
-`income`, `refund`, `cash_withdrawal`, `debt_payment`, `bank_fee`,
-`savings_investment` and `other`.
+Target classes are `expense`, `salary`, `income`, `refund`, `own_transfer`,
+`cash_withdrawal`, `debt_payment`, `asset_allocation` and `other`.
 
-This is an **evidence-only silver-label model**. Labels come from current import
-rules and do not replace `finance.transactions.rules.detect_transaction_type` at
-runtime. Inputs are `merchant + title + raw_category`, `abs_amount`,
-`direction` and optional `source`. The report compares `DummyClassifier`,
-`LogisticRegression` and `LinearSVC` and is included in the shared evidence
-package.
+Labels come only from manual decisions and accepted suggestions. Bank and
+system rules remain a suggestion layer, while the calibrated model can only
+create review suggestions. The ordinary debit/credit fallback is silent; only
+more specific results enter review. Inputs are transaction text plus `raw_transaction_type`,
+`abs_amount`, `direction` and `source`. The report compares the rule baseline,
+`DummyClassifier`, `LogisticRegression` and calibrated `LinearSVC`.
 
 Interpretation is intentionally separated:
 

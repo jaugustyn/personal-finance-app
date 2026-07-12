@@ -13,7 +13,7 @@ React 19, TypeScript, Tailwind v4, TanStack Query and Recharts.
 ## Development
 
 ```bash
-npm install
+npm ci
 npm run dev
 ```
 

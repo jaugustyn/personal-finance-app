@@ -32,8 +32,8 @@ If BasicAuth is enabled, use the username and password from `.env`.
 3. Wait a few seconds for background suggestions.
 4. Go to `/transactions` -> `Do przypisania`.
 5. Check:
-   - transaction types (`purchase`, `own_transfer`, `person_transfer`, `salary`,
-     `income`, `refund`, `cash_withdrawal`, `bank_fee`, `savings_investment`),
+   - transaction types (`expense`, `salary`, `income`, `refund`, `own_transfer`,
+     `cash_withdrawal`, `debt_payment`, `asset_allocation`, `other`),
    - `is_transfer` for own transfers,
    - ML suggestions and confidence,
    - accepting/rejecting suggestions.
@@ -48,7 +48,7 @@ or assigns the category manually.
 From API docs or curl:
 
 ```powershell
-curl -X POST "http://localhost:8000/ml/retrain?estimator=linear_svc"
+curl -X POST "http://localhost:8000/ml/retrain?estimator=linear_svc_calibrated"
 curl -X POST "http://localhost:8000/ml/reclassify"
 ```
 
@@ -99,8 +99,8 @@ Before the demo, make sure the database contains enough signal:
 
 - several months of transactions, ideally 6+ months for basic forecasting,
 - several dozen confirmed expense-category labels,
-- several transaction types visible in the table (`purchase`, transfers,
-  income, fees, etc.),
+- several transaction types visible in the table (`expense`, transfers,
+  income, refunds, debt and allocations),
 - at least one detected subscription,
 - several anomalies with saved feedback (`Trafne`, `Nietrafne`,
   `Ignoruj odbiorce`),

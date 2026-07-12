@@ -184,16 +184,14 @@ Goal:
 
 Classes:
 
-- `purchase`,
-- `own_transfer`,
-- `person_transfer`,
+- `expense`,
 - `salary`,
 - `income`,
 - `refund`,
+- `own_transfer`,
 - `cash_withdrawal`,
 - `debt_payment`,
-- `bank_fee`,
-- `savings_investment`,
+- `asset_allocation`,
 - `other`.
 
 Input data:
@@ -207,10 +205,10 @@ Input data:
 
 Important limitation:
 
-- in v1 this is evidence-only,
-- labels come from the current `Transaction.transaction_type`,
-- they are silver labels because they come from rules/runtime data,
-- the model does not replace `detect_transaction_type` during import.
+- in v1 the model is a suggestion layer,
+- labels come only from confirmed `Transaction.transaction_type` decisions,
+- only manual decisions and accepted suggestions are gold labels,
+- the model never performs auto-apply during import or reclassification.
 
 How to defend it:
 
@@ -403,7 +401,7 @@ Strongest points:
 
 - There are two supervised multiclass tasks:
   - expense category,
-  - transaction type as evidence-only silver-label modelling.
+  - transaction type as a confirmed-label hybrid suggestion model.
 - Forecasting works on monthly time series.
 - Unsupervised anomaly detection uses IsolationForest.
 - Subscription detection is cadence analysis.

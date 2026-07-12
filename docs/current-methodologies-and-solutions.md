@@ -133,7 +133,7 @@ Kluczowe rozróżnienie domenowe:
 
 - `category` oznacza kategorię budżetową wydatku, np. `food`, `transport`,
   `shopping`.
-- `transaction_type` oznacza semantykę przepływu pieniędzy, np. `purchase`,
+- `transaction_type` oznacza semantykę przepływu pieniędzy, np. `expense`,
   `salary`, `refund`, `own_transfer`.
 
 To rozdzielenie zapobiega mieszaniu pensji, zwrotów i przelewów własnych z
@@ -376,7 +376,7 @@ Pipeline:
 - `TfidfVectorizer` char_wb n-gram 3-5,
 - `log1p(abs_amount)` + `StandardScaler`,
 - one-hot dzień tygodnia,
-- estymator, domyślnie `LinearSVC`.
+- estymator: Logistic Regression albo kalibrowany `LinearSVC`.
 
 Istnieje też eksperymentalny feature set v2:
 
@@ -388,15 +388,16 @@ Istnieje też eksperymentalny feature set v2:
 
 Metodyka treningu:
 
-- dane z plików lub bazy,
+- potwierdzone dane z bazy,
 - tylko potwierdzone `Transaction.category` jako ground truth,
-- odrzucenie klas z mniej niż 2 przykładami dla CV,
-- StratifiedKFold,
+- deterministyczne time holdout i merchant holdout,
+- StratifiedKFold wyłącznie pomocniczo i do predykcji OOF,
 - raport: macro-F1, weighted-F1, classification report, confusion matrix,
   confidence curve,
-- baseline `DummyClassifier`,
-- artefakt modelu zapisywany w `data/models/classifier_latest.joblib`,
-- raporty w `data/reports`.
+- benchmark `DummyClassifier` uruchamiany tylko w jawnym eksperymencie,
+- niezmienne artefakty kandydatów w `data/models/candidates`,
+- aktywna wersja wskazywana wyłącznie przez rejestr modeli w bazie,
+- zagregowane raporty evidence w `data/reports`.
 
 Polityka zaufania:
 
@@ -417,28 +418,29 @@ LLM fallback:
 
 `transaction_type` ma osobną metodykę:
 
-- produkcyjnie źródłem prawdy pozostają reguły systemowe i personalne,
-- model supervised jest evidence-only,
-- etykiety są silver labels z `Transaction.transaction_type`,
-- model nie zastępuje runtime `detect_transaction_type`.
+- reguły bankowe i systemowe tworzą wyłącznie sugestie,
+- domyślny `debit -> expense` / `credit -> income` działa po cichu i nie
+  trafia do kolejki weryfikacji,
+- tylko jawnie utworzona reguła personalna w trybie `auto_apply` może ustawić
+  niepotwierdzony typ automatycznie,
+- gold labels pochodzą tylko z ręcznych decyzji i zaakceptowanych sugestii,
+- model jest eksperymentem evidence-only i nie uczestniczy w runtime.
 
 Klasy:
 
-- `purchase`,
-- `own_transfer`,
-- `person_transfer`,
+- `expense`,
 - `salary`,
 - `income`,
 - `refund`,
+- `own_transfer`,
 - `cash_withdrawal`,
 - `debt_payment`,
-- `bank_fee`,
-- `savings_investment`,
+- `asset_allocation`,
 - `other`.
 
 Cechy:
 
-- `merchant + title + raw_category`,
+- `merchant + title + raw_transaction_type`,
 - `abs_amount`,
 - `direction`,
 - `source`.
@@ -490,7 +492,7 @@ Wynik zawiera:
 Filtracja:
 
 - analizowane są przede wszystkim transakcje wydatkowe,
-- wykluczane są typy takie jak `savings_investment`,
+- wykluczane są typy takie jak `asset_allocation`,
 - model-only może być ukryty w widoku review.
 
 ## 18. Detekcja subskrypcji
@@ -760,7 +762,8 @@ Ograniczenia produktu:
 - BasicAuth nie jest pełnym systemem kont i ról,
 - Ollama jest opcjonalna i lokalna, więc jakość oraz latency zależą od sprzętu,
 - modele ML są dopasowane do małego, prywatnego datasetu,
-- `transaction_type` supervised jest evidence-only i uczy się silver labels,
+- `transaction_type` supervised jest eksperymentem evidence-only uczonym
+  wyłącznie z potwierdzonych decyzji,
 - klasy rzadkie wymagają ręcznego review lub augmentacji,
 - `other` pozostaje kategorią niejednorodną,
 - brak kursu FX może blokować import/przeliczenia dla walut obcych,

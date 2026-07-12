@@ -24,22 +24,22 @@ Two extreme strategies were considered:
 
 Use a **hybrid approach**:
 
-1. **LinearSVC** (TF-IDF on `text` + numeric `abs_amount`, `day_of_week`) is the
-   first classifier. If `decision_function`-derived confidence is at least `tau`
-   (default 0.55), accept the prediction.
-2. **LLM fallback** (Ollama `llama3.1:8b`) handles low-confidence predictions and
-   merchants absent from training data. The prompt contains a strict ontology
-   and few-shot examples from `SEED_EXAMPLES` in `augment.py`.
-3. **LLM-driven augmentation** (`finance.ml.classification.augment`) generates
+1. Runtime candidates are Logistic Regression or calibrated LinearSVC with the
+   baseline or feature-v2 pipeline. Margin proxies cannot be promoted.
+2. Thresholds are derived from real OOF probabilities and evaluated unchanged
+   on time and unseen-merchant holdouts. `other` always requires review.
+3. **LLM fallback** uses a configurable local Ollama model and requires both a
+   global flag and an explicit request flag. It has no fabricated confidence
+   and always requires user acceptance.
+4. **LLM-driven augmentation** (`finance.ml.classification.augment`) generates
    synthetic merchant strings for rare classes to improve macro-F1.
 
 ## Consequences
 
 **Positive:**
 
-- Mean prediction latency below 50 ms for the SVC path.
-- Macro-F1 improved from approximately 0.71 on a small real dataset to
-  approximately 0.78 after rare-class augmentation in the working evidence.
+- Candidate quality is measured on both primary holdouts, not only stratified
+  CV.
 - No cloud dependency. Ollama runs locally.
 
 **Negative:**
@@ -47,10 +47,8 @@ Use a **hybrid approach**:
 - Two decision paths increase code and test complexity.
 - LLM augmentation is non-deterministic, so generated CSV files must record the
   seed and model version.
-- Threshold `tau` is empirical. `classification_*.json` reports a
-  `confidence_curve` with coverage and accuracy for thresholds
-  0.50/0.55/0.60/0.70/0.80/0.90. For `LinearSVC`, confidence is a normalized
-  margin proxy, not a calibrated probability.
+- Candidates are never activated automatically. Manual promotion and rollback
+  operate on versioned, checksummed artifacts with exact dependency checks.
 
 ## Rejected Alternatives
 
@@ -61,6 +59,6 @@ Use a **hybrid approach**:
 
 ## Success Metrics
 
-- Macro-F1 >= 0.75 in 5-fold StratifiedKFold after augmentation.
+- Macro-F1 >= 0.75 on both frozen thesis holdouts.
 - p99 latency of `/ml/classify` <= 200 ms without the LLM fallback.
 - LLM fallback hit rate <= 10%; if higher, retrain the SVC model.
