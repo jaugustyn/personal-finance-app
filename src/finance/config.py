@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     ollama_num_ctx: int = 2048
     ollama_num_predict: int = 256
     llm_enabled: bool = True
+    llm_fallback_enabled: bool = False
 
     # Auth (BasicAuth, single user). Auth is OFF when both vars are empty.
     auth_username: str = ""
@@ -32,7 +33,7 @@ class Settings(BaseSettings):
     scheduler_enabled: bool = False
     retrain_cron_hour: int = 3   # daily 03:00
     retrain_cron_minute: int = 0
-    retrain_estimator: str = "linear_svc_calibrated"
+    retrain_estimator: str = "logreg"
 
     # CORS / rate limiting
     cors_allow_origins: str = "http://localhost:3000"

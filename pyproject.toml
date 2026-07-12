@@ -3,11 +3,11 @@ name = "finance"
 version = "0.1.0"
 description = "Self-hosted personal finance analysis system with ML and local LLM"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.12,<3.13"
 license = { file = "LICENSE" }
 dependencies = [
     # web / api
-    "fastapi>=0.115",
+    "fastapi>=0.115,<0.116",
     "uvicorn[standard]>=0.32",
     "python-multipart>=0.0.12",
     "pydantic>=2.9",
@@ -51,7 +51,7 @@ packages = ["src/finance"]
 
 [tool.ruff]
 line-length = 100
-target-version = "py311"
+target-version = "py312"
 extend-exclude = ["notebooks"]
 
 [tool.ruff.lint]
@@ -68,6 +68,6 @@ addopts = "-q --cov=src/finance --cov=apps --cov-report=term-missing --cov-repor
 pythonpath = ["src"]
 
 [tool.mypy]
-python_version = "3.11"
+python_version = "3.12"
 strict = false
 ignore_missing_imports = true
