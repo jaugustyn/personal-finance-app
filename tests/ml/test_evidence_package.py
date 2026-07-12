@@ -49,8 +49,8 @@ def _classification() -> dict[str, object]:
             "minimum_total": 300,
             "recommended_total": 800,
             "ideal_total": 2000,
-            "minimum_per_category": 20,
-            "below_minimum_per_category": ["food", "transport"],
+            "minimum_per_category": 0,
+            "below_minimum_per_category": [],
             "date_span_months": 2,
         },
     }
@@ -60,13 +60,13 @@ def _transaction_type() -> dict[str, object]:
     return {
         "report_type": "transaction_type_classification_evidence",
         "classification_task": "multiclass_transaction_type",
-        "label_source": "silver_transaction_type",
+        "label_source": "confirmed_transaction_type",
         "runtime_policy": "evidence_only_rules_remain_source_of_truth",
         "models": {
             "dummy_most_frequent": _model(),
             "linear_svc": _model(),
         },
-        "class_counts": {"purchase": 4, "salary": 4},
+        "class_counts": {"expense": 4, "salary": 4},
         "n_total_labelled": 8,
         "n_classes": 2,
         "n_splits": 2,
@@ -177,6 +177,42 @@ def test_build_evidence_package_has_stable_schema_and_sections() -> None:
     assert validate_evidence_package(package) == []
 
 
+def test_registry_classification_report_uses_registered_metrics() -> None:
+    frame = pd.DataFrame(
+        {
+            "category": ["food", "transport"],
+            "booking_date": ["2025-01-01", "2026-01-01"],
+        }
+    )
+    slice_metrics = {
+        "macro_f1": 0.8,
+        "weighted_f1": 0.82,
+        "confusion_matrix": [[1]],
+    }
+    state = {
+        "active_model_id": "model-1",
+        "active_estimator": "logreg",
+        "active_feature_set": "baseline",
+        "active_metrics": {
+            "time": slice_metrics,
+            "merchant": slice_metrics,
+            "oof": {"macro_f1": 0.79},
+            "ranking": {"mean_macro_f1": 0.8},
+            "p99_ms": 5.0,
+        },
+        "active_gates": {"technical": {"passed": True}},
+        "active_confidence_policy": {"default_threshold": 0.7},
+    }
+
+    report = build_ml_evidence._registry_classification_report(frame, state)
+
+    assert report["report_type"] == "classification_registry_snapshot"
+    assert report["models"]["logreg"]["macro_f1"] == 0.8
+    assert report["confidence_policy"]["default_threshold"] == 0.7
+    assert report["model_lifecycle"]["active_model_id"] == "model-1"
+    assert inspect_report._validate_category_section(report, "classification") == []
+
+
 def test_build_ml_evidence_cli_writes_latest_files_without_external_services(
     monkeypatch,
     tmp_path: Path,
@@ -247,13 +283,29 @@ def test_build_ml_evidence_cli_writes_latest_files_without_external_services(
         assert (reports_dir / filename).exists()
 
     package = json.loads((reports_dir / "latest_evidence_package.json").read_text())
-    assert package["schema_version"] == "2.0"
+    assert package["schema_version"] == "3.0"
+    assert package["section_status"]["forecasting"] == "provisional"
     assert package["source"] == "files"
     assert package["privacy_check"]["passed"] is True
     summary = (reports_dir / "summary.md").read_text(encoding="utf-8")
     assert "## Category Classification" in summary
     assert "## LLM / RAG Narrative" in summary
     assert "Private Merchant" not in str(package)
+
+
+def test_anomaly_precision_requires_complete_top_k_review() -> None:
+    summary = _anomaly()
+    partial = pd.DataFrame({"is_relevant": [True] * 10})
+
+    result = build_ml_evidence._apply_precision_review(summary.copy(), partial)
+
+    assert result["reviewed_at_20"] == 10
+    assert result["precision_at_20"] is None
+    complete = pd.DataFrame({"is_relevant": [True] * 10 + [False] * 10})
+    result = build_ml_evidence._apply_precision_review(summary.copy(), complete)
+    assert result["reviewed_at_20"] == 20
+    assert result["precision_at_20"] == 0.5
+    assert result["precision_at_50"] is None
 
 
 def test_inspect_report_strict_validates_complete_package(tmp_path: Path) -> None:
@@ -279,3 +331,31 @@ def test_inspect_report_strict_fails_when_privacy_check_fails(tmp_path: Path) ->
     _write_report_set(reports_dir, _package(privacy_passed=False))
 
     assert inspect_report.inspect_reports(reports_dir, strict=True) == 1
+
+
+def test_classification_strict_accepts_provisional_later_modules(tmp_path: Path) -> None:
+    reports_dir = tmp_path / "reports"
+    classification = _classification()
+    classification["model_lifecycle"] = {
+        "active_gates": {"technical": {"passed": True}}
+    }
+    package = build_evidence_package(
+        generated_at="20260605T120000Z",
+        source="db",
+        category_classification=classification,
+        transaction_type_classification=_transaction_type(),
+        forecasting=_forecasting(),
+        anomaly_detection=_anomaly(),
+        subscriptions=_subscriptions(),
+        privacy_check=_privacy(),
+    )
+    _write_report_set(reports_dir, package)
+
+    assert (
+        inspect_report.inspect_reports(
+            reports_dir,
+            profile="classification-strict",
+        )
+        == 0
+    )
+    assert inspect_report.inspect_reports(reports_dir, profile="thesis-strict") == 1

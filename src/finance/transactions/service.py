@@ -3,6 +3,7 @@ from finance.transactions.export import CSV_COLUMNS, export_csv_lines, safe_csv_
 from finance.transactions.mutations import (
     UNCHANGED,
     InvalidCategoryAssignment,
+    TransactionTypeDirectionMismatch,
     accept_suggestions,
     bulk_categorize,
     bulk_delete,
@@ -43,6 +44,7 @@ __all__ = [
     "CategoryState",
     "FilterSummaryResult",
     "InvalidCategoryAssignment",
+    "TransactionTypeDirectionMismatch",
     "MerchantAliasSuggestion",
     "MerchantCandidate",
     "MerchantCandidateVariant",

@@ -155,8 +155,8 @@ def add_feature_v2_columns(df: pd.DataFrame) -> pd.DataFrame:
     out = df.copy()
     merchant = out["merchant"] if "merchant" in out.columns else out["text"]
     out["merchant_norm"] = merchant.fillna("").map(normalize_merchant)
-    out["transaction_type"] = out.get("transaction_type", "purchase")
-    out["transaction_type"] = out["transaction_type"].fillna("purchase").astype(str)
+    out["transaction_type"] = out.get("transaction_type", "expense")
+    out["transaction_type"] = out["transaction_type"].fillna("expense").astype(str)
     out["source"] = out.get("source", "unknown")
     out["source"] = out["source"].fillna("unknown").astype(str)
     if "booking_date" in out.columns:

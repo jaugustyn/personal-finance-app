@@ -49,7 +49,9 @@ DEFAULT_WHITELIST: tuple[str, ...] = (
     "google one", "google storage", "youtube premium", "openai", "chatgpt",
     "github", "jetbrains", "anthropic",
 )
-SUBSCRIPTION_EXCLUDED_TRANSACTION_TYPES: set[str] = {"savings_investment"}
+SUBSCRIPTION_EXCLUDED_TRANSACTION_TYPES: set[str] = {
+    "own_transfer", "cash_withdrawal", "debt_payment", "asset_allocation", "refund"
+}
 
 
 @dataclass
@@ -190,7 +192,7 @@ def detect_subscriptions(
     if d.empty:
         return []
     if "transaction_type" in d.columns:
-        tx_type = d["transaction_type"].fillna("purchase").astype(str)
+        tx_type = d["transaction_type"].fillna("expense").astype(str)
         d = d[~tx_type.isin(SUBSCRIPTION_EXCLUDED_TRANSACTION_TYPES)]
     if d.empty:
         return []

@@ -7,14 +7,18 @@ rate raise ``MissingFxRate`` instead of silently falling back to ``1``.
 from __future__ import annotations
 
 from collections.abc import Iterable
-from datetime import date
+from datetime import date, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
 from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
 
-from finance.currencies.providers import FxRateProvider, NbpFxRateProvider
+from finance.currencies.providers import (
+    NBP_LOOKBACK_DAYS,
+    FxRateProvider,
+    NbpFxRateProvider,
+)
 from finance.currencies.types import ConversionResult, MissingFxRate
 from finance.domain.models import FxRate, Transaction, UserProfile
 
@@ -66,15 +70,34 @@ def _rate_on_or_before(
     base_currency: str,
     rate_date: date,
 ) -> FxRate | None:
+    earliest_date = rate_date - timedelta(days=NBP_LOOKBACK_DAYS)
     return session.execute(
         select(FxRate)
         .where(
             FxRate.currency == currency,
             FxRate.base_currency == base_currency,
             FxRate.rate_date <= rate_date,
+            FxRate.rate_date >= earliest_date,
         )
         .order_by(FxRate.rate_date.desc())
         .limit(1)
+    ).scalar_one_or_none()
+
+
+def _rate_on_date(
+    session: Session,
+    *,
+    currency: str,
+    base_currency: str,
+    rate_date: date,
+) -> FxRate | None:
+    """Return a rate stored for the exact effective date."""
+    return session.execute(
+        select(FxRate).where(
+            FxRate.currency == currency,
+            FxRate.base_currency == base_currency,
+            FxRate.rate_date == rate_date,
+        )
     ).scalar_one_or_none()
 
 
@@ -184,7 +207,9 @@ def prefetch_nbp_rates(
         key=lambda item: (item[1], item[0]),
     )
     for currency, rate_date in unique_requests:
-        if _rate_on_or_before(
+        # A historical rate may be used as a weekend/holiday fallback, but it
+        # must not suppress fetching a distinct rate requested for a later day.
+        if _rate_on_date(
             session,
             currency=currency,
             base_currency=base,
@@ -227,7 +252,7 @@ def convert_amount(
             fx_rate_source="same_currency",
         )
 
-    rate = _rate_on_or_before(
+    rate = _rate_on_date(
         session,
         currency=currency,
         base_currency=base_currency,
@@ -240,6 +265,15 @@ def convert_amount(
             base_currency=base_currency,
             rate_date=rate_date,
             provider=provider,
+        )
+    if rate is None:
+        # NBP has no table for weekends and holidays. Only after checking or
+        # fetching the requested date do we fall back to the latest prior rate.
+        rate = _rate_on_or_before(
+            session,
+            currency=currency,
+            base_currency=base_currency,
+            rate_date=rate_date,
         )
     if rate is None:
         raise MissingFxRate(currency, base_currency, rate_date)
@@ -332,7 +366,16 @@ def recompute_transactions(
     base = normalize_currency(base_currency or resolve_base_currency(session))
     updated = 0
     missing = 0
-    rows = session.execute(select(Transaction).order_by(Transaction.booking_date)).scalars()
+    rows = list(
+        session.execute(select(Transaction).order_by(Transaction.booking_date)).scalars()
+    )
+    if allow_fetch:
+        prefetch_nbp_rates(
+            session,
+            rate_requests=[(str(tx.currency), tx.booking_date) for tx in rows],
+            base_currency=base,
+            provider=provider,
+        )
     for tx in rows:
         try:
             converted = convert_amount(
@@ -341,8 +384,7 @@ def recompute_transactions(
                 currency=str(tx.currency),
                 rate_date=tx.booking_date,
                 base_currency=base,
-                allow_fetch=allow_fetch,
-                provider=provider,
+                allow_fetch=False,
             )
         except MissingFxRate:
             missing += 1

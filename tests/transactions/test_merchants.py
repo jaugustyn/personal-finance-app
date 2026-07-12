@@ -82,7 +82,7 @@ def test_alias_candidates_for_existing_group_include_only_unresolved_aliases(
                 direction=TransactionDirection.DEBIT.value,
                 merchant=merchant,
                 title="",
-                transaction_type=TransactionType.PURCHASE.value,
+                transaction_type=TransactionType.EXPENSE.value,
                 source=BankSource.UNKNOWN.value,
                 dedup_hash=f"alias-candidate-{index}",
                 is_transfer=False,

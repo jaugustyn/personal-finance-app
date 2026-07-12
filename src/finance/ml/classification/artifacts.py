@@ -1,15 +1,29 @@
 """Classifier artifact metadata and compatibility helpers."""
 from __future__ import annotations
 
+import hashlib
 import platform
 import sys
+from pathlib import Path
 from typing import Any
 
+import joblib
 import numpy as np
 import pandas as pd
 import sklearn
 
-MODEL_ARTIFACT_SCHEMA_VERSION = "1.0"
+from finance.ml.classification.pipeline import FEATURE_V2_COLUMNS, REQUIRED_COLUMNS
+
+MODEL_ARTIFACT_SCHEMA_VERSION = "2.1"
+
+
+def artifact_sha256(path: Path) -> str:
+    """Return the checksum used by the model registry and runtime loader."""
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def runtime_versions() -> dict[str, str]:
@@ -20,6 +34,7 @@ def runtime_versions() -> dict[str, str]:
         "sklearn": sklearn.__version__,
         "pandas": pd.__version__,
         "numpy": np.__version__,
+        "joblib": joblib.__version__,
     }
 
 
@@ -29,14 +44,33 @@ def build_model_artifact(
     feature_set: str,
     pipeline: Any,
     report: dict[str, Any],
+    model_version_id: str | None = None,
+    dataset_fingerprint: str | None = None,
+    evaluation_set_id: str | None = None,
+    confidence_policy: dict[str, Any] | None = None,
+    ontology_version: str = "category_v1",
 ) -> dict[str, Any]:
     """Build the persisted classifier artifact with explicit runtime metadata."""
+    required_columns = (
+        FEATURE_V2_COLUMNS if feature_set == "feature_v2" else REQUIRED_COLUMNS
+    )
     return {
         "schema_version": MODEL_ARTIFACT_SCHEMA_VERSION,
+        "task": "category",
         "estimator": estimator,
         "feature_set": feature_set,
         "pipeline": pipeline,
+        "classes": [str(value) for value in getattr(pipeline, "classes_", [])],
+        "feature_schema": {
+            "name": feature_set,
+            "required_columns": list(required_columns),
+        },
         "report": report,
+        "model_version_id": model_version_id,
+        "dataset_fingerprint": dataset_fingerprint,
+        "evaluation_set_id": evaluation_set_id,
+        "ontology_version": ontology_version,
+        "confidence_policy": confidence_policy or {},
         "metadata": {
             "artifact_schema_version": MODEL_ARTIFACT_SCHEMA_VERSION,
             "runtime_versions": runtime_versions(),
@@ -70,7 +104,7 @@ def compatibility_warnings(
     if not isinstance(versions, dict):
         return [*warnings, "missing_runtime_versions"]
 
-    for package in ("sklearn", "pandas", "numpy"):
+    for package in ("sklearn", "pandas", "numpy", "joblib"):
         saved = versions.get(package)
         current_value = current.get(package)
         if saved and current_value and str(saved) != str(current_value):
@@ -86,3 +120,16 @@ def compatibility_warnings(
         warnings.append("missing_python_version")
 
     return warnings
+
+
+def require_compatible_artifact(
+    artifact: Any,
+    *,
+    current_versions: dict[str, str] | None = None,
+) -> None:
+    """Reject artifacts that differ from the locked runtime environment."""
+    warnings = compatibility_warnings(
+        artifact_metadata(artifact), current_versions=current_versions
+    )
+    if warnings:
+        raise ValueError("Incompatible classifier artifact: " + ", ".join(warnings))

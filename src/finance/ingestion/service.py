@@ -14,6 +14,11 @@ from finance.ingestion.policy import TransactionImportPolicy, build_transaction_
 from finance.ingestion.registry import get_parser
 from finance.ingestion.repository import TransactionImportRepository
 from finance.ingestion.types import FxRateMode
+from finance.ml.feedback import (
+    EVENT_AUTO_RULE_CATEGORY,
+    FeedbackEventInput,
+    record_feedback_event,
+)
 from finance.profile.service import effect_for_transaction
 from finance.transactions.normalization import normalize_merchant, normalize_text
 
@@ -115,8 +120,27 @@ def ingest_file(
             import_id=import_row.id,
             dedup_hash=h,
         )
-        if repository.insert_transaction_values(values):
+        transaction_id = repository.insert_transaction_values(values)
+        if transaction_id is not None:
             inserted += 1
+            if values.get("category_confirmation_method") == "personal_rule_auto":
+                record_feedback_event(
+                    session,
+                    FeedbackEventInput(
+                        transaction_id=transaction_id,
+                        entity_type="transaction",
+                        entity_key=str(transaction_id),
+                        event_type=EVENT_AUTO_RULE_CATEGORY,
+                        final_category=str(values.get("category")),
+                        confirmation_method="personal_rule_auto",
+                        source=str(values.get("category_source")),
+                        origin_ref=(
+                            str(values["category_origin_ref"])
+                            if values.get("category_origin_ref")
+                            else None
+                        ),
+                    ),
+                )
         else:
             duplicates += 1
 

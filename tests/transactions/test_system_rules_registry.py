@@ -30,8 +30,11 @@ def test_bundled_system_rules_validate_and_have_stable_order() -> None:
 
     assert priorities == sorted(priorities)
     assert len(ids) == len(set(ids))
+    assert {rule.mode for rule in registry.transaction_type_rules} == {
+        "suggest_only"
+    }
     assert registry.category_suggestion_candidate_types == frozenset(
-        {"purchase", "bank_fee", "savings_investment", "other"}
+        {"expense", "refund"}
     )
     assert registry.explain_source_category("Travel").result == "transport"
     assert registry.explain_source_category("Serwis samochodowy").result == "transport"

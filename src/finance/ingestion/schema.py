@@ -28,6 +28,10 @@ IMPORT_FIELD_SPECS: tuple[ImportFieldSpec, ...] = (
         description="Payment title, memo or description; improves ML.",
     ),
     ImportFieldSpec("category", description="Original bank/source category."),
+    ImportFieldSpec(
+        "transaction_type",
+        description="Original bank/source operation type.",
+    ),
     ImportFieldSpec("external_id", description="Bank/source transaction id."),
 )
 

@@ -27,7 +27,7 @@ def _labelled_df(rows_per_class: int = 5) -> pd.DataFrame:
                 "booking_date": pd.Timestamp("2026-01-01") + pd.Timedelta(days=idx),
                 "category": "food",
                 "direction": "debit",
-                "transaction_type": "purchase",
+                "transaction_type": "expense",
                 "is_transfer": False,
                 "source": "synthetic",
             }
@@ -41,7 +41,7 @@ def _labelled_df(rows_per_class: int = 5) -> pd.DataFrame:
                 "booking_date": pd.Timestamp("2026-01-10") + pd.Timedelta(days=idx),
                 "category": "transport",
                 "direction": "debit",
-                "transaction_type": "purchase",
+                "transaction_type": "expense",
                 "is_transfer": False,
                 "source": "synthetic",
             }
@@ -153,7 +153,10 @@ def test_retrain_persists_report_and_model_via_use_case(
 
     assert result.status == "completed"
     assert result.labelled_rows == len(df)
-    assert result.model_path == tmp_path / "model.joblib"
+    assert result.model_path is not None
+    assert result.model_path.parent == tmp_path / "candidates"
+    assert result.model_path.name.startswith("legacy_candidate_linear_svc_")
+    assert not (tmp_path / "model.joblib").exists()
     assert result.report_path is not None
     assert result.report_path.exists()
-    assert (tmp_path / "model.joblib").read_text(encoding="utf-8") == "artifact"
+    assert result.model_path.read_text(encoding="utf-8") == "artifact"

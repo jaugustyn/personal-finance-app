@@ -10,7 +10,13 @@ from sklearn.ensemble import IsolationForest
 from finance.analytics.filters import expense_category_candidate_mask
 from finance.transactions.merchants import merchant_canonical_key
 
-ANOMALY_EXCLUDED_TRANSACTION_TYPES: set[str] = {"savings_investment"}
+ANOMALY_EXCLUDED_TRANSACTION_TYPES: set[str] = {
+    "own_transfer",
+    "cash_withdrawal",
+    "debt_payment",
+    "asset_allocation",
+    "refund",
+}
 MIN_RECURRING_MERCHANT_OCCURRENCES = 4
 NEW_MERCHANT_MIN_AMOUNT = 1000.0
 AMOUNT_OUTLIER_MIN_AMOUNT = 1000.0
@@ -195,7 +201,7 @@ def detect_anomalies(
     if "is_transfer" not in work.columns:
         work["is_transfer"] = False
     if "transaction_type" not in work.columns:
-        work["transaction_type"] = "purchase"
+        work["transaction_type"] = "expense"
     if "category" not in work.columns:
         work["category"] = None
 
@@ -205,7 +211,7 @@ def detect_anomalies(
     else:
         mask_cat = pd.Series(True, index=work.index)
     candidate = expense_category_candidate_mask(work, direction=direction)
-    tx_type = work["transaction_type"].fillna("purchase").astype(str)
+    tx_type = work["transaction_type"].fillna("expense").astype(str)
     mask_tx_type = ~tx_type.isin(ANOMALY_EXCLUDED_TRANSACTION_TYPES)
 
     eligible = candidate & mask_cat & mask_tx_type

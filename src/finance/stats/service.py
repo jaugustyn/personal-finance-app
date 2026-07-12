@@ -5,12 +5,12 @@ from datetime import date
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import case, func, select
+from sqlalchemy import and_, case, func, select
 from sqlalchemy.orm import Session
 
 from finance.analytics.filters import category_candidate_type_filter, non_transfer_filters
 from finance.currencies import amount_base_expr, resolve_base_currency
-from finance.domain.enums import TransactionDirection
+from finance.domain.enums import TransactionDirection, TransactionType
 from finance.domain.models import Transaction
 from finance.stats.recap import custom_recap, period_recap
 from finance.stats.types import (
@@ -28,6 +28,10 @@ from finance.transactions.merchants import (
     load_merchant_alias_maps,
     merchant_display_label,
     merchant_identity,
+)
+from finance.transactions.type_decision import (
+    TYPE_GOLD_METHODS,
+    effective_transaction_type_expr,
 )
 
 __all__ = [
@@ -56,11 +60,16 @@ def months_ago(months: int) -> date:
 
 
 def _income_expr() -> Any:
+    tx_type = effective_transaction_type_expr()
     return func.coalesce(
         func.sum(
             case(
                 (
-                    Transaction.direction == TransactionDirection.CREDIT.value,
+                    (Transaction.direction == TransactionDirection.CREDIT.value)
+                    & tx_type.in_([
+                        TransactionType.SALARY.value,
+                        TransactionType.INCOME.value,
+                    ]),
                     func.abs(amount_base_expr()),
                 ),
                 else_=0,
@@ -71,11 +80,30 @@ def _income_expr() -> Any:
 
 
 def _expense_expr() -> Any:
+    tx_type = effective_transaction_type_expr()
     return func.coalesce(
         func.sum(
             case(
                 (
-                    Transaction.direction == TransactionDirection.DEBIT.value,
+                    (Transaction.direction == TransactionDirection.DEBIT.value)
+                    & (tx_type == TransactionType.EXPENSE.value),
+                    func.abs(amount_base_expr()),
+                ),
+                else_=0,
+            )
+        ),
+        0,
+    )
+
+
+def _typed_sum(transaction_type: TransactionType, direction: TransactionDirection) -> Any:
+    tx_type = effective_transaction_type_expr()
+    return func.coalesce(
+        func.sum(
+            case(
+                (
+                    (Transaction.direction == direction.value)
+                    & (tx_type == transaction_type.value),
                     func.abs(amount_base_expr()),
                 ),
                 else_=0,
@@ -113,25 +141,56 @@ def overview(
     start = _period_start(months)
     stmt = select(
         _income_expr().label("inc"),
-        _expense_expr().label("exp"),
+        _expense_expr().label("gross_exp"),
+        _typed_sum(TransactionType.REFUND, TransactionDirection.CREDIT).label("refunds"),
+        _typed_sum(TransactionType.DEBT_PAYMENT, TransactionDirection.DEBIT).label("debt"),
+        _typed_sum(TransactionType.ASSET_ALLOCATION, TransactionDirection.DEBIT).label(
+            "allocations"
+        ),
         func.count().label("cnt"),
+        func.sum(
+            case(
+                (
+                    and_(
+                        (
+                            Transaction.transaction_type_confirmation_method.is_(None)
+                            | Transaction.transaction_type_confirmation_method.not_in(
+                                TYPE_GOLD_METHODS
+                            )
+                        ),
+                    ),
+                    1,
+                ),
+                else_=0,
+            )
+        ).label("provisional"),
         func.min(Transaction.booking_date).label("dmin"),
         func.max(Transaction.booking_date).label("dmax"),
     ).where(*_base_filters(start, include_transfers=include_transfers))
     row = session.execute(stmt).one()
     income = Decimal(row.inc or 0)
-    expenses = Decimal(row.exp or 0)
-    net = income - expenses
-    savings = float(net / income) if income > 0 else 0.0
+    gross_expenses = Decimal(row.gross_exp or 0)
+    refunds = Decimal(row.refunds or 0)
+    expenses = gross_expenses - refunds
+    debt = Decimal(row.debt or 0)
+    allocations = Decimal(row.allocations or 0)
+    net = income - expenses - debt - allocations
+    saved = income - expenses - debt
+    savings = float(saved / income) if income > 0 else 0.0
     return Overview(
         period_from=row.dmin,
         period_to=row.dmax,
         total_income=income,
+        gross_expenses=gross_expenses,
+        total_refunds=refunds,
         total_expenses=expenses,
+        total_debt_payments=debt,
+        total_asset_allocations=allocations,
         net_cashflow=net,
         savings_rate=max(min(savings, 1.0), -10.0),
         tx_count=int(row.cnt or 0),
         base_currency=resolve_base_currency(session),
+        provisional_transaction_count=int(row.provisional or 0),
     )
 
 
@@ -145,24 +204,52 @@ def cashflow(
     stmt = select(
         Transaction.booking_date,
         Transaction.direction,
+        effective_transaction_type_expr().label("transaction_type"),
         func.abs(amount_base_expr()).label("amount"),
     ).where(*_base_filters(start, include_transfers=include_transfers))
     rows = session.execute(stmt).all()
     sums: dict[str, dict[str, Decimal]] = {}
     for row in rows:
         month = month_bucket(row.booking_date)
-        bucket = sums.setdefault(month, {"income": Decimal(0), "expenses": Decimal(0)})
+        bucket = sums.setdefault(
+            month,
+            {
+                "income": Decimal(0),
+                "expenses": Decimal(0),
+                "refunds": Decimal(0),
+                "debt": Decimal(0),
+                "allocations": Decimal(0),
+            },
+        )
         amount = Decimal(row.amount or 0)
-        if row.direction == TransactionDirection.CREDIT.value:
+        if row.transaction_type in {
+            TransactionType.SALARY.value,
+            TransactionType.INCOME.value,
+        }:
             bucket["income"] += amount
-        elif row.direction == TransactionDirection.DEBIT.value:
+        elif row.transaction_type == TransactionType.EXPENSE.value:
             bucket["expenses"] += amount
+        elif row.transaction_type == TransactionType.REFUND.value:
+            bucket["refunds"] += amount
+        elif row.transaction_type == TransactionType.DEBT_PAYMENT.value:
+            bucket["debt"] += amount
+        elif row.transaction_type == TransactionType.ASSET_ALLOCATION.value:
+            bucket["allocations"] += amount
     return [
         CashflowBucket(
             month=month,
             income=values["income"],
-            expenses=values["expenses"],
-            net=values["income"] - values["expenses"],
+            expenses=values["expenses"] - values["refunds"],
+            refunds=values["refunds"],
+            debt_payments=values["debt"],
+            asset_allocations=values["allocations"],
+            net=(
+                values["income"]
+                - values["expenses"]
+                + values["refunds"]
+                - values["debt"]
+                - values["allocations"]
+            ),
         )
         for month, values in sorted(sums.items())
     ]
@@ -183,14 +270,30 @@ def by_category(
         if include_predictions
         else Transaction.category
     )
-    amount = _abs_amount_sum().label("amount")
+    amount = (
+        func.coalesce(
+            func.sum(
+                case(
+                    (
+                        Transaction.direction == TransactionDirection.CREDIT.value,
+                        -func.abs(amount_base_expr()),
+                    ),
+                    else_=func.abs(amount_base_expr()),
+                )
+            ),
+            0,
+        ).label("amount")
+        if direction == TransactionDirection.DEBIT.value
+        else _abs_amount_sum().label("amount")
+    )
     count = func.count().label("cnt")
     filters = [
         *_base_filters(start, include_transfers=include_transfers),
-        Transaction.direction == direction,
     ]
     if direction == TransactionDirection.DEBIT.value:
         filters.append(_category_candidate_type_filter())
+    else:
+        filters.append(Transaction.direction == direction)
     stmt = (
         select(category.label("category"), amount, count)
         .where(*filters)
@@ -223,7 +326,7 @@ def by_transaction_type(
     include_transfers: bool = False,
 ) -> list[CategorySpend]:
     start = _period_start(months)
-    transaction_type = func.coalesce(Transaction.transaction_type, "other")
+    transaction_type = effective_transaction_type_expr()
     amount = _abs_amount_sum().label("amount")
     count = func.count().label("cnt")
     rows = session.execute(
@@ -279,6 +382,14 @@ def top_merchants(
     sort: str = "amount",
 ) -> list[MerchantSpend]:
     start = _period_start(months)
+    filters = [
+        *_base_filters(start, include_transfers=include_transfers),
+        Transaction.direction == direction,
+    ]
+    if direction == TransactionDirection.DEBIT.value:
+        filters.append(
+            effective_transaction_type_expr() == TransactionType.EXPENSE.value
+        )
     rows = session.execute(
         select(
             Transaction.merchant,
@@ -286,8 +397,7 @@ def top_merchants(
             func.abs(amount_base_expr()).label("amount"),
             Transaction.category,
         )
-        .where(*_base_filters(start, include_transfers=include_transfers))
-        .where(Transaction.direction == direction)
+        .where(*filters)
     ).all()
 
     alias_map, label_map = load_merchant_alias_maps(session)
@@ -373,14 +483,26 @@ def category_trend(
     multi-series chart.
     """
     start = _period_start(months)
-    amount = _abs_amount_sum().label("amount")
-    base = (
+    amount = func.coalesce(
+        func.sum(
+            case(
+                (
+                    Transaction.direction == TransactionDirection.CREDIT.value,
+                    -func.abs(amount_base_expr()),
+                ),
+                else_=func.abs(amount_base_expr()),
+            )
+        ),
+        0,
+    ).label("amount")
+    base: tuple[Any, ...] = (
         *_base_filters(start, include_transfers=include_transfers),
-        Transaction.direction == direction,
         Transaction.category.is_not(None),
     )
     if direction == TransactionDirection.DEBIT.value:
         base = (*base, _category_candidate_type_filter())
+    else:
+        base = (*base, Transaction.direction == direction)
 
     totals = session.execute(
         select(Transaction.category.label("category"), amount)
@@ -397,7 +519,13 @@ def category_trend(
         select(
             Transaction.booking_date,
             Transaction.category.label("category"),
-            func.abs(amount_base_expr()).label("amount"),
+            case(
+                (
+                    Transaction.direction == TransactionDirection.CREDIT.value,
+                    -func.abs(amount_base_expr()),
+                ),
+                else_=func.abs(amount_base_expr()),
+            ).label("amount"),
         ).where(*base, Transaction.category.in_(top_categories))
     ).all()
     sums: dict[tuple[str, str], Decimal] = {}
@@ -426,12 +554,17 @@ def spend_distribution(
     in-window amounts, which is bounded for a personal-finance dataset.
     """
     start = _period_start(months)
+    filters = [
+        *_base_filters(start, include_transfers=include_transfers),
+        Transaction.direction == direction,
+    ]
+    if direction == TransactionDirection.DEBIT.value:
+        filters.append(
+            effective_transaction_type_expr() == TransactionType.EXPENSE.value
+        )
     rows = session.execute(
         select(func.abs(amount_base_expr()))
-        .where(
-            *_base_filters(start, include_transfers=include_transfers),
-            Transaction.direction == direction,
-        )
+        .where(*filters)
     ).all()
     amounts = sorted(float(row[0]) for row in rows)
     if not amounts:

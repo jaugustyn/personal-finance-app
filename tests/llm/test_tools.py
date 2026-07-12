@@ -125,7 +125,7 @@ def test_top_categories_uses_confirmed_candidate_expenses_only(session):
         booking_date=date(2026, 4, 1),
         amount=Decimal("-100"),
         category="food",
-        transaction_type="purchase",
+        transaction_type="expense",
         dedup_hash="llm-cat-food",
     )
     _add_tx(
@@ -133,7 +133,7 @@ def test_top_categories_uses_confirmed_candidate_expenses_only(session):
         booking_date=date(2026, 4, 2),
         amount=Decimal("-50"),
         category="shopping",
-        transaction_type="purchase",
+        transaction_type="expense",
         dedup_hash="llm-cat-shopping",
     )
     _add_tx(
@@ -142,7 +142,7 @@ def test_top_categories_uses_confirmed_candidate_expenses_only(session):
         amount=Decimal("-70"),
         category=None,
         category_predicted="food",
-        transaction_type="purchase",
+        transaction_type="expense",
         dedup_hash="llm-cat-predicted-only",
     )
     _add_tx(

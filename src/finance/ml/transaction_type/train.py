@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pandas as pd
 from sklearn.base import BaseEstimator
+from sklearn.calibration import CalibratedClassifierCV
 from sklearn.dummy import DummyClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import classification_report, confusion_matrix, f1_score
@@ -28,7 +29,11 @@ ESTIMATORS: dict[str, Callable[[], BaseEstimator]] = {
     "logreg": lambda: LogisticRegression(
         max_iter=2000, class_weight="balanced", C=1.0, n_jobs=None
     ),
-    "linear_svc": lambda: LinearSVC(C=1.0, class_weight="balanced"),
+    "linear_svc": lambda: CalibratedClassifierCV(
+        LinearSVC(C=1.0, class_weight="balanced"),
+        method="sigmoid",
+        cv=2,
+    ),
 }
 
 
@@ -62,7 +67,7 @@ def evaluate(
     if labelled.empty:
         return {
             "skipped": True,
-            "reason": "No valid transaction_type silver labels.",
+            "reason": "No valid confirmed transaction_type labels.",
             "label_source": LABEL_SOURCE,
             "models": {},
             "class_counts": {},
@@ -127,9 +132,8 @@ def evaluate(
         "skipped": False,
         "label_source": LABEL_SOURCE,
         "label_source_note": (
-            "Silver labels come from Transaction.transaction_type. They may be "
-            "system-rule labels, personal-rule labels or manual corrections; "
-            "this evidence experiment does not replace runtime rules."
+            "Labels come only from manual decisions and accepted suggestions. "
+            "Automatic bank and rule decisions are excluded from training."
         ),
         "target": "transaction_type",
         "feature_columns": ["text", "abs_amount", "direction", "source"],
@@ -157,7 +161,7 @@ def build_evidence_report(
             "classification_task": "multiclass_transaction_type",
             "runtime_policy": "evidence_only_rules_remain_source_of_truth",
             "semantic_note": (
-                "transaction_type describes money-flow semantics such as purchase, "
+                "transaction_type describes economic semantics such as expense, "
                 "salary, refund or transfer. Expense category remains a separate "
                 "budget taxonomy predicted by the category classifier."
             ),
@@ -168,7 +172,7 @@ def build_evidence_report(
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("csv", type=Path, help="CSV with transaction_type silver labels.")
+    parser.add_argument("csv", type=Path, help="CSV with confirmed transaction_type labels.")
     parser.add_argument("--out", type=Path, default=None)
     args = parser.parse_args(argv)
 

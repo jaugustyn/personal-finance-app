@@ -1,5 +1,4 @@
 """Shared transaction API dependencies."""
-from __future__ import annotations
 
 from datetime import date
 
@@ -7,7 +6,7 @@ from fastapi import Query
 
 from finance.domain.enums import TransactionDirection, TransactionType
 from finance.transactions import service as tx_service
-from finance.transactions.types import CategoryState
+from finance.transactions.types import CategoryState, TransactionTypeState
 
 
 def enum_value(value: object | None) -> str | None:
@@ -36,6 +35,8 @@ class TransactionFilterParams:
         min_confidence: float | None = Query(default=None, ge=0.0, le=1.0),
         max_confidence: float | None = Query(default=None, ge=0.0, le=1.0),
         transaction_type: TransactionType | None = None,
+        transaction_type_state: TransactionTypeState = Query(default="all"),
+        transaction_type_source: str | None = None,
         review_priority: bool = Query(default=False),
     ) -> None:
         self.date_from = date_from
@@ -52,6 +53,8 @@ class TransactionFilterParams:
         self.min_confidence = min_confidence
         self.max_confidence = max_confidence
         self.transaction_type = transaction_type
+        self.transaction_type_state = transaction_type_state
+        self.transaction_type_source = transaction_type_source
         self.review_priority = review_priority
 
     def to_filters(self) -> tx_service.TransactionFilters:
@@ -70,5 +73,7 @@ class TransactionFilterParams:
             min_confidence=self.min_confidence,
             max_confidence=self.max_confidence,
             transaction_type=enum_value(self.transaction_type),
+            transaction_type_state=self.transaction_type_state,
+            transaction_type_source=self.transaction_type_source,
             review_priority=self.review_priority,
         )

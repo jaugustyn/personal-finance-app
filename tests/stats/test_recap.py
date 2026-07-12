@@ -21,9 +21,14 @@ def _tx(**kwargs) -> Transaction:
         title="",
         source="pekao",
         dedup_hash=f"r{_tx.counter}",
-        transaction_type=TransactionType.PURCHASE.value,
+        transaction_type=TransactionType.EXPENSE.value,
         is_transfer=False,
     )
+    if (
+        kwargs.get("direction") == TransactionDirection.CREDIT.value
+        and "transaction_type" not in kwargs
+    ):
+        defaults["transaction_type"] = TransactionType.INCOME.value
     _tx.counter += 1
     defaults.update(kwargs)
     return Transaction(**defaults)

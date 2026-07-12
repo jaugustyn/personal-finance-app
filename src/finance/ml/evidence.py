@@ -14,7 +14,7 @@ from finance.ml.anomaly.detector import detect_anomalies
 from finance.ml.forecasting.pipeline import build_monthly_series, evaluate_walk_forward
 from finance.ml.subscriptions.detector import detect_subscriptions
 
-EVIDENCE_SCHEMA_VERSION = "2.0"
+EVIDENCE_SCHEMA_VERSION = "3.0"
 EVIDENCE_SECTIONS = (
     "category_classification",
     "transaction_type_classification",
@@ -23,7 +23,7 @@ EVIDENCE_SECTIONS = (
     "subscriptions",
 )
 EVIDENCE_SEMANTIC_NOTE = (
-    "transaction_type models money-flow semantics; category models expense "
+    "transaction_type describes money-flow semantics; category models expense "
     "budget taxonomy. Hard financial facts for LLM answers are computed by "
     "deterministic tools, not vector-only retrieval."
 )
@@ -302,10 +302,23 @@ def build_evidence_package(
     anomaly_detection: dict[str, Any],
     subscriptions: dict[str, Any],
     privacy_check: dict[str, Any] | None = None,
+    manifest: dict[str, Any] | None = None,
+    currency_diagnostics: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build the stable public evidence package artifact."""
     if source not in {"db", "files"}:
         raise ValueError("source must be 'db' or 'files'")
+    lifecycle = category_classification.get("model_lifecycle", {})
+    gates = lifecycle.get("active_gates", {}) if isinstance(lifecycle, dict) else {}
+    technical_gate = gates.get("technical", {}) if isinstance(gates, dict) else {}
+    thesis_gate = gates.get("thesis", {}) if isinstance(gates, dict) else {}
+    classification_status = (
+        "thesis_ready"
+        if isinstance(thesis_gate, dict) and thesis_gate.get("passed") is True
+        else "complete"
+        if isinstance(technical_gate, dict) and technical_gate.get("passed") is True
+        else "incomplete"
+    )
     return {
         "report_type": "ml_evidence_package",
         "schema_version": EVIDENCE_SCHEMA_VERSION,
@@ -318,6 +331,15 @@ def build_evidence_package(
             "anomaly_detection": anomaly_detection,
             "subscriptions": subscriptions,
         },
+        "section_status": {
+            "category_classification": classification_status,
+            "transaction_type_classification": "provisional",
+            "forecasting": "provisional",
+            "anomaly_detection": "provisional",
+            "subscriptions": "provisional",
+        },
+        "manifest": manifest or {},
+        "currency_diagnostics": currency_diagnostics or {},
         "semantic_note": EVIDENCE_SEMANTIC_NOTE,
         "privacy_check": privacy_check or {},
     }
@@ -341,6 +363,18 @@ def validate_evidence_package(package: dict[str, Any]) -> list[str]:
     for key in EVIDENCE_SECTIONS:
         if key not in sections:
             errors.append(f"evidence_package.sections.{key} is required")
+    statuses = package.get("section_status")
+    if not isinstance(statuses, dict):
+        errors.append("evidence_package.section_status must be an object")
+    else:
+        allowed = {"complete", "incomplete", "provisional", "thesis_ready"}
+        for key in EVIDENCE_SECTIONS:
+            if statuses.get(key) not in allowed:
+                errors.append(f"evidence_package.section_status.{key} is invalid")
+    if not isinstance(package.get("manifest"), dict):
+        errors.append("evidence_package.manifest must be an object")
+    if not isinstance(package.get("currency_diagnostics"), dict):
+        errors.append("evidence_package.currency_diagnostics must be an object")
     if not package.get("semantic_note"):
         errors.append("evidence_package.semantic_note is required")
     privacy = package.get("privacy_check")

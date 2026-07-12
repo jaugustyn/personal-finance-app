@@ -10,6 +10,7 @@ from finance.analytics.filters import is_expense_category_candidate
 from finance.domain.category_mapping import subcategory_parent_value
 from finance.domain.enums import TransactionType
 from finance.domain.models import CategoryDef, Transaction
+from finance.transactions.type_decision import effective_transaction_type
 
 
 class InvalidCategoryAssignment(ValueError):
@@ -42,7 +43,7 @@ def can_assign_expense_category(tx: Transaction) -> bool:
     return is_expense_category_candidate(
         tx.direction,
         tx.is_transfer,
-        tx.transaction_type,
+        effective_transaction_type(tx),
     )
 
 
@@ -51,9 +52,13 @@ def clear_category_state(tx: Transaction) -> None:
     tx_model.category = None
     tx_model.subcategory = None
     tx_model.category_source = None
+    tx_model.category_confirmation_method = None
+    tx_model.category_confirmed_at = None
+    tx_model.category_origin_ref = None
     tx_model.category_predicted = None
     tx_model.category_confidence = None
     tx_model.category_predicted_source = None
+    tx_model.category_predicted_ref = None
     tx_model.category_suggestion_rejected = False
 
 

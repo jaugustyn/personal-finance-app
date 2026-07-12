@@ -1,5 +1,5 @@
 """Tests for transaction type rules separate from expense categories."""
-from finance.domain.enums import Category, TransactionDirection, TransactionType
+from finance.domain.enums import TransactionDirection, TransactionType
 from finance.transactions.rules import (
     detect_transaction_type,
     detect_transfer,
@@ -19,14 +19,14 @@ def test_detects_own_transfer() -> None:
     assert detect_transfer("Rachunek własny", "")
 
 
-def test_detects_person_transfer() -> None:
+def test_person_transfer_falls_back_to_expense() -> None:
     tx_type = detect_transaction_type(
         "Jan Kowalski",
         "Przelew za bilety",
         TransactionDirection.DEBIT,
     )
-    assert tx_type == TransactionType.PERSON_TRANSFER
-    assert not is_category_suggestion_candidate(tx_type)
+    assert tx_type == TransactionType.EXPENSE
+    assert is_category_suggestion_candidate(tx_type)
 
 
 def test_detects_salary_refund_and_cash() -> None:
@@ -109,14 +109,14 @@ def test_detects_top_up_and_currency_exchange_as_own_transfer() -> None:
     )
 
 
-def test_detects_phone_blik_and_person_refunds_as_person_transfer() -> None:
+def test_phone_transfers_follow_economic_direction_and_refund_markers() -> None:
     assert (
         detect_transaction_type(
             "KLAUDIA DĄB",
             "Przelew na telefon 48797***131. Przelew na telefon",
             TransactionDirection.CREDIT,
         )
-        == TransactionType.PERSON_TRANSFER
+        == TransactionType.INCOME
     )
     assert (
         detect_transaction_type(
@@ -124,7 +124,7 @@ def test_detects_phone_blik_and_person_refunds_as_person_transfer() -> None:
             "BLIK REF 93725335503",
             TransactionDirection.DEBIT,
         )
-        == TransactionType.PERSON_TRANSFER
+        == TransactionType.EXPENSE
     )
     assert (
         detect_transaction_type(
@@ -132,7 +132,7 @@ def test_detects_phone_blik_and_person_refunds_as_person_transfer() -> None:
             "Przelew BLIK · Zwrot za zakupy",
             TransactionDirection.CREDIT,
         )
-        == TransactionType.PERSON_TRANSFER
+        == TransactionType.REFUND
     )
 
 
@@ -162,34 +162,34 @@ def test_merchant_subscription_fee_is_not_bank_fee() -> None:
             "Opłata abonament Orange · ORANGE POLSKA faktura",
             TransactionDirection.DEBIT,
         )
-        == TransactionType.PURCHASE
+        == TransactionType.EXPENSE
     )
 
 
-def test_rule_category_for_bank_fee_and_savings() -> None:
-    assert rule_category_for_type(TransactionType.BANK_FEE) == Category.OTHER
-    assert rule_category_for_type(TransactionType.SAVINGS_INVESTMENT) == Category.SAVINGS
-    assert rule_category_for_type(TransactionType.PERSON_TRANSFER) is None
+def test_type_rules_do_not_assign_budget_categories() -> None:
+    assert rule_category_for_type(TransactionType.EXPENSE) is None
+    assert rule_category_for_type(TransactionType.ASSET_ALLOCATION) is None
+    assert rule_category_for_type(TransactionType.OTHER) is None
     assert rule_category_for_type(TransactionType.DEBT_PAYMENT) is None
 
 
 def test_ike_investment_rule_does_not_match_ikea() -> None:
     assert (
         detect_transaction_type("IKE", "Wpłata długoterminowa", TransactionDirection.DEBIT)
-        == TransactionType.SAVINGS_INVESTMENT
+        == TransactionType.ASSET_ALLOCATION
     )
     assert (
         detect_transaction_type("IKEA Kraków", "Zakupy domowe", TransactionDirection.DEBIT)
-        == TransactionType.PURCHASE
+        == TransactionType.EXPENSE
     )
 
 
-def test_detects_incoming_person_transfer() -> None:
+def test_incoming_person_transfer_falls_back_to_income() -> None:
     assert (
         detect_transaction_type(
             "Anna Nowak", "BLIK na telefon", TransactionDirection.CREDIT
         )
-        == TransactionType.PERSON_TRANSFER
+        == TransactionType.INCOME
     )
 
 

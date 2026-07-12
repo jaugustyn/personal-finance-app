@@ -1,19 +1,21 @@
 """Tests for /transactions endpoints (list, summary, PATCH category)."""
-from datetime import date
+from datetime import UTC, date, datetime
 from decimal import Decimal
 
 import pytest
 
 from apps.api.routers import transactions as transactions_router
 from finance.domain.models import Transaction
+from finance.ml.classification.policy import DEFAULT_POLICY
 
 
 @pytest.fixture(autouse=True)
-def _isolated_reports_dir(monkeypatch, tmp_path):
-    reports_dir = tmp_path / "reports"
-    reports_dir.mkdir()
-    monkeypatch.setattr(transactions_router, "REPORTS_DIR", reports_dir)
-    return reports_dir
+def _isolated_classification_policy(monkeypatch):
+    monkeypatch.setattr(
+        transactions_router,
+        "active_classification_policy",
+        lambda **_kwargs: DEFAULT_POLICY,
+    )
 
 
 def _seed(session, **overrides) -> Transaction:
@@ -32,6 +34,9 @@ def _seed(session, **overrides) -> Transaction:
     )
     for k, v in overrides.items():
         setattr(tx, k, v)
+    if tx.category is not None and tx.category_confirmation_method is None:
+        tx.category_confirmation_method = "manual"
+        tx.category_confirmed_at = datetime.now(UTC)
     session.add(tx)
     session.commit()
     session.refresh(tx)
@@ -53,8 +58,44 @@ def test_list_transactions_returns_seeded(client, db_session) -> None:
     assert body[0]["merchant"] == "Carrefour"
     assert body[0]["category"] == "food"
     assert body[0]["category_suggestion_rejected"] is False
-    assert body[0]["transaction_type"] == "purchase"
+    assert body[0]["transaction_type"] is None
+    assert body[0]["transaction_type_effective"] == "expense"
     assert body[0]["classification_decision"]["action"] == "manual"
+
+
+def test_list_order_is_stable_for_equal_dates_after_mutation_and_filter(
+    client, db_session
+) -> None:
+    first = _seed(
+        db_session,
+        transaction_type="expense",
+        transaction_type_source="bank",
+        dedup_hash="h-stable-order-first",
+    )
+    second = _seed(
+        db_session,
+        transaction_type="expense",
+        transaction_type_source="bank",
+        dedup_hash="h-stable-order-second",
+    )
+    older = _seed(
+        db_session,
+        booking_date=date(2026, 4, 14),
+        transaction_type="expense",
+        transaction_type_source="bank",
+        dedup_hash="h-stable-order-older",
+    )
+    expected = [second.id, first.id, older.id]
+
+    before = client.get("/transactions").json()
+    accepted = client.post(f"/transactions/{first.id}/type-suggestion/accept")
+    after = client.get("/transactions").json()
+    filtered = client.get("/transactions?category=food").json()
+
+    assert accepted.status_code == 200
+    assert [row["id"] for row in before] == expected
+    assert [row["id"] for row in after] == expected
+    assert [row["id"] for row in filtered] == expected
 
 
 def test_list_transactions_date_filter(client, db_session) -> None:
@@ -113,6 +154,128 @@ def test_list_transactions_filters_suggestions_and_type(client, db_session) -> N
     }
 
 
+def test_list_transactions_filters_effective_type_state(client, db_session) -> None:
+    confirmed = _seed(
+        db_session,
+        category=None,
+        transaction_type="expense",
+        transaction_type_source="manual",
+        transaction_type_confirmation_method="manual",
+        transaction_type_confirmed_at=datetime.now(UTC),
+        dedup_hash="h-type-state-confirmed",
+    )
+    provisional = _seed(
+        db_session,
+        category=None,
+        transaction_type_predicted="cash_withdrawal",
+        transaction_type_predicted_source="bank",
+        dedup_hash="h-type-state-provisional",
+    )
+    personal_auto = _seed(
+        db_session,
+        category=None,
+        transaction_type="cash_withdrawal",
+        transaction_type_source="rule",
+        transaction_type_origin_ref="personal_rule:1",
+        dedup_hash="h-type-state-personal-auto",
+    )
+    suggested = _seed(
+        db_session,
+        category=None,
+        transaction_type_predicted="asset_allocation",
+        transaction_type_predicted_source="rule",
+        dedup_hash="h-type-state-suggested",
+    )
+    confirmed_rows = client.get(
+        "/transactions?transaction_type_state=confirmed"
+    ).json()
+    provisional_rows = client.get(
+        "/transactions?transaction_type_state=provisional"
+    ).json()
+    needs_review_rows = client.get(
+        "/transactions?transaction_type_state=needs_review"
+    ).json()
+    bank_rows = client.get(
+        "/transactions?transaction_type_state=needs_review"
+        "&transaction_type_source=bank"
+    ).json()
+    suggested_rows = client.get(
+        "/transactions?transaction_type_state=suggested"
+    ).json()
+    allocation_rows = client.get(
+        "/transactions?transaction_type_state=needs_review"
+        "&transaction_type=asset_allocation"
+    ).json()
+    effective_rows = client.get(
+        "/transactions?transaction_type=asset_allocation"
+    ).json()
+
+    assert [row["id"] for row in confirmed_rows] == [confirmed.id]
+    assert {row["id"] for row in provisional_rows} == {
+        provisional.id,
+        personal_auto.id,
+        suggested.id,
+    }
+    assert {row["id"] for row in needs_review_rows} == {
+        provisional.id,
+        suggested.id,
+    }
+    assert [row["id"] for row in bank_rows] == [provisional.id]
+    assert {row["id"] for row in suggested_rows} == {
+        provisional.id,
+        suggested.id,
+    }
+    assert [row["id"] for row in allocation_rows] == [suggested.id]
+    assert effective_rows == []
+    assert next(
+        row for row in needs_review_rows if row["id"] == provisional.id
+    )["transaction_type_needs_review"] is True
+    assert all(row["id"] != personal_auto.id for row in needs_review_rows)
+
+
+def test_directional_fallback_does_not_enter_type_review(client, db_session) -> None:
+    debit = _seed(
+        db_session,
+        category=None,
+        transaction_type_predicted="expense",
+        transaction_type_predicted_source="rule",
+        dedup_hash="h-type-fallback-debit",
+    )
+    credit = _seed(
+        db_session,
+        amount=Decimal("100.00"),
+        direction="credit",
+        category=None,
+        transaction_type_predicted="income",
+        transaction_type_predicted_source="rule",
+        dedup_hash="h-type-fallback-credit",
+    )
+    salary = _seed(
+        db_session,
+        amount=Decimal("5000.00"),
+        direction="credit",
+        category=None,
+        transaction_type_predicted="salary",
+        transaction_type_predicted_source="rule",
+        dedup_hash="h-type-special-credit",
+    )
+
+    rows = client.get("/transactions?transaction_type_state=needs_review").json()
+    suggested_rows = client.get(
+        "/transactions?transaction_type_state=suggested"
+    ).json()
+
+    assert [row["id"] for row in rows] == [salary.id]
+    assert [row["id"] for row in suggested_rows] == [salary.id]
+    all_rows = client.get("/transactions").json()
+    review_state = {
+        row["id"]: row["transaction_type_needs_review"] for row in all_rows
+    }
+    assert review_state[debit.id] is False
+    assert review_state[credit.id] is False
+    assert review_state[salary.id] is True
+
+
 def test_list_transactions_rejects_invalid_direction(client) -> None:
     response = client.get("/transactions", params={"direction": "outgoing"})
 
@@ -151,7 +314,7 @@ def test_list_transactions_search_direction_and_category_filters(
         category=None,
         category_predicted="shopping",
         category_confidence=0.99,
-        transaction_type="person_transfer",
+        transaction_type="other",
         dedup_hash="h-filter-stale-prediction",
     )
     transport = _seed(
@@ -273,7 +436,7 @@ def test_patch_category_updates(client, db_session) -> None:
     assert r2.json()[0]["category"] == "transport"
 
 
-def test_patch_category_rejects_non_expense_candidate(client, db_session) -> None:
+def test_patch_category_on_credit_confirms_refund(client, db_session) -> None:
     tx = _seed(
         db_session,
         amount=Decimal("500"),
@@ -285,7 +448,9 @@ def test_patch_category_rejects_non_expense_candidate(client, db_session) -> Non
 
     r = client.patch(f"/transactions/{tx.id}/category", json={"category": "food"})
 
-    assert r.status_code == 422
+    assert r.status_code == 200
+    assert r.json()["transaction_type"] == "refund"
+    assert r.json()["category"] == "food"
 
 
 def test_patch_category_derives_parent_from_subcategory(client, db_session) -> None:
@@ -344,11 +509,11 @@ def test_patch_type_updates_and_sets_transfer(client, db_session) -> None:
     tx = _seed(db_session, category=None, dedup_hash="h-type")
     r = client.patch(
         f"/transactions/{tx.id}/type",
-        json={"transaction_type": "person_transfer"},
+        json={"transaction_type": "other"},
     )
     assert r.status_code == 200
     body = r.json()
-    assert body["transaction_type"] == "person_transfer"
+    assert body["transaction_type"] == "other"
     assert body["is_transfer"] is False
 
     r2 = client.patch(
@@ -364,6 +529,77 @@ def test_patch_type_422_on_invalid(client, db_session) -> None:
         f"/transactions/{tx.id}/type", json={"transaction_type": "nonsense"}
     )
     assert r.status_code == 422
+
+
+def test_patch_type_requires_direction_mismatch_confirmation(client, db_session) -> None:
+    tx = _seed(db_session, category=None, dedup_hash="h-type-direction")
+
+    warning = client.patch(
+        f"/transactions/{tx.id}/type",
+        json={"transaction_type": "salary"},
+    )
+    confirmed = client.patch(
+        f"/transactions/{tx.id}/type",
+        json={
+            "transaction_type": "salary",
+            "allow_direction_mismatch": True,
+        },
+    )
+
+    assert warning.status_code == 409
+    assert warning.json()["detail"]["code"] == "transaction_type_direction_mismatch"
+    assert confirmed.status_code == 200
+    assert confirmed.json()["transaction_type"] == "salary"
+
+
+def test_bulk_type_suggestion_accepts_without_reject_restore_workflow(
+    client, db_session
+) -> None:
+    accepted = _seed(
+        db_session,
+        category=None,
+        transaction_type_predicted="expense",
+        transaction_type_predicted_source="model",
+        transaction_type_predicted_ref="type_model_version:test",
+        transaction_type_confidence=0.93,
+        dedup_hash="h-type-accept",
+    )
+    accept_response = client.post(
+        "/transactions/bulk/type-suggestions/accept",
+        json={"ids": [accepted.id]},
+    )
+    assert accept_response.status_code == 200
+    assert accept_response.json()["affected"] == 1
+    db_session.refresh(accepted)
+    assert accepted.transaction_type == "expense"
+    assert accepted.transaction_type_confirmation_method == "accepted_suggestion"
+    assert (
+        client.post(
+            "/transactions/bulk/type-suggestions/reject",
+            json={"ids": [accepted.id]},
+        ).status_code
+        == 404
+    )
+
+
+def test_quick_accept_confirms_active_provisional_type(client, db_session) -> None:
+    tx = _seed(
+        db_session,
+        category=None,
+        transaction_type="cash_withdrawal",
+        transaction_type_source="bank",
+        transaction_type_origin_ref="bank_type:pekao:v1:wyplata gotowki",
+        dedup_hash="h-type-provisional-accept",
+    )
+
+    response = client.post(f"/transactions/{tx.id}/type-suggestion/accept")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["transaction_type"] == "cash_withdrawal"
+    assert body["transaction_type_confirmation_method"] == "accepted_suggestion"
+    assert body["transaction_type_is_provisional"] is False
+    assert body["transaction_type_source"] == "bank"
 
 
 def test_patch_annotations_sets_notes_and_dedup_tags(client, db_session) -> None:

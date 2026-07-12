@@ -9,8 +9,10 @@ from __future__ import annotations
 
 import os
 
-# Disable rate limiting during tests (must be set before app import).
-os.environ.setdefault("RATE_LIMIT_PER_MINUTE", "0")
+# Disable runtime-only behavior during tests (must be set before app import).
+# Assign explicitly because Docker Compose provides production-like defaults.
+os.environ["RATE_LIMIT_PER_MINUTE"] = "0"
+os.environ["APP_ENV"] = "test"
 
 from collections.abc import Iterator
 

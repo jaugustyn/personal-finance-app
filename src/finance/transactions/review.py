@@ -14,7 +14,12 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from finance.analytics.filters import expense_category_candidate_filters
-from finance.domain.models import PersonalRule, Transaction
+from finance.domain.enums import (
+    CATEGORY_CONFIRMATION_METHOD_VALUES,
+    TRANSACTION_TYPE_VALUES,
+    Category,
+)
+from finance.domain.models import MlFeedbackEvent, PersonalRule, Transaction
 from finance.ml.classification.policy import (
     DEFAULT_POLICY,
     ClassificationPolicy,
@@ -27,6 +32,11 @@ from finance.ml.feedback import (
     subscription_feedback_summary,
 )
 from finance.transactions.merchants import load_merchant_alias_maps, merchant_identity
+from finance.transactions.type_decision import (
+    TYPE_GOLD_METHODS,
+    effective_transaction_type,
+    fallback_type_expr,
+)
 from finance.transactions.types import RareClass, RecurringMerchant, ReviewCounts
 
 DEFAULT_CONFIDENCE_THRESHOLD = 0.55
@@ -50,7 +60,14 @@ def review_counts(
     policy: ClassificationPolicy = DEFAULT_POLICY,
 ) -> ReviewCounts:
     uncategorized = _count(session, Transaction.category.is_(None))
-    categorized = _count(session, Transaction.category.is_not(None))
+    categorized = _count(
+        session,
+        Transaction.category.in_([category.value for category in Category]),
+        Transaction.category_confirmation_method.in_(
+            CATEGORY_CONFIRMATION_METHOD_VALUES
+        ),
+        Transaction.category_confirmed_at.is_not(None),
+    )
     no_suggestion = _count(
         session,
         Transaction.category.is_(None),
@@ -73,7 +90,7 @@ def review_counts(
             confidence=row.category_confidence,
             direction=row.direction,
             is_transfer=row.is_transfer,
-            transaction_type=row.transaction_type,
+            transaction_type=effective_transaction_type(row),
             policy=policy,
         )
         if decision.action == "accept":
@@ -107,14 +124,22 @@ def rare_classes(
         select(Transaction.category, func.count().label("cnt"))
         .where(
             *expense_category_candidate_filters(),
-            Transaction.category.is_not(None),
+            Transaction.category.in_([category.value for category in Category]),
+            Transaction.category_confirmation_method.in_(
+                CATEGORY_CONFIRMATION_METHOD_VALUES
+            ),
+            Transaction.category_confirmed_at.is_not(None),
         )
         .group_by(Transaction.category)
-        .having(func.count() < threshold)
-        .order_by(func.count().asc())
     )
     rows = session.execute(stmt).all()
-    return [RareClass(category=str(row.category), count=int(row.cnt)) for row in rows]
+    observed = {str(row.category): int(row.cnt) for row in rows}
+    rare = [
+        RareClass(category=category.value, count=observed.get(category.value, 0))
+        for category in Category
+        if observed.get(category.value, 0) < threshold
+    ]
+    return sorted(rare, key=lambda item: (item.count, item.category))
 
 
 def recurring_unruled_merchants(
@@ -192,6 +217,93 @@ def review_summary(
     recurring_limit: int = DEFAULT_RECURRING_LIMIT,
 ) -> dict[str, Any]:
     counts = review_counts(session, threshold=threshold, policy=policy)
+    total_types = int(
+        session.execute(select(func.count()).select_from(Transaction)).scalar_one()
+    )
+    confirmed_types = int(
+        session.execute(
+            select(func.count()).where(
+                Transaction.transaction_type_confirmation_method.in_(TYPE_GOLD_METHODS)
+            )
+        ).scalar_one()
+    )
+    suggested_types = int(
+        session.execute(
+            select(func.count()).where(
+                Transaction.transaction_type_predicted.is_not(None),
+                Transaction.transaction_type_predicted != fallback_type_expr(),
+            )
+        ).scalar_one()
+    )
+    actionable_types = int(
+        session.execute(
+            select(func.count()).where(
+                Transaction.transaction_type_confirmation_method.is_(None),
+                Transaction.transaction_type_predicted.is_not(None),
+                Transaction.transaction_type_predicted != fallback_type_expr(),
+            )
+        ).scalar_one()
+    )
+    type_class_counts = {
+        str(value): int(count)
+        for value, count in session.execute(
+            select(Transaction.transaction_type, func.count())
+            .where(Transaction.transaction_type_confirmation_method.in_(TYPE_GOLD_METHODS))
+            .group_by(Transaction.transaction_type)
+        ).all()
+    }
+    type_source_counts = {
+        str(source or "unknown"): int(count)
+        for source, count in session.execute(
+            select(Transaction.transaction_type_source, func.count())
+            .where(Transaction.transaction_type.is_not(None))
+            .group_by(Transaction.transaction_type_source)
+        ).all()
+    }
+    type_suggestion_source_counts = {
+        str(source or "unknown"): int(count)
+        for source, count in session.execute(
+            select(Transaction.transaction_type_predicted_source, func.count())
+            .where(
+                Transaction.transaction_type_predicted.is_not(None),
+                Transaction.transaction_type_predicted != fallback_type_expr(),
+            )
+            .group_by(Transaction.transaction_type_predicted_source)
+        ).all()
+    }
+    type_corrections = [
+        {
+            "source": str(source or "unknown"),
+            "suggested_or_previous": str(predicted or previous),
+            "final": str(final),
+            "count": int(count),
+        }
+        for source, predicted, previous, final, count in session.execute(
+            select(
+                MlFeedbackEvent.source,
+                MlFeedbackEvent.predicted_transaction_type,
+                MlFeedbackEvent.previous_transaction_type,
+                MlFeedbackEvent.final_transaction_type,
+                func.count(),
+            )
+            .where(MlFeedbackEvent.entity_type == "transaction_type")
+            .where(MlFeedbackEvent.final_transaction_type.is_not(None))
+            .where(
+                func.coalesce(
+                    MlFeedbackEvent.predicted_transaction_type,
+                    MlFeedbackEvent.previous_transaction_type,
+                )
+                != MlFeedbackEvent.final_transaction_type
+            )
+            .group_by(
+                MlFeedbackEvent.source,
+                MlFeedbackEvent.predicted_transaction_type,
+                MlFeedbackEvent.previous_transaction_type,
+                MlFeedbackEvent.final_transaction_type,
+            )
+            .order_by(func.count().desc())
+        ).all()
+    ]
     return {
         "counts": counts,
         "rare_classes": rare_classes(session, threshold=rare_class_threshold),
@@ -202,6 +314,23 @@ def review_summary(
         "confusion_hotspots": confusion_hotspots(session),
         "anomaly_feedback": anomaly_feedback_summary(session),
         "subscription_feedback": subscription_feedback_summary(session),
+        "transaction_type_quality": {
+            "total": total_types,
+            "confirmed": confirmed_types,
+            "provisional": max(total_types - confirmed_types, 0),
+            "needs_review": actionable_types,
+            "suggested": suggested_types,
+            "confirmed_share": confirmed_types / total_types if total_types else None,
+            "class_counts": type_class_counts,
+            "source_counts": type_source_counts,
+            "suggestion_source_counts": type_suggestion_source_counts,
+            "corrections": type_corrections,
+            "unsupported_classes": sorted(
+                value
+                for value in TRANSACTION_TYPE_VALUES
+                if type_class_counts.get(value, 0) < 10
+            ),
+        },
         "confidence_threshold": policy.default_threshold,
         "rare_class_threshold": rare_class_threshold,
     }

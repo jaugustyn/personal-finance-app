@@ -13,6 +13,7 @@ from finance.currencies import amount_base_expr
 from finance.domain.enums import (
     TRANSACTION_DIRECTION_VALUES,
     TransactionDirection,
+    TransactionType,
 )
 from finance.domain.models import Transaction
 from finance.ml.classification.policy import (
@@ -27,6 +28,12 @@ from finance.transactions.merchants import (
     merchant_identity,
 )
 from finance.transactions.normalization import normalize_text
+from finance.transactions.type_decision import (
+    TYPE_GOLD_METHODS,
+    effective_transaction_type,
+    effective_transaction_type_expr,
+    fallback_type_expr,
+)
 from finance.transactions.types import (
     CategorySummary,
     FilterSummaryResult,
@@ -75,7 +82,7 @@ def _review_priority(tx: Transaction, policy: ClassificationPolicy) -> int:
         confidence=tx.category_confidence,
         direction=tx.direction,
         is_transfer=tx.is_transfer,
-        transaction_type=tx.transaction_type,
+        transaction_type=effective_transaction_type(tx),
         policy=policy,
     )
     return review_priority_for_decision(decision)
@@ -88,7 +95,10 @@ def filtered_transactions_stmt(filters: TransactionFilters):
     if filters.date_to is not None:
         stmt = stmt.where(Transaction.booking_date <= filters.date_to)
     if not filters.include_transfers:
-        stmt = stmt.where(Transaction.is_transfer.is_(False))
+        stmt = stmt.where(
+            Transaction.is_transfer.is_(False),
+            effective_transaction_type_expr() != TransactionType.OWN_TRANSFER.value,
+        )
     if filters.import_id is not None:
         stmt = stmt.where(Transaction.import_id == filters.import_id)
     if filters.merchant:
@@ -133,7 +143,41 @@ def filtered_transactions_stmt(filters: TransactionFilters):
             or_(Transaction.category == filters.category, predicted_match)
         )
     if filters.transaction_type:
-        stmt = stmt.where(Transaction.transaction_type == filters.transaction_type)
+        if filters.transaction_type_state in {"needs_review", "suggested"}:
+            stmt = stmt.where(
+                Transaction.transaction_type_predicted == filters.transaction_type
+            )
+        else:
+            stmt = stmt.where(
+                effective_transaction_type_expr() == filters.transaction_type
+            )
+    if filters.transaction_type_state == "confirmed":
+        stmt = stmt.where(
+            Transaction.transaction_type_confirmation_method.in_(TYPE_GOLD_METHODS)
+        )
+    elif filters.transaction_type_state == "provisional":
+        stmt = stmt.where(
+            Transaction.transaction_type_confirmation_method.is_(None)
+        )
+    elif filters.transaction_type_state == "needs_review":
+        stmt = stmt.where(
+            Transaction.transaction_type_confirmation_method.is_(None),
+            Transaction.transaction_type_predicted.is_not(None),
+            Transaction.transaction_type_predicted != fallback_type_expr(),
+        )
+    elif filters.transaction_type_state == "suggested":
+        stmt = stmt.where(Transaction.transaction_type_predicted.is_not(None))
+        stmt = stmt.where(
+            Transaction.transaction_type_predicted != fallback_type_expr(),
+        )
+    if filters.transaction_type_source:
+        stmt = stmt.where(
+            func.coalesce(
+                Transaction.transaction_type_source,
+                Transaction.transaction_type_predicted_source,
+            )
+            == filters.transaction_type_source
+        )
     if filters.category_state == "categorized":
         stmt = stmt.where(Transaction.category.is_not(None))
     elif filters.category_state == "uncategorized":
@@ -163,7 +207,7 @@ def filtered_transactions_stmt(filters: TransactionFilters):
         stmt = stmt.where(Transaction.category_confidence >= filters.min_confidence)
     if filters.max_confidence is not None:
         stmt = stmt.where(Transaction.category_confidence <= filters.max_confidence)
-    stmt = stmt.order_by(Transaction.booking_date.desc())
+    stmt = stmt.order_by(Transaction.booking_date.desc(), Transaction.id.desc())
     return stmt
 
 
@@ -221,17 +265,17 @@ def filter_summary(
         ),
         0,
     )
-    row = session.execute(
+    aggregate_row = session.execute(
         select(
             func.count().label("cnt"),
             income_expr.label("inc"),
             expense_expr.label("exp"),
         ).select_from(base)
     ).one()
-    income = Decimal(str(row.inc or 0))
-    expenses = Decimal(str(row.exp or 0))
+    income = Decimal(str(aggregate_row.inc or 0))
+    expenses = Decimal(str(aggregate_row.exp or 0))
     return FilterSummaryResult(
-        count=int(row.cnt or 0),
+        count=int(aggregate_row.cnt or 0),
         total_income=income,
         total_expenses=expenses,
         net=income - expenses,

@@ -86,7 +86,7 @@ def patch_rule(
     return PersonalRuleRow.model_validate(rule)
 
 
-@router.delete("/rules/{rule_id}", status_code=204)
+@router.delete("/rules/{rule_id}", status_code=204, response_model=None)
 def delete_rule(rule_id: int, session: Session = Depends(get_session)) -> None:
     deleted = profile_service.delete_rule(session, rule_id)
     if not deleted:

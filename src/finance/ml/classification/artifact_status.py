@@ -1,4 +1,4 @@
-"""Classifier artifact status inspection."""
+"""Status inspection for one explicitly selected classifier artifact."""
 from __future__ import annotations
 
 import warnings
@@ -12,9 +12,22 @@ from finance.ml.classification.artifacts import (
     artifact_metadata,
     compatibility_warnings,
 )
-from finance.ml.classification.constants import MODEL_PATH, REPORTS_DIR
-from finance.ml.classification.status_comparison import confidence_point
-from finance.ml.classification.status_io import iso_mtime, load_latest_report
+from finance.ml.classification.constants import MODEL_PATH
+from finance.ml.classification.status_io import iso_mtime
+
+
+def _confidence_point(
+    model_report: dict[str, Any], threshold: float = 0.55
+) -> tuple[float | None, float | None]:
+    for point in model_report.get("confidence_curve") or []:
+        if abs(float(point.get("threshold", -1.0)) - threshold) < 1e-9:
+            coverage = point.get("coverage")
+            accuracy = point.get("accuracy_on_covered")
+            return (
+                float(coverage) if coverage is not None else None,
+                float(accuracy) if accuracy is not None else None,
+            )
+    return None, None
 
 
 def _best_metric_summary(report: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -33,7 +46,7 @@ def _best_metric_summary(report: dict[str, Any] | None) -> dict[str, Any] | None
         key=lambda name: float(candidates[name].get("macro_f1") or 0.0),
     )
     best = candidates[best_name]
-    coverage, accuracy = confidence_point(best)
+    coverage, accuracy = _confidence_point(best)
     return {
         "model": best_name,
         "macro_f1": best.get("macro_f1"),
@@ -53,21 +66,19 @@ def _extract_model_classes(pipe: Any, report: dict[str, Any] | None) -> list[str
     return sorted(str(item) for item in classes)
 
 
-def model_status_from_disk(
-    *,
-    model_path: Path = MODEL_PATH,
-    reports_dir: Path = REPORTS_DIR,
-) -> dict[str, Any]:
+def empty_model_status(*, model_path: Path = MODEL_PATH) -> dict[str, Any]:
+    """Return a status that contains no report or artifact-derived stale data."""
     known_categories = sorted(category.value for category in Category)
-    status: dict[str, Any] = {
-        "exists": model_path.exists(),
+    return {
+        "exists": False,
         "path": str(model_path),
-        "updated_at": iso_mtime(model_path),
+        "updated_at": None,
+        "model_version_id": None,
         "estimator": None,
         "feature_set": None,
         "classes": [],
         "known_categories": known_categories,
-        "missing_categories": [],
+        "missing_categories": known_categories,
         "extra_classes": [],
         "n_total_labelled": None,
         "n_classes": None,
@@ -79,15 +90,19 @@ def model_status_from_disk(
         "compatibility_warnings": [],
         "retrain_signal": None,
     }
-    latest_report = load_latest_report(reports_dir)
-    latest_report_data = (
-        latest_report["report"] if isinstance(latest_report["report"], dict) else None
-    )
+
+
+def model_status_from_disk(
+    *,
+    model_path: Path = MODEL_PATH,
+) -> dict[str, Any]:
+    """Inspect only ``model_path``; never infer state from nearby report files."""
+    status = empty_model_status(model_path=model_path)
+    status["exists"] = model_path.exists()
+    status["updated_at"] = iso_mtime(model_path)
+    known_categories = status["known_categories"]
 
     if not model_path.exists():
-        status["report_path"] = latest_report["path"]
-        status["report_updated_at"] = latest_report["updated_at"]
-        status["best_model"] = _best_metric_summary(latest_report_data)
         status["missing_categories"] = known_categories
         return status
 
@@ -102,9 +117,10 @@ def model_status_from_disk(
         ]
         if not isinstance(artifact, dict):
             raise TypeError("Invalid classifier artifact; expected metadata dict.")
-        report = artifact.get("report")
-        report = report if isinstance(report, dict) else latest_report_data
+        report_value = artifact.get("report")
+        report = report_value if isinstance(report_value, dict) else None
         pipe = artifact.get("pipeline")
+        status["model_version_id"] = artifact.get("model_version_id")
         status["estimator"] = artifact.get("estimator")
         status["feature_set"] = artifact.get("feature_set")
         status["classes"] = _extract_model_classes(pipe, report)
@@ -118,18 +134,9 @@ def model_status_from_disk(
         status["compatibility_warnings"] = list(dict.fromkeys(compatibility))
     except Exception as exc:  # noqa: BLE001
         status["load_error"] = str(exc)
-        if latest_report_data:
-            status["classes"] = sorted(
-                str(item) for item in latest_report_data.get("labels") or []
-            )
-            status["n_total_labelled"] = latest_report_data.get("n_total_labelled")
-            status["n_classes"] = latest_report_data.get("n_classes")
-        status["best_model"] = _best_metric_summary(latest_report_data)
 
     observed = set(status["classes"])
     known = set(known_categories)
     status["missing_categories"] = sorted(known - observed)
     status["extra_classes"] = sorted(observed - known)
-    status["report_path"] = latest_report["path"]
-    status["report_updated_at"] = latest_report["updated_at"]
     return status

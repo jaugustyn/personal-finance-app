@@ -1,8 +1,7 @@
-"""Retraining use case for the category classifier.
+"""Legacy offline retraining compatibility use case.
 
-This module keeps model rebuilding outside FastAPI routers so future retraining
-implementations can move to a worker, queue or scheduler without changing the
-HTTP contract.
+It writes an unregistered research artifact and is not used by the FastAPI model
+registry. Runtime candidate jobs live in ``classification.lifecycle``.
 """
 from __future__ import annotations
 
@@ -20,7 +19,6 @@ from finance.ml.classification.artifacts import build_model_artifact
 from finance.ml.classification.constants import MIN_RETRAIN_LABELLED_ROWS
 from finance.ml.classification.dataset import load_training_set
 from finance.ml.classification.fitting import fit_final
-from finance.ml.classification.predict import get_classifier
 from finance.ml.classification.reports import build_evidence_report
 
 
@@ -65,7 +63,11 @@ def retrain_classifier(
     )
 
     pipe = fit_final(df, estimator, feature_set=feature_set)
-    model_path.parent.mkdir(parents=True, exist_ok=True)
+    candidate_dir = model_path.parent / "candidates"
+    candidate_dir.mkdir(parents=True, exist_ok=True)
+    candidate_path = candidate_dir / (
+        f"legacy_candidate_{estimator}_{datetime.now(UTC).strftime('%Y%m%d_%H%M%S')}.joblib"
+    )
     joblib.dump(
         build_model_artifact(
             estimator=estimator,
@@ -73,13 +75,16 @@ def retrain_classifier(
             pipeline=pipe,
             report=report,
         ),
-        model_path,
+        candidate_path,
     )
-    get_classifier.cache_clear()  # type: ignore[attr-defined]
-    log.info("Retrain: model saved to %s; report saved to %s", model_path, report_path)
+    log.info(
+        "Retrain: unregistered candidate saved to %s; report saved to %s",
+        candidate_path,
+        report_path,
+    )
     return RetrainResult(
         status="completed",
         labelled_rows=labelled,
-        model_path=model_path,
+        model_path=candidate_path,
         report_path=report_path,
     )

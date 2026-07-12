@@ -36,10 +36,12 @@ def test_pekao_parser_basic() -> None:
     assert orange.amount == Decimal("-350")
     assert orange.direction is TransactionDirection.DEBIT
     assert orange.raw_category == "Internet, TV, telefon"
+    assert orange.raw_transaction_type == "PŁATNOŚĆ BLIK"
     assert orange.category is Category.SUBSCRIPTIONS
 
     # Comma decimals, mapped to FOOD.
     assert carrefour.amount == Decimal("-31.41")
+    assert carrefour.raw_transaction_type == "TRANSAKCJA KARTĄ PŁATNICZĄ"
     assert carrefour.category is Category.FOOD
 
     # Wynagrodzenie is intentionally unmapped (None) — it's income, not an expense.

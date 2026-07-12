@@ -54,10 +54,10 @@ def test_anomaly_excludes_own_transfers() -> None:
 
 def test_anomaly_excludes_non_expense_transaction_types() -> None:
     df = _normal_txs(40)
-    df["transaction_type"] = "purchase"
+    df["transaction_type"] = "expense"
     df.loc[5, "amount"] = -9999.0
     df.loc[5, "merchant"] = "XTB S.A."
-    df.loc[5, "transaction_type"] = "savings_investment"
+    df.loc[5, "transaction_type"] = "asset_allocation"
 
     res = detect_anomalies(df)
 
@@ -67,7 +67,7 @@ def test_anomaly_excludes_non_expense_transaction_types() -> None:
 @pytest.mark.parametrize("tx_type", ["salary", "income", "refund", "own_transfer"])
 def test_anomaly_excludes_non_candidate_transaction_types(tx_type: str) -> None:
     df = _normal_txs(40)
-    df["transaction_type"] = "purchase"
+    df["transaction_type"] = "expense"
     df.loc[5, "amount"] = -9999.0
     df.loc[5, "merchant"] = "NON EXPENSE FLOW"
     df.loc[5, "transaction_type"] = tx_type
@@ -86,7 +86,7 @@ def test_regular_monthly_large_merchant_is_not_anomaly() -> None:
             "direction": ["debit"] * 8,
             "merchant": ["Jan Kowalski"] * 8,
             "category": ["housing"] * 8,
-            "transaction_type": ["purchase"] * 8,
+            "transaction_type": ["expense"] * 8,
         }
     )
 
@@ -106,7 +106,7 @@ def test_regular_merchant_amount_spike_is_anomaly() -> None:
             "direction": ["debit"] * 8,
             "merchant": ["Jan Kowalski"] * 8,
             "category": ["housing"] * 8,
-            "transaction_type": ["purchase"] * 8,
+            "transaction_type": ["expense"] * 8,
         }
     )
 
@@ -126,7 +126,7 @@ def test_medium_retail_merchant_spikes_do_not_flood_review() -> None:
             "direction": ["debit"] * 10,
             "merchant": ["Allegro"] * 10,
             "category": ["shopping"] * 10,
-            "transaction_type": ["purchase"] * 10,
+            "transaction_type": ["expense"] * 10,
         }
     )
 
@@ -137,7 +137,7 @@ def test_medium_retail_merchant_spikes_do_not_flood_review() -> None:
 
 def test_new_large_merchant_gets_review_priority() -> None:
     df = _normal_txs(40)
-    df["transaction_type"] = "purchase"
+    df["transaction_type"] = "expense"
     df.loc[5, "amount"] = -3000.0
     df.loc[5, "merchant"] = "KRAJOWY INTEGRATOR PŁATNOŚCI S.A."
 
@@ -150,7 +150,7 @@ def test_new_large_merchant_gets_review_priority() -> None:
 
 def test_large_missing_context_is_data_quality_or_suspicious() -> None:
     df = _normal_txs(40)
-    df["transaction_type"] = "purchase"
+    df["transaction_type"] = "expense"
     df.loc[5, "amount"] = -20000.0
     df.loc[5, "merchant"] = ""
     df.loc[5, "category"] = None
@@ -332,7 +332,7 @@ def test_subscription_excludes_transfers_and_savings_investments() -> None:
         "merchant": ["Own transfer"] * 6 + ["Savings account"] * 6,
         "category": ["subscriptions"] * 12,
         "is_transfer": [True] * 6 + [False] * 6,
-        "transaction_type": ["purchase"] * 6 + ["savings_investment"] * 6,
+        "transaction_type": ["expense"] * 6 + ["asset_allocation"] * 6,
     })
     assert detect_subscriptions(df) == []
 

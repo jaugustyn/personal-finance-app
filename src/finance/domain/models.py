@@ -5,6 +5,7 @@ from decimal import Decimal
 from sqlalchemy import (
     JSON,
     Boolean,
+    CheckConstraint,
     DateTime,
     Float,
     ForeignKey,
@@ -14,6 +15,7 @@ from sqlalchemy import (
     String,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -197,19 +199,47 @@ class Transaction(Base):
     title: Mapped[str] = mapped_column(String(512), default="")
 
     raw_category: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    raw_transaction_type: Mapped[str | None] = mapped_column(String(128), nullable=True)
     category: Mapped[Category | None] = mapped_column(String(32), nullable=True)
     subcategory: Mapped[str | None] = mapped_column(String(64), nullable=True)
     category_source: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    category_confirmation_method: Mapped[str | None] = mapped_column(
+        String(32), nullable=True, index=True
+    )
+    category_confirmed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    category_origin_ref: Mapped[str | None] = mapped_column(String(255), nullable=True)
     category_predicted: Mapped[Category | None] = mapped_column(String(32), nullable=True)
     category_confidence: Mapped[float | None] = mapped_column(nullable=True)
     category_predicted_source: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    category_predicted_ref: Mapped[str | None] = mapped_column(String(255), nullable=True)
     category_suggestion_rejected: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="false"
     )
-    transaction_type: Mapped[TransactionType] = mapped_column(
-        String(32), default=TransactionType.PURCHASE, server_default=TransactionType.PURCHASE
+    transaction_type: Mapped[TransactionType | None] = mapped_column(String(32), nullable=True)
+    transaction_type_source: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    transaction_type_confirmation_method: Mapped[str | None] = mapped_column(
+        String(32), nullable=True, index=True
     )
-
+    transaction_type_confirmed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    transaction_type_origin_ref: Mapped[str | None] = mapped_column(
+        String(255), nullable=True
+    )
+    transaction_type_predicted: Mapped[TransactionType | None] = mapped_column(
+        String(32), nullable=True
+    )
+    transaction_type_confidence: Mapped[float | None] = mapped_column(
+        Float, nullable=True
+    )
+    transaction_type_predicted_source: Mapped[str | None] = mapped_column(
+        String(32), nullable=True
+    )
+    transaction_type_predicted_ref: Mapped[str | None] = mapped_column(
+        String(255), nullable=True
+    )
     source: Mapped[BankSource] = mapped_column(String(32))
     external_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     dedup_hash: Mapped[str] = mapped_column(String(64))
@@ -248,13 +278,154 @@ class MlFeedbackEvent(Base):
     entity_key: Mapped[str | None] = mapped_column(String(255), nullable=True)
     event_type: Mapped[str] = mapped_column(String(48))
     predicted_category: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    previous_category: Mapped[str | None] = mapped_column(String(32), nullable=True)
     final_category: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    predicted_transaction_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    previous_transaction_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    final_transaction_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    confirmation_method: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    origin_ref: Mapped[str | None] = mapped_column(String(255), nullable=True)
     confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
     source: Mapped[str | None] = mapped_column(String(32), nullable=True)
     model_artifact: Mapped[str | None] = mapped_column(String(256), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
+
+
+class MlTrainingJob(Base):
+    """Durable state for a local, single-slot classifier training job."""
+
+    __tablename__ = "ml_training_jobs"
+    __table_args__ = (
+        UniqueConstraint("execution_slot", name="uq_ml_training_jobs_execution_slot"),
+        CheckConstraint(
+            "status IN ('queued', 'running', 'completed', 'failed', 'interrupted')",
+            name="ck_ml_training_jobs_status",
+        ),
+        CheckConstraint(
+            "(status IN ('queued', 'running') AND execution_slot = 1) OR "
+            "(status NOT IN ('queued', 'running') AND execution_slot IS NULL)",
+            name="ck_ml_training_jobs_execution_slot",
+        ),
+        Index("ix_ml_training_jobs_status", "status"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    status: Mapped[str] = mapped_column(String(24), default="queued")
+    execution_slot: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    requested_variants: Mapped[list[dict[str, str]]] = mapped_column(JSON, default=list)
+    dataset_fingerprint: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    evaluation_set_id: Mapped[str | None] = mapped_column(
+        ForeignKey("ml_evaluation_sets.id", ondelete="SET NULL"), nullable=True
+    )
+    report_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    result: Mapped[dict[str, object]] = mapped_column(JSON, default=dict)
+    message: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    error: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class MlModelVersion(Base):
+    """Candidate or archived classifier artifact registered for activation."""
+
+    __tablename__ = "ml_model_versions"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('candidate', 'active', 'archived', 'rejected')",
+            name="ck_ml_model_versions_status",
+        ),
+        Index("ix_ml_model_versions_status", "status"),
+        Index("ix_ml_model_versions_job_id", "job_id"),
+        Index(
+            "uq_ml_model_versions_one_active",
+            "status",
+            unique=True,
+            postgresql_where=text("status = 'active'"),
+            sqlite_where=text("status = 'active'"),
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    job_id: Mapped[str | None] = mapped_column(
+        ForeignKey("ml_training_jobs.id", ondelete="SET NULL"), nullable=True
+    )
+    estimator: Mapped[str] = mapped_column(String(64))
+    feature_set: Mapped[str] = mapped_column(String(32))
+    status: Mapped[str] = mapped_column(String(24), default="candidate")
+    artifact_path: Mapped[str] = mapped_column(String(512))
+    artifact_sha256: Mapped[str] = mapped_column(String(64))
+    dataset_fingerprint: Mapped[str] = mapped_column(String(64))
+    evaluation_set_id: Mapped[str | None] = mapped_column(
+        ForeignKey("ml_evaluation_sets.id", ondelete="SET NULL"), nullable=True
+    )
+    metrics: Mapped[dict[str, object]] = mapped_column(JSON, default=dict)
+    gates: Mapped[dict[str, object]] = mapped_column(JSON, default=dict)
+    confidence_policy: Mapped[dict[str, object]] = mapped_column(JSON, default=dict)
+    promotable: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    activated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class MlEvaluationSet(Base):
+    """Versioned private thesis holdout definition."""
+
+    __tablename__ = "ml_evaluation_sets"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('active', 'invalidated')",
+            name="ck_ml_evaluation_sets_status",
+        ),
+        Index("ix_ml_evaluation_sets_status", "status"),
+        Index(
+            "uq_ml_evaluation_sets_one_active",
+            "status",
+            unique=True,
+            postgresql_where=text("status = 'active'"),
+            sqlite_where=text("status = 'active'"),
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    status: Mapped[str] = mapped_column(String(24), default="active")
+    ontology_version: Mapped[str] = mapped_column(String(32), default="category_v1")
+    dataset_fingerprint: Mapped[str] = mapped_column(String(64))
+    config: Mapped[dict[str, object]] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    invalidated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    invalidation_reason: Mapped[str | None] = mapped_column(String(512), nullable=True)
+
+
+class MlEvaluationMember(Base):
+    """Immutable label snapshot belonging to one evaluation slice."""
+
+    __tablename__ = "ml_evaluation_members"
+    __table_args__ = (
+        UniqueConstraint(
+            "evaluation_set_id", "transaction_id", "split", name="uq_ml_eval_member"
+        ),
+        Index("ix_ml_eval_members_transaction_id", "transaction_id"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    evaluation_set_id: Mapped[str] = mapped_column(
+        ForeignKey("ml_evaluation_sets.id", ondelete="CASCADE")
+    )
+    transaction_id: Mapped[int | None] = mapped_column(
+        ForeignKey("transactions.id", ondelete="SET NULL"), nullable=True
+    )
+    split: Mapped[str] = mapped_column(String(24))
+    category: Mapped[str] = mapped_column(String(32))
+    booking_date: Mapped[date] = mapped_column()
+    merchant_hash: Mapped[str] = mapped_column(String(64))
 
 
 class SubscriptionPreference(Base):

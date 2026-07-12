@@ -12,6 +12,7 @@ from finance.analytics.filters import expense_category_candidate_mask
 from finance.currencies import amount_base_expr
 from finance.domain.models import Transaction
 from finance.ml.forecasting.registry import FORECASTERS
+from finance.transactions.type_decision import effective_transaction_type_expr
 
 
 @dataclass
@@ -68,7 +69,7 @@ def load_monthly_series(
         Transaction.direction,
         Transaction.category,
         Transaction.is_transfer,
-        Transaction.transaction_type,
+        effective_transaction_type_expr().label("transaction_type"),
     )
     rows = session.execute(stmt).all()
     df = pd.DataFrame(

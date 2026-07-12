@@ -62,7 +62,7 @@ def update_alias_group_label(
     return [MerchantAliasRow.model_validate(row) for row in rows]
 
 
-@router.delete("/aliases/{alias_id}", status_code=204)
+@router.delete("/aliases/{alias_id}", status_code=204, response_model=None)
 def delete_alias(alias_id: int, session: Session = Depends(get_session)) -> None:
     if not merchant_service.delete_alias(session, alias_id):
         raise not_found("Merchant alias not found.")

@@ -21,7 +21,9 @@ DEFAULT_FEATURE_SET = "baseline"
 MINIMUM_LABELLED_ROWS = 300
 RECOMMENDED_LABELLED_ROWS = 800
 IDEAL_LABELLED_ROWS = 2000
-MINIMUM_PER_CATEGORY = 20
+# Class balance remains diagnostic. Technical readiness is gated by total labels;
+# the evaluator separately enforces only the support mathematically required by CV.
+MINIMUM_PER_CATEGORY = 0
 RECOMMENDED_PER_CATEGORY = 50
 STRONG_PER_CATEGORY = 100
 

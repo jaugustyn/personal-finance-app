@@ -1,7 +1,7 @@
 """Tests for the Review Center data-quality aggregations."""
 from __future__ import annotations
 
-from datetime import date
+from datetime import UTC, date, datetime
 from decimal import Decimal
 
 from sqlalchemy.orm import Session
@@ -21,11 +21,14 @@ def _tx(**kwargs) -> Transaction:
         title="",
         source="pekao",
         dedup_hash=f"h{_tx.counter}",
-        transaction_type=TransactionType.PURCHASE.value,
+        transaction_type=TransactionType.EXPENSE.value,
         is_transfer=False,
     )
     _tx.counter += 1
     defaults.update(kwargs)
+    if defaults.get("category") is not None:
+        defaults.setdefault("category_confirmation_method", "manual")
+        defaults.setdefault("category_confirmed_at", datetime.now(UTC))
     return Transaction(**defaults)
 
 
@@ -58,7 +61,7 @@ def test_review_counts_buckets(db_session: Session) -> None:
             # personal transfers are not category-review candidates
             _tx(
                 merchant="Jan",
-                transaction_type=TransactionType.PERSON_TRANSFER.value,
+                transaction_type=TransactionType.OTHER.value,
             ),
             # debt payments affect cashflow but are not category-review candidates
             _tx(
@@ -88,7 +91,7 @@ def test_rare_classes_below_threshold(db_session: Session) -> None:
             _tx(
                 merchant="Jan",
                 category=Category.OTHER.value,
-                transaction_type=TransactionType.PERSON_TRANSFER.value,
+                transaction_type=TransactionType.OTHER.value,
             )
         ]
     )
@@ -97,7 +100,9 @@ def test_rare_classes_below_threshold(db_session: Session) -> None:
     rare = review.rare_classes(db_session, threshold=3)
 
     labels = {r.category: r.count for r in rare}
-    assert labels == {Category.HEALTH.value: 1}  # food (5) is above threshold
+    assert Category.FOOD.value not in labels  # food (5) is above threshold
+    assert labels[Category.HEALTH.value] == 1
+    assert labels[Category.SHOPPING.value] == 0
 
 
 def test_recurring_unruled_skips_merchants_with_rule(db_session: Session) -> None:
@@ -108,7 +113,7 @@ def test_recurring_unruled_skips_merchants_with_rule(db_session: Session) -> Non
             _tx(
                 merchant="Jan Kowalski",
                 title="przelew",
-                transaction_type=TransactionType.PERSON_TRANSFER.value,
+                transaction_type=TransactionType.OTHER.value,
             )
             for _ in range(3)
         ]

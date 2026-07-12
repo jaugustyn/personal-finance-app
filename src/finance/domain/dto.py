@@ -17,6 +17,7 @@ class TransactionDTO(BaseModel):
     merchant: str = ""
     title: str = ""
     raw_category: str | None = None  # original category from the bank
+    raw_transaction_type: str | None = None  # original bank operation type
     category: Category | None = None  # mapped to unified schema (if known)
     source: BankSource = BankSource.UNKNOWN
     external_id: str | None = None  # bank reference if any

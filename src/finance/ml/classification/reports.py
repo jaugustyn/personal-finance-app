@@ -1,4 +1,4 @@
-"""Report builders for category-classification evidence."""
+"""Offline research reports kept for explicit compatibility experiments."""
 from __future__ import annotations
 
 import pandas as pd
@@ -6,13 +6,14 @@ import pandas as pd
 from finance.ml.classification.evaluation import (
     EVIDENCE_THRESHOLD,
     TARGET_THRESHOLD_ACCURACY,
-    _best_non_dummy,
     _feature_decision,
     build_label_readiness,
     build_validation_slices,
     evaluate,
+    evaluate_extra_training_only,
     evaluate_feature_v2,
 )
+from finance.ml.classification.pipeline import build_pipeline_v2, to_features_v2
 
 
 def build_evidence_report(
@@ -46,8 +47,9 @@ def build_evidence_report(
                 n_splits=n_splits,
                 seed=seed,
             )
-            experiments["real_plus_external"] = evaluate(
-                pd.concat([real_df, external_labelled], ignore_index=True, sort=False),
+            experiments["real_plus_external_training_only"] = evaluate_extra_training_only(
+                real_df,
+                external_labelled,
                 n_splits=n_splits,
                 seed=seed,
             )
@@ -60,14 +62,33 @@ def build_evidence_report(
         feature_variants["baseline"],
         feature_variants["feature_v2"],
     )
-    validation_slices = build_validation_slices(real_df, seed=seed)
+    validation_slices = {
+        "baseline": build_validation_slices(real_df, seed=seed),
+        "feature_v2": build_validation_slices(
+            real_df,
+            seed=seed,
+            pipeline_builder=build_pipeline_v2,
+            feature_selector=to_features_v2,
+        ),
+    }
     selected = "real_only"
     if augmented_df is not None:
-        combined = pd.concat([real_df, augmented_df], ignore_index=True, sort=False)
-        experiments["augmented"] = evaluate(combined, n_splits=n_splits, seed=seed)
+        experiments["augmented_training_only"] = evaluate_extra_training_only(
+            real_df,
+            augmented_df,
+            n_splits=n_splits,
+            seed=seed,
+        )
 
     report = dict(experiments[selected])
-    best_model = _best_non_dummy(experiments["real_only"])
+    eligible_confidence_models = {
+        name: experiments["real_only"]["models"].get(name, {})
+        for name in ("logreg", "linear_svc_calibrated")
+    }
+    best_model = max(
+        eligible_confidence_models,
+        key=lambda name: float(eligible_confidence_models[name].get("macro_f1", 0.0)),
+    )
     best_report = (
         experiments["real_only"]["models"].get(best_model, {})
         if best_model is not None
@@ -96,8 +117,8 @@ def build_evidence_report(
                 ),
             },
             "feature_v2_note": (
-                "Experimental comparison only. Runtime classifier_latest remains "
-                "on the baseline feature set until reviewed."
+                "Experimental comparison only. Runtime uses only a manually activated "
+                "artifact from the database model registry."
             ),
             "label_readiness": label_readiness,
             "external_data": external_summary,

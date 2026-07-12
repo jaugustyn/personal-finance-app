@@ -11,7 +11,12 @@ from sqlalchemy.orm import Session
 from finance.analytics.filters import expense_category_candidate_filters
 from finance.currencies import amount_base_expr
 from finance.domain.dto import TransactionDTO
+from finance.domain.enums import (
+    CATEGORY_CONFIRMATION_METHOD_VALUES,
+    CATEGORY_VALUES,
+)
 from finance.domain.models import Transaction
+from finance.transactions.type_decision import effective_transaction_type_expr
 
 
 def dtos_to_dataframe(dtos: Iterable[TransactionDTO]) -> pd.DataFrame:
@@ -35,27 +40,39 @@ def dtos_to_dataframe(dtos: Iterable[TransactionDTO]) -> pd.DataFrame:
                 "raw_category": d.raw_category,
                 "direction": d.direction.value,
                 "is_transfer": False,
-                "transaction_type": "purchase",
+                "transaction_type": "expense",
             }
         )
     return pd.DataFrame(rows)
 
 
 def load_training_set(session: Session) -> pd.DataFrame:
-    """Load all transactions with a non-null `category` from the DB."""
+    """Load only explicitly confirmed system-category gold labels from the DB."""
     stmt = select(Transaction, amount_base_expr().label("base_amount")).where(
-        Transaction.category.is_not(None)
+        Transaction.category.in_(CATEGORY_VALUES)
+    )
+    stmt = stmt.where(
+        Transaction.category_confirmation_method.in_(CATEGORY_CONFIRMATION_METHOD_VALUES),
+        Transaction.category_confirmed_at.is_not(None),
     )
     stmt = stmt.where(*expense_category_candidate_filters())
+    stmt = stmt.where(
+        Transaction.direction == "debit",
+        effective_transaction_type_expr() == "expense",
+    )
     rows = session.execute(stmt).all()
     data = []
     for r, base_amount in rows:
         data.append(
             {
+                "transaction_id": r.id,
                 "text": f"{r.merchant} {r.title}".strip(),
                 "abs_amount": float(abs(base_amount or Decimal(0))),
                 "day_of_week": r.booking_date.weekday(),
                 "category": r.category,
+                "category_confirmation_method": r.category_confirmation_method,
+                "category_confirmed_at": r.category_confirmed_at,
+                "category_origin_ref": r.category_origin_ref,
                 "merchant": r.merchant,
                 "title": r.title,
                 "source": r.source,
@@ -63,7 +80,7 @@ def load_training_set(session: Session) -> pd.DataFrame:
                 "raw_category": r.raw_category,
                 "direction": r.direction,
                 "is_transfer": r.is_transfer,
-                "transaction_type": r.transaction_type,
+                "transaction_type": "expense",
             }
         )
     return pd.DataFrame(data)

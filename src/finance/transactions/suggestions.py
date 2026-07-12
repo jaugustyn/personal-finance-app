@@ -6,7 +6,10 @@ from typing import Any, cast
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from finance.domain.enums import CategorySource, TransactionDirection
+from finance.domain.enums import (
+    CategoryConfirmationMethod,
+    CategorySource,
+)
 from finance.domain.models import Transaction
 from finance.ml.classification.policy import (
     DEFAULT_POLICY,
@@ -18,7 +21,13 @@ from finance.ml.feedback import (
     EVENT_REJECT_SUGGESTION,
     record_transaction_feedback,
 )
+from finance.transactions.category_provenance import clear_suggestion, confirm_category
 from finance.transactions.mutation_rules import can_assign_expense_category
+from finance.transactions.type_decision import (
+    TYPE_CONFIRMATION_ACCEPTED,
+    effective_transaction_type,
+)
+from finance.transactions.type_service import TransactionTypeService
 
 
 class SuggestionAcceptanceService:
@@ -47,7 +56,7 @@ class SuggestionAcceptanceService:
                 confidence=tx.category_confidence,
                 direction=tx.direction,
                 is_transfer=tx.is_transfer,
-                transaction_type=tx.transaction_type,
+                transaction_type=effective_transaction_type(tx),
                 policy=policy,
             )
             if decision.action != "accept" and not manual:
@@ -103,20 +112,30 @@ class SuggestionAcceptanceService:
         stmt = select(Transaction).where(Transaction.category.is_(None))
         stmt = stmt.where(Transaction.category_predicted.is_not(None))
         stmt = stmt.where(Transaction.category_suggestion_rejected.is_(rejected))
-        stmt = stmt.where(Transaction.direction == TransactionDirection.DEBIT.value)
         stmt = stmt.where(Transaction.is_transfer.is_(False))
         if ids:
             stmt = stmt.where(Transaction.id.in_(ids))
         return list(self.session.execute(stmt).scalars().all())
 
     def _accept(self, tx: Transaction) -> None:
-        tx_model = cast(Any, tx)
+        TransactionTypeService(self.session).confirm_from_category(
+            tx,
+            confirmation_method=TYPE_CONFIRMATION_ACCEPTED,
+        )
         record_transaction_feedback(
             self.session,
             tx,
             event_type=EVENT_ACCEPT_SUGGESTION,
             final_category=str(tx.category_predicted),
+            previous_category=str(tx.category) if tx.category else None,
+            confirmation_method=CategoryConfirmationMethod.ACCEPTED_SUGGESTION.value,
+            origin_ref=tx.category_predicted_ref,
         )
-        tx_model.category = tx.category_predicted
-        tx_model.category_source = tx.category_predicted_source or CategorySource.MODEL.value
-        tx_model.category_suggestion_rejected = False
+        confirm_category(
+            tx,
+            category=str(tx.category_predicted),
+            source=tx.category_predicted_source or CategorySource.MODEL.value,
+            method=CategoryConfirmationMethod.ACCEPTED_SUGGESTION,
+            origin_ref=tx.category_predicted_ref,
+        )
+        clear_suggestion(tx)

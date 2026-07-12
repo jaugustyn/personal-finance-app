@@ -1,16 +1,13 @@
 """Rule-based transaction metadata classification.
 
 These rules intentionally classify *transaction type* separately from expense
-category. They are conservative: a doubtful card/payment row stays ``purchase``
-so the ML category suggester can handle it.
+category. Doubtful rows remain provisional suggestions.
 """
 from __future__ import annotations
 
 from finance.domain.enums import Category, TransactionDirection, TransactionType
-from finance.transactions.normalization import normalize_text
 from finance.transactions.system_rules import (
     RuleDecision,
-    SystemRulesRegistry,
     TransactionTypeRule,
     system_rules_registry,
 )
@@ -18,59 +15,6 @@ from finance.transactions.system_rules import (
 
 def _text(merchant: str | None, title: str | None, raw_category: str | None = None) -> str:
     return f"{merchant or ''} {title or ''} {raw_category or ''}".lower()
-
-
-def _looks_like_person_counterparty(
-    merchant: str | None,
-    registry: SystemRulesRegistry,
-) -> bool:
-    norm = normalize_text(merchant)
-    if not norm:
-        return False
-    tokens = [token for token in norm.split() if token]
-    if len(tokens) < 2 or len(tokens) > 4:
-        return False
-    if any(token in registry.business_counterparty_terms for token in tokens):
-        return False
-    return all(token.isalpha() and len(token) >= 2 for token in tokens)
-
-
-def _person_transfer_decision(
-    merchant: str | None,
-    haystack: str,
-    raw_category: str | None,
-    registry: SystemRulesRegistry,
-) -> RuleDecision | None:
-    raw_norm = normalize_text(raw_category)
-    for term in registry.person_transfer_exclusions:
-        if term in haystack:
-            return None
-    if raw_norm in registry.person_transfer_source_categories:
-        return RuleDecision(
-            TransactionType.PERSON_TRANSFER.value,
-            "tx_type.person_transfer.semantic",
-            "Raw/source category marks a private transfer.",
-            raw_norm,
-        )
-    for pattern in registry.person_transfer_patterns:
-        match = pattern.search(haystack)
-        if match:
-            return RuleDecision(
-                TransactionType.PERSON_TRANSFER.value,
-                "tx_type.person_transfer.semantic",
-                "Transfer marker in merchant/title.",
-                match.group(0),
-            )
-    if _looks_like_person_counterparty(merchant, registry) and any(
-        keyword in haystack for keyword in registry.person_refund_keywords
-    ):
-        return RuleDecision(
-            TransactionType.PERSON_TRANSFER.value,
-            "tx_type.person_transfer.semantic",
-            "Person-like counterparty with private settlement marker.",
-            merchant,
-        )
-    return None
 
 
 def _matches_rule(rule: TransactionTypeRule, haystack: str) -> str | None:
@@ -99,25 +43,22 @@ def explain_transaction_type(
     for rule in registry.transaction_type_rules:
         if rule.direction is not None and direction_value != rule.direction:
             continue
-        if rule.special == "person_transfer":
-            decision = _person_transfer_decision(merchant, haystack, raw_category, registry)
-            if decision is not None:
-                return RuleDecision(rule.result, rule.id, rule.reason, decision.matched)
-            continue
         matched = _matches_rule(rule, haystack)
         if matched is not None:
-            return RuleDecision(rule.result, rule.id, rule.reason, matched)
+            return RuleDecision(rule.result, rule.id, rule.reason, matched, rule.mode)
 
-    if direction_value == TransactionDirection.DEBIT:
+    if direction_value == TransactionDirection.DEBIT.value:
         return RuleDecision(
-            TransactionType.PURCHASE.value,
-            "tx_type.fallback.debit_purchase",
-            "Debit fallback for expense-like transactions.",
+            TransactionType.EXPENSE.value,
+            "tx_type.fallback.debit_expense",
+            "Provisional debit fallback.",
+            mode="suggest_only",
         )
     return RuleDecision(
         TransactionType.INCOME.value,
         "tx_type.fallback.credit_income",
-        "Credit fallback for uncategorised inflows.",
+        "Provisional credit fallback.",
+        mode="suggest_only",
     )
 
 
@@ -134,7 +75,7 @@ def detect_transaction_type(
         direction,
         raw_category=raw_category,
     ).result
-    return TransactionType(res or TransactionType.PURCHASE.value)
+    return TransactionType(res or TransactionType.EXPENSE.value)
 
 
 def detect_transfer(merchant: str | None, title: str | None) -> bool:

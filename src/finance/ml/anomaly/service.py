@@ -20,6 +20,7 @@ from finance.ml.feedback import (
     record_feedback_event,
 )
 from finance.transactions.merchants import load_merchant_alias_maps, merchant_identity
+from finance.transactions.type_decision import effective_transaction_type
 
 AnomalyMode = Literal["review", "suspicious", "all"]
 AnomalyDirection = Literal["debit", "credit", "both"]
@@ -86,7 +87,7 @@ def _transaction_frame(
                 "title": row.title or "",
                 "category": row.category,
                 "is_transfer": row.is_transfer,
-                "transaction_type": row.transaction_type,
+                "transaction_type": effective_transaction_type(row),
             }
             for row in rows
         ]

@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import logging
 from typing import Any
+from urllib.parse import urlparse
 
 import httpx
 
@@ -18,6 +19,22 @@ logger = logging.getLogger(__name__)
 
 class OllamaUnavailable(RuntimeError):
     """Raised when Ollama is unreachable or returns a non-2xx response."""
+
+
+ALLOWED_OLLAMA_HOSTS = {"localhost", "127.0.0.1", "::1", "host.docker.internal"}
+
+
+def validated_base_url() -> str:
+    """Return a local-only Ollama URL or reject the configuration."""
+    raw = get_settings().ollama_base_url.rstrip("/")
+    parsed = urlparse(raw)
+    if parsed.scheme not in {"http", "https"} or parsed.hostname not in ALLOWED_OLLAMA_HOSTS:
+        raise OllamaUnavailable(
+            "Ollama must run locally on localhost, loopback or host.docker.internal."
+        )
+    if parsed.username or parsed.password:
+        raise OllamaUnavailable("Credentials are not allowed in OLLAMA_BASE_URL.")
+    return raw
 
 
 def _options() -> dict[str, Any]:
@@ -35,9 +52,9 @@ def is_available() -> bool:
     if not s.llm_enabled:
         return False
     try:
-        r = httpx.get(f"{s.ollama_base_url}/api/tags", timeout=2.0)
+        r = httpx.get(f"{validated_base_url()}/api/tags", timeout=2.0)
         return r.status_code == 200
-    except httpx.HTTPError:
+    except (httpx.HTTPError, OllamaUnavailable):
         return False
 
 
@@ -51,6 +68,7 @@ def chat(
         {"role": "assistant", "content": "...", "tool_calls": [{"function": {...}}]}
     """
     s = get_settings()
+    base_url = validated_base_url()
     payload: dict[str, Any] = {
         "model": s.ollama_model,
         "messages": messages,
@@ -61,7 +79,7 @@ def chat(
         payload["tools"] = tools
     try:
         r = httpx.post(
-            f"{s.ollama_base_url}/api/chat",
+            f"{base_url}/api/chat",
             json=payload,
             timeout=s.ollama_timeout_s,
         )
@@ -80,3 +98,32 @@ def chat(
         except json.JSONDecodeError:
             pass
     return msg
+
+
+def model_manifest() -> dict[str, Any]:
+    """Return exact local Ollama model identity without exposing transaction data."""
+    s = get_settings()
+    base_url = validated_base_url()
+    try:
+        response = httpx.get(f"{base_url}/api/tags", timeout=5.0)
+        response.raise_for_status()
+    except httpx.HTTPError as exc:
+        raise OllamaUnavailable(f"Could not inspect local Ollama model: {exc}") from exc
+    models = response.json().get("models", [])
+    selected: dict[str, Any] = next(
+        (
+            model
+            for model in models
+            if model.get("name") == s.ollama_model or model.get("model") == s.ollama_model
+        ),
+        {},
+    )
+    return {
+        "tag": s.ollama_model,
+        "digest": selected.get("digest"),
+        "modified_at": selected.get("modified_at"),
+        "size": selected.get("size"),
+        "details": selected.get("details", {}),
+        "options": _options(),
+        "base_host": urlparse(base_url).hostname,
+    }

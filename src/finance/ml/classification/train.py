@@ -1,4 +1,4 @@
-"""CLI and compatibility facade for category classifier training.
+"""Offline research CLI and compatibility facade for category classification.
 
 The library implementation lives in smaller modules:
 
@@ -6,7 +6,9 @@ The library implementation lives in smaller modules:
 - ``reports``: thesis/evidence report assembly.
 - ``fitting``: final model fitting for persisted artifacts.
 
-This file remains the stable command entry point:
+It does not register or activate runtime models. The registry-backed lifecycle
+and ``candidate_evaluation`` are the production/thesis DB path. This file remains
+the stable entry point for explicit file-based experiments:
 
     python -m finance.ml.classification.train --from-db --persist linear_svc
 """
@@ -178,9 +180,9 @@ def main(argv: list[str] | None = None) -> int:
     src.add_argument("--from-db", action="store_true")
     p.add_argument(
         "--persist",
-        choices=list(ESTIMATORS.keys()),
+        choices=["logreg", "linear_svc_calibrated"],
         default=None,
-        help="Refit on the full labelled set with this estimator and save it.",
+        help="Write an unregistered candidate artifact; never activate it.",
     )
     p.add_argument(
         "--augment",
@@ -270,12 +272,8 @@ def main(argv: list[str] | None = None) -> int:
             report=report,
         )
         joblib.dump(artifact, out)
-        latest = MODELS_DIR / "classifier_latest.joblib"
-        joblib.dump(artifact, latest)
-        print(
-            f"Persisted {args.persist}/{args.feature_set} -> {out} "
-            f"(and {latest})"
-        )
+        print(f"Persisted unregistered candidate {args.persist}/{args.feature_set} -> {out}")
+        print("Use the ML API workflow to evaluate and manually activate runtime models.")
 
     return 0
 

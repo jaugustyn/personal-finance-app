@@ -8,13 +8,29 @@ from __future__ import annotations
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 
-from apps.api.routers.ml import _retrain_job
 from finance.config import get_settings
+from finance.db import SessionLocal
+from finance.ml.classification.lifecycle import (
+    TrainingJobConflict,
+    enqueue_training_job,
+    run_training_job,
+)
 from finance.observability import get_logger
 
 logger = get_logger("scheduler")
 
 _scheduler: BackgroundScheduler | None = None
+
+
+def _scheduled_retrain_job(estimator: str) -> None:
+    """Create a candidate-only job; scheduled work never activates a model."""
+    with SessionLocal() as session:
+        try:
+            job = enqueue_training_job(session, estimator=estimator)
+        except TrainingJobConflict:
+            logger.info("scheduled_retrain_skipped_busy")
+            return
+    run_training_job(session_factory=SessionLocal, job_id=job.id, logger=logger)
 
 
 def start() -> BackgroundScheduler | None:
@@ -28,7 +44,7 @@ def start() -> BackgroundScheduler | None:
 
     sched = BackgroundScheduler(timezone="UTC")
     sched.add_job(
-        _retrain_job,
+        _scheduled_retrain_job,
         kwargs={"estimator": s.retrain_estimator},
         trigger=CronTrigger(hour=s.retrain_cron_hour, minute=s.retrain_cron_minute),
         id="retrain_classifier",

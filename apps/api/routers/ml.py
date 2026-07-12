@@ -12,7 +12,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, Query
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
-from apps.api.errors import bad_request, not_found, service_unavailable
+from apps.api.errors import bad_request, conflict, not_found, service_unavailable
 from apps.api.schemas.ml import (
     ClassificationDecisionResponse,
     ClassifyRequest,
@@ -20,10 +20,12 @@ from apps.api.schemas.ml import (
     FeedbackReportResponse,
     MlComparisonResponse,
     MlDashboardResponse,
+    MlEvaluationSetResponse,
     MlFeedbackRequest,
     MlFeedbackResponse,
     MlLatestReportResponse,
     MlModelStatus,
+    MlModelVersionResponse,
     MlReadinessResponse,
     ReclassifyResponse,
     RetrainResponse,
@@ -31,27 +33,28 @@ from apps.api.schemas.ml import (
     ReviewQueueItemResponse,
 )
 from finance.db import SessionLocal, get_session
-from finance.ml.classification.policy import (
-    ClassificationPolicy,
-    policy_from_report,
+from finance.ml.classification.evaluation_sets import (
+    EvaluationSetError,
+    evaluation_set_summary,
+    freeze_evaluation_set,
 )
+from finance.ml.classification.lifecycle import (
+    ModelActivationError,
+    TrainingJobConflict,
+    activate_model_version,
+    active_training_report,
+    enqueue_training_job,
+    model_versions,
+    run_training_job,
+    training_job,
+)
+from finance.ml.classification.policy import ClassificationPolicy
 from finance.ml.classification.predict import (
     ClassifierNotAvailable,
+    active_classification_policy,
     predict_transaction,
     reclassify_unlabelled,
-)
-from finance.ml.classification.registry import ESTIMATORS
-from finance.ml.classification.retrain import retrain_classifier
-from finance.ml.classification.status import (
-    DEFAULT_RECOMMENDED_ESTIMATOR,
-    DEFAULT_RECOMMENDED_FEATURE_SET,
-    comparison_summary,
-    dashboard_summary,
-    latest_report_path,
-    load_latest_report,
-    model_status_from_disk,
-    readiness_summary,
-    retrain_signal,
+    require_registered_active_artifact,
 )
 from finance.ml.classification.status import (
     MODEL_PATH as DEFAULT_MODEL_PATH,
@@ -59,12 +62,20 @@ from finance.ml.classification.status import (
 from finance.ml.classification.status import (
     REPORTS_DIR as DEFAULT_REPORTS_DIR,
 )
+from finance.ml.classification.status import (
+    comparison_summary,
+    dashboard_summary,
+    readiness_summary,
+    retrain_signal,
+    runtime_model_status,
+)
 from finance.ml.feedback import (
     FeedbackEventInput,
     feedback_report,
     record_feedback_event,
 )
 from finance.ml.review_queue import review_queue
+from finance.transactions.type_reclassification import reclassify_transaction_types
 
 logger = logging.getLogger(__name__)
 
@@ -72,27 +83,23 @@ router = APIRouter(prefix="/ml", tags=["ml"])
 
 MODEL_PATH: Path = DEFAULT_MODEL_PATH
 REPORTS_DIR: Path = DEFAULT_REPORTS_DIR
-_retrain_state: dict[str, Any] = {"status": "idle"}
 
 
 def _now_iso() -> str:
     return datetime.now(UTC).isoformat()
 
 
-def _set_retrain_state(**updates: Any) -> None:
-    _retrain_state.clear()
-    _retrain_state.update(updates)
-
-
-def _classification_policy() -> ClassificationPolicy:
-    latest = load_latest_report(REPORTS_DIR)
-    report = latest["report"] if isinstance(latest["report"], dict) else None
-    return policy_from_report(report)
+def _classification_policy(session: Session) -> ClassificationPolicy:
+    return active_classification_policy(session=session)
 
 
 @router.get("/status", response_model=MlModelStatus)
 def model_status(session: Session = Depends(get_session)) -> MlModelStatus:
-    status = model_status_from_disk(model_path=MODEL_PATH, reports_dir=REPORTS_DIR)
+    status = runtime_model_status(
+        session,
+        model_path=MODEL_PATH,
+        reports_dir=REPORTS_DIR,
+    )
     readiness_data = readiness_summary(session)
     status["retrain_signal"] = retrain_signal(session, status, readiness_data)
     return MlModelStatus(**status)
@@ -104,15 +111,28 @@ def readiness(session: Session = Depends(get_session)) -> MlReadinessResponse:
 
 
 @router.get("/report/latest", response_model=MlLatestReportResponse)
-def latest_report() -> MlLatestReportResponse:
-    return MlLatestReportResponse(**load_latest_report(REPORTS_DIR))
+def latest_report(
+    session: Session = Depends(get_session),
+) -> MlLatestReportResponse:
+    report = active_training_report(session)
+    payload = report.get("report")
+    return MlLatestReportResponse(
+        path=str(report["path"]) if report.get("path") else None,
+        updated_at=str(report["updated_at"]) if report.get("updated_at") else None,
+        report=payload if isinstance(payload, dict) else None,
+    )
 
 
 @router.get("/report/latest/file")
-def latest_report_file(download: bool = Query(default=False)) -> FileResponse:
-    path = latest_report_path(REPORTS_DIR)
-    if path is None:
-        raise not_found("No classification report available.")
+def latest_report_file(
+    download: bool = Query(default=False),
+    session: Session = Depends(get_session),
+) -> FileResponse:
+    report = active_training_report(session)
+    path_value = report.get("path")
+    if not path_value:
+        raise not_found("No report belongs to an active registered model.")
+    path = Path(str(path_value))
     return FileResponse(
         path,
         media_type="application/json",
@@ -142,7 +162,7 @@ def review_queue_endpoint(
     session: Session = Depends(get_session),
     limit: int = Query(default=50, ge=1, le=200),
 ) -> list[ReviewQueueItemResponse]:
-    policy = _classification_policy()
+    policy = _classification_policy(session)
     rows = review_queue(session, limit=limit, policy=policy)
     return [ReviewQueueItemResponse(**row.__dict__) for row in rows]
 
@@ -151,7 +171,11 @@ def review_queue_endpoint(
 def feedback_report_endpoint(
     session: Session = Depends(get_session),
 ) -> FeedbackReportResponse:
-    status = model_status_from_disk(model_path=MODEL_PATH, reports_dir=REPORTS_DIR)
+    status = runtime_model_status(
+        session,
+        model_path=MODEL_PATH,
+        reports_dir=REPORTS_DIR,
+    )
     readiness_data = readiness_summary(session)
     updated_at = status.get("updated_at")
     try:
@@ -172,14 +196,16 @@ def feedback_report_endpoint(
 
 
 @router.post("/classify", response_model=ClassifyResponse)
-def classify(req: ClassifyRequest) -> ClassifyResponse:
-    latest = load_latest_report(REPORTS_DIR)
-    report = latest["report"] if isinstance(latest["report"], dict) else None
-    policy = policy_from_report(
-        report,
-        fallback=ClassificationPolicy(default_threshold=req.threshold),
-    )
+def classify(
+    req: ClassifyRequest,
+    session: Session = Depends(get_session),
+) -> ClassifyResponse:
     try:
+        artifact = require_registered_active_artifact(session)
+        policy = active_classification_policy(
+            artifact=artifact,
+            fallback=ClassificationPolicy(default_threshold=req.threshold),
+        )
         result = predict_transaction(
             req.merchant,
             req.title,
@@ -192,12 +218,16 @@ def classify(req: ClassifyRequest) -> ClassifyResponse:
             direction=req.direction.value if req.direction is not None else None,
             is_transfer=req.is_transfer,
             policy=policy,
-    )
+            artifact=artifact if artifact else None,
+        )
     except ClassifierNotAvailable as exc:
-        raise service_unavailable(str(exc)) from exc
+        raise service_unavailable(
+            {"code": "model_retrain_required", "message": str(exc)}
+        ) from exc
     return ClassifyResponse(
         category=result.category,
         confidence=result.confidence,
+        model_confidence=result.model_confidence,
         source=result.source,
         model_category=result.model_category,
         threshold=result.threshold,
@@ -237,83 +267,138 @@ def record_feedback(
 
 @router.post("/reclassify", response_model=ReclassifyResponse)
 def reclassify(session: Session = Depends(get_session)) -> ReclassifyResponse:
-    latest = load_latest_report(REPORTS_DIR)
-    report = latest["report"] if isinstance(latest["report"], dict) else None
-    policy = policy_from_report(report)
+    policy = active_classification_policy(session=session)
     try:
         n = reclassify_unlabelled(session, policy=policy)
     except ClassifierNotAvailable as exc:
-        raise service_unavailable(str(exc)) from exc
+        raise service_unavailable(
+            {"code": "model_retrain_required", "message": str(exc)}
+        ) from exc
     return ReclassifyResponse(updated=n)
 
 
-def _retrain_job(
-    estimator: str,
-    feature_set: str = DEFAULT_RECOMMENDED_FEATURE_SET,
-) -> None:
-    """Background wrapper around the classifier retraining use case."""
-    try:
-        result = retrain_classifier(
-            session_factory=SessionLocal,
-            estimator=estimator,
-            feature_set=feature_set,
-            model_path=MODEL_PATH,
-            reports_dir=REPORTS_DIR,
-            logger=logger,
-        )
-        _set_retrain_state(
-            status=result.status,
-            message=result.message,
-            estimator=estimator,
-            feature_set=feature_set,
-            started_at=_retrain_state.get("started_at"),
-            finished_at=_now_iso(),
-        )
-    except Exception:
-        logger.exception("Retrain job failed")
-        _set_retrain_state(
-            status="failed",
-            message="Retrain job failed. Check API logs for details.",
-            estimator=estimator,
-            feature_set=feature_set,
-            started_at=_retrain_state.get("started_at"),
-            finished_at=_now_iso(),
-        )
+@router.post("/transaction-types/reclassify", response_model=ReclassifyResponse)
+def reclassify_types(session: Session = Depends(get_session)) -> ReclassifyResponse:
+    """Recalculate only non-confirmed transaction-type decisions."""
+    return ReclassifyResponse(updated=reclassify_transaction_types(session))
+
+
+def _retrain_job(job_id: str) -> None:
+    run_training_job(session_factory=SessionLocal, job_id=job_id, logger=logger)
 
 
 @router.get("/retrain/status", response_model=RetrainStatusResponse)
-def retrain_status() -> RetrainStatusResponse:
-    return RetrainStatusResponse(**_retrain_state)
+def retrain_status(
+    job_id: str | None = None,
+    session: Session = Depends(get_session),
+) -> RetrainStatusResponse:
+    job = training_job(session, job_id)
+    if job is None:
+        return RetrainStatusResponse(status="idle", message="No training job exists.")
+    return RetrainStatusResponse(
+        job_id=job.id,
+        status=job.status,
+        message=job.message,
+        started_at=job.started_at.isoformat() if job.started_at else None,
+        finished_at=job.finished_at.isoformat() if job.finished_at else None,
+        report_path=job.report_path,
+        result=dict(job.result or {}),
+        error=job.error,
+    )
 
 
 @router.post("/retrain", response_model=RetrainResponse, status_code=202)
 def retrain(
     background: BackgroundTasks,
-    estimator: str = DEFAULT_RECOMMENDED_ESTIMATOR,
-    feature_set: str = DEFAULT_RECOMMENDED_FEATURE_SET,
+    estimator: str | None = None,
+    feature_set: str | None = None,
+    include_benchmarks: bool = False,
+    session: Session = Depends(get_session),
 ) -> RetrainResponse:
-    if estimator not in ESTIMATORS:
-        raise bad_request(f"Unknown estimator '{estimator}'. Choose: {list(ESTIMATORS)}")
-    if feature_set not in {"baseline", "feature_v2"}:
-        raise bad_request("Unknown feature_set. Choose: ['baseline', 'feature_v2']")
-    if _retrain_state.get("status") == "running":
-        return RetrainResponse(
-            status="running",
-            message="Retrain is already running in background.",
+    readiness_data = readiness_summary(session)
+    if not bool(readiness_data.get("training_ready")):
+        raise conflict(
+            {
+                "code": "training_data_not_ready",
+                "message": (
+                    "Training requires confirmed labels with enough support "
+                    "for deterministic validation."
+                ),
+                "readiness": readiness_data,
+            }
         )
-    _set_retrain_state(
-        status="running",
-        message="Retrain started in background.",
-        estimator=estimator,
-        feature_set=feature_set,
-        started_at=_now_iso(),
-        finished_at=None,
-    )
-    background.add_task(_retrain_job, estimator, feature_set)
+    try:
+        job = enqueue_training_job(
+            session,
+            estimator=estimator,
+            feature_set=feature_set,
+            include_benchmarks=include_benchmarks,
+        )
+    except ValueError as exc:
+        raise bad_request(str(exc)) from exc
+    except TrainingJobConflict as exc:
+        raise conflict(str(exc)) from exc
+    background.add_task(_retrain_job, job.id)
     return RetrainResponse(
         status="scheduled",
-        message=(
-            f"Retrain ({estimator}/{feature_set}) started in background. "
-            "Check API logs for completion."
-        ),
+        message="Candidate evaluation queued; manual activation will be required.",
+        job_id=job.id,
     )
+
+
+def _model_version_response(row: Any) -> MlModelVersionResponse:
+    return MlModelVersionResponse(
+        id=row.id,
+        job_id=row.job_id,
+        estimator=row.estimator,
+        feature_set=row.feature_set,
+        status=row.status,
+        artifact_sha256=row.artifact_sha256,
+        dataset_fingerprint=row.dataset_fingerprint,
+        evaluation_set_id=row.evaluation_set_id,
+        metrics=dict(row.metrics or {}),
+        gates=dict(row.gates or {}),
+        promotable=row.promotable,
+        created_at=row.created_at.isoformat(),
+        activated_at=row.activated_at.isoformat() if row.activated_at else None,
+    )
+
+
+@router.get("/model-versions", response_model=list[MlModelVersionResponse])
+def list_model_versions(
+    session: Session = Depends(get_session),
+) -> list[MlModelVersionResponse]:
+    return [_model_version_response(row) for row in model_versions(session)]
+
+
+@router.post("/model-versions/{model_id}/activate", response_model=MlModelVersionResponse)
+def activate_model(
+    model_id: str,
+    session: Session = Depends(get_session),
+) -> MlModelVersionResponse:
+    version = next((row for row in model_versions(session) if row.id == model_id), None)
+    if version is None:
+        raise not_found("Category model version not found")
+    try:
+        row = activate_model_version(session, model_id)
+    except ModelActivationError as exc:
+        raise conflict(str(exc)) from exc
+    return _model_version_response(row)
+
+
+@router.get("/evaluation-sets/current", response_model=MlEvaluationSetResponse)
+def current_evaluation_set_endpoint(
+    session: Session = Depends(get_session),
+) -> MlEvaluationSetResponse:
+    return MlEvaluationSetResponse.model_validate(evaluation_set_summary(session))
+
+
+@router.post("/evaluation-sets/freeze", response_model=MlEvaluationSetResponse)
+def freeze_evaluation_set_endpoint(
+    session: Session = Depends(get_session),
+) -> MlEvaluationSetResponse:
+    try:
+        freeze_evaluation_set(session)
+    except EvaluationSetError as exc:
+        raise conflict(str(exc)) from exc
+    return MlEvaluationSetResponse.model_validate(evaluation_set_summary(session))

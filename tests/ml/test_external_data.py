@@ -41,9 +41,9 @@ def test_load_kaggle_personal_finance_maps_to_classifier_schema(tmp_path) -> Non
     assert set(df["source"]) == {KAGGLE_PERSONAL_FINANCE_SOURCE}
     assert set(df["direction"]) == {TransactionDirection.DEBIT.value}
     assert list(df["transaction_type"]) == [
-        TransactionType.PURCHASE.value,
-        TransactionType.PURCHASE.value,
-        TransactionType.SAVINGS_INVESTMENT.value,
+        TransactionType.EXPENSE.value,
+        TransactionType.EXPENSE.value,
+        TransactionType.ASSET_ALLOCATION.value,
     ]
     assert set(["text", "abs_amount", "day_of_week", "category"]).issubset(df.columns)
     assert df["abs_amount"].tolist() == [42.5, 1500.0, 200.0]

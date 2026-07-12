@@ -7,7 +7,11 @@ from sklearn.metrics import classification_report, confusion_matrix, f1_score
 from sklearn.model_selection import GroupShuffleSplit, StratifiedKFold, cross_val_predict
 
 from finance.analytics.filters import expense_category_candidate_mask
-from finance.domain.enums import Category
+from finance.domain.enums import (
+    CATEGORY_CONFIRMATION_METHOD_VALUES,
+    CATEGORY_VALUES,
+    Category,
+)
 from finance.ml.classification.confidence import (
     cross_val_prediction_confidence,
     prediction_confidence_vector,
@@ -50,6 +54,13 @@ def filter_category_training_rows(df: pd.DataFrame) -> pd.DataFrame:
     out = df[df["category"].notna()].copy() if "category" in df.columns else df.iloc[0:0]
     if out.empty:
         return out.reset_index(drop=True)
+    out = out[out["category"].astype(str).isin(CATEGORY_VALUES)]
+    if "category_confirmation_method" in out.columns:
+        out = out[
+            out["category_confirmation_method"].isin(CATEGORY_CONFIRMATION_METHOD_VALUES)
+        ]
+    if "category_confirmed_at" in out.columns:
+        out = out[out["category_confirmed_at"].notna()]
     out = out[expense_category_candidate_mask(out)]
     return out.reset_index(drop=True)
 
@@ -69,25 +80,35 @@ def build_label_readiness(df: pd.DataFrame) -> dict[str, object]:
         if count < RECOMMENDED_PER_CATEGORY
     ]
 
-    if total >= IDEAL_LABELLED_ROWS and not below_recommended:
-        level = "thesis_ready"
-    elif total >= RECOMMENDED_LABELLED_ROWS and not below_minimum:
-        level = "good"
-    elif total >= MINIMUM_LABELLED_ROWS:
-        level = "minimum"
-    else:
-        level = "insufficient"
-
     date_span_months = None
+    date_span_days = 0
+    calendar_months = 0
     if "booking_date" in labelled.columns and not labelled.empty:
         dates = pd.to_datetime(labelled["booking_date"], errors="coerce").dropna()
         if not dates.empty:
+            calendar_months = int(dates.dt.to_period("M").nunique())
+            date_span_days = int((dates.max() - dates.min()).days) if len(dates) > 1 else 0
             date_span_months = int(
                 (dates.max().year - dates.min().year) * 12
                 + dates.max().month
                 - dates.min().month
                 + 1
             )
+
+    technical_ready = total >= MINIMUM_LABELLED_ROWS
+    thesis_data_ready = (
+        total >= RECOMMENDED_LABELLED_ROWS
+        and not below_recommended
+        and calendar_months >= 12
+        and date_span_days >= 365
+    )
+    level = (
+        "thesis_data_ready"
+        if thesis_data_ready
+        else "technical_ready"
+        if technical_ready
+        else "insufficient"
+    )
 
     return {
         "level": level,
@@ -102,8 +123,14 @@ def build_label_readiness(df: pd.DataFrame) -> dict[str, object]:
         "below_minimum_per_category": below_minimum,
         "below_recommended_per_category": below_recommended,
         "date_span_months": date_span_months,
-        "recommended_history_months": "6-12",
-        "training_labels_source": "confirmed Transaction.category only",
+        "calendar_months": calendar_months,
+        "date_span_days": date_span_days,
+        "technical_ready": technical_ready,
+        "thesis_data_ready": thesis_data_ready,
+        "recommended_history_months": "12+",
+        "training_labels_source": (
+            "explicitly confirmed 9-class expense Transaction.category only"
+        ),
         "category_predicted_is_ground_truth": False,
         "language_note": (
             "Polish real bank labels are the primary quality signal. English "
@@ -446,6 +473,74 @@ def evaluate_feature_v2(df: pd.DataFrame, *, n_splits: int = 5, seed: int = 42) 
     )
 
 
+def evaluate_extra_training_only(
+    real_df: pd.DataFrame,
+    extra_df: pd.DataFrame,
+    *,
+    n_splits: int = 5,
+    seed: int = 42,
+) -> dict[str, object]:
+    """Add synthetic/external rows only to training folds; score real rows only."""
+    real = filter_category_training_rows(real_df)
+    real, dropped = _filter_rare_classes(real)
+    if real.empty or real["category"].nunique() < 2:
+        raise InsufficientClassSupport("Real data needs at least two supported classes.")
+    extra = extra_df[extra_df["category"].notna()].copy()
+    labels = sorted(real["category"].astype(str).unique())
+    extra = extra[extra["category"].astype(str).isin(labels)].reset_index(drop=True)
+    y = real["category"].astype(str).reset_index(drop=True)
+    real = real.reset_index(drop=True)
+    n_splits = min(n_splits, int(y.value_counts().min()))
+    cv = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=seed)
+    results: dict[str, dict[str, object]] = {}
+    for name, factory in ESTIMATORS.items():
+        predicted: np.ndarray = np.empty(len(real), dtype=object)
+        confidence: np.ndarray = np.zeros(len(real), dtype=float)
+        confidence_available = True
+        try:
+            for train_idx, test_idx in cv.split(real, y):
+                train = pd.concat(
+                    [real.iloc[train_idx], extra], ignore_index=True, sort=False
+                )
+                pipe = build_pipeline(factory())
+                pipe.fit(to_features(train), train["category"].astype(str))
+                X_test = to_features(real.iloc[test_idx])  # noqa: N806
+                predicted[test_idx] = pipe.predict(X_test)
+                fold_confidence = _predict_confidence_after_fit(pipe, X_test)
+                if fold_confidence is None:
+                    confidence_available = False
+                else:
+                    confidence[test_idx] = fold_confidence
+            results[name] = {
+                **_model_metrics_from_predictions(
+                    y,
+                    predicted,
+                    confidence if confidence_available else None,
+                    labels,
+                ),
+                "skipped": False,
+            }
+        except Exception as exc:  # noqa: BLE001
+            results[name] = {
+                "macro_f1": 0.0,
+                "weighted_f1": 0.0,
+                "skipped": True,
+                "error": str(exc),
+            }
+    return {
+        "n_total_labelled": int(len(real)),
+        "n_extra_training_rows": int(len(extra)),
+        "n_classes": len(labels),
+        "labels": labels,
+        "class_counts": y.value_counts().to_dict(),
+        "dropped_rare_classes": dropped,
+        "n_splits": n_splits,
+        "evaluation_rows": "real_only",
+        "extra_rows_role": "training_folds_only",
+        "models": results,
+    }
+
+
 def _predict_confidence_after_fit(pipe, X: pd.DataFrame) -> np.ndarray | None:  # noqa: N803
     vector = prediction_confidence_vector(pipe, X)
     if vector is None:
@@ -525,7 +620,13 @@ def _evaluate_holdout(
     }
 
 
-def _time_holdout(df: pd.DataFrame, *, test_fraction: float = 0.2) -> dict[str, object]:
+def _time_holdout(
+    df: pd.DataFrame,
+    *,
+    test_fraction: float = 0.2,
+    pipeline_builder=build_pipeline,
+    feature_selector=to_features,
+) -> dict[str, object]:
     labelled = filter_category_training_rows(df)
     if labelled.empty or "booking_date" not in labelled.columns:
         return {"skipped": True, "reason": "No booking_date in labelled data."}
@@ -537,6 +638,8 @@ def _time_holdout(df: pd.DataFrame, *, test_fraction: float = 0.2) -> dict[str, 
         ordered,
         train_idx=ordered.index[:split],
         test_idx=ordered.index[split:],
+        pipeline_builder=pipeline_builder,
+        feature_selector=feature_selector,
     ) | {"split": "last_20_percent_by_booking_date"}
 
 
@@ -545,6 +648,8 @@ def _merchant_group_holdout(
     *,
     test_fraction: float = 0.2,
     seed: int = 42,
+    pipeline_builder=build_pipeline,
+    feature_selector=to_features,
 ) -> dict[str, object]:
     labelled = filter_category_training_rows(df)
     if labelled.empty:
@@ -570,6 +675,8 @@ def _merchant_group_holdout(
         labelled.reset_index(drop=True),
         train_idx=pd.Index(train_pos),
         test_idx=pd.Index(test_pos),
+        pipeline_builder=pipeline_builder,
+        feature_selector=feature_selector,
     )
     if isinstance(report, dict):
         report["split"] = "group_shuffle_by_merchant_canonical"
@@ -581,10 +688,26 @@ def build_validation_slices(
     real_df: pd.DataFrame,
     *,
     seed: int = 42,
+    pipeline_builder=build_pipeline,
+    feature_selector=to_features,
 ) -> dict[str, object]:
-    stratified = evaluate(real_df, seed=seed)
+    stratified = evaluate(
+        real_df,
+        seed=seed,
+        pipeline_builder=pipeline_builder,
+        feature_selector=feature_selector,
+    )
     return {
         "stratified_cv": stratified,
-        "time_holdout": _time_holdout(real_df),
-        "merchant_group_holdout": _merchant_group_holdout(real_df, seed=seed),
+        "time_holdout": _time_holdout(
+            real_df,
+            pipeline_builder=pipeline_builder,
+            feature_selector=feature_selector,
+        ),
+        "merchant_group_holdout": _merchant_group_holdout(
+            real_df,
+            seed=seed,
+            pipeline_builder=pipeline_builder,
+            feature_selector=feature_selector,
+        ),
     }

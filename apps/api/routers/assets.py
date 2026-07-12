@@ -71,7 +71,7 @@ def patch_asset(
     return AssetOut(**asset_service.to_asset_view(session, asset).__dict__)
 
 
-@router.delete("/{asset_id}", status_code=204)
+@router.delete("/{asset_id}", status_code=204, response_model=None)
 def delete_asset(asset_id: int, session: Session = Depends(get_session)) -> None:
     if not asset_service.delete_asset(session, asset_id):
         raise not_found("Asset not found")
@@ -110,7 +110,16 @@ def sankey(
         top_merchants_per_cat=top_merchants_per_cat,
     )
     return SankeyData(
-        nodes=[SankeyNode(**node) for node in nodes],
+        nodes=[
+            SankeyNode(
+                name=str(node.get("name") or ""),
+                node_type=node.get("node_type"),
+                category=node.get("category"),
+                merchant_display=node.get("merchant_display"),
+                merchant_canonical_key=node.get("merchant_canonical_key"),
+            )
+            for node in nodes
+        ],
         links=[
             SankeyLink(
                 source=int(link["source"]),

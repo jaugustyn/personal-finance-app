@@ -6,12 +6,9 @@ from typing import Any
 
 import pandas as pd
 
-from finance.domain.enums import TransactionDirection
+from finance.domain.enums import TransactionDirection, TransactionType
 from finance.domain.models import Transaction
-from finance.transactions.rules import (
-    category_suggestion_candidate_values,
-    is_category_suggestion_candidate,
-)
+from finance.transactions.type_decision import effective_transaction_type_expr
 
 TRUTHY_VALUES = {"1", "true", "t", "tak", "yes", "y"}
 
@@ -24,21 +21,36 @@ def period_filters(start: date, end: date | None = None) -> list[Any]:
 
 
 def non_transfer_filters(*, include_transfers: bool = False) -> list[Any]:
-    return [] if include_transfers else [Transaction.is_transfer.is_(False)]
+    if include_transfers:
+        return []
+    return [
+        Transaction.is_transfer.is_(False),
+        effective_transaction_type_expr() != TransactionType.OWN_TRANSFER.value,
+    ]
 
 
 def category_candidate_type_filter() -> Any:
     """SQL condition for transaction types that may receive expense categories."""
-    allowed = category_suggestion_candidate_values()
-    return Transaction.transaction_type.is_(None) | Transaction.transaction_type.in_(allowed)
+    return effective_transaction_type_expr().in_(
+        [TransactionType.EXPENSE.value, TransactionType.REFUND.value]
+    )
 
 
 def expense_category_candidate_filters() -> list[Any]:
     """SQL filters for rows that can carry an expense-category label."""
+    effective_type = effective_transaction_type_expr()
     return [
-        Transaction.direction == TransactionDirection.DEBIT.value,
         Transaction.is_transfer.is_(False),
-        category_candidate_type_filter(),
+        (
+            (
+                (Transaction.direction == TransactionDirection.DEBIT.value)
+                & (effective_type == TransactionType.EXPENSE.value)
+            )
+            | (
+                (Transaction.direction == TransactionDirection.CREDIT.value)
+                & (effective_type == TransactionType.REFUND.value)
+            )
+        ),
     ]
 
 
@@ -48,11 +60,15 @@ def is_expense_category_candidate(
     transaction_type: object,
 ) -> bool:
     """Python equivalent of :func:`expense_category_candidate_filters`."""
-    return (
-        str(direction) == TransactionDirection.DEBIT.value
-        and not _truthy(is_transfer)
-        and is_category_suggestion_candidate(
-            None if transaction_type is None else str(transaction_type)
+    value = None if transaction_type is None else str(transaction_type)
+    return not _truthy(is_transfer) and (
+        (
+            str(direction) == TransactionDirection.DEBIT.value
+            and value == TransactionType.EXPENSE.value
+        )
+        or (
+            str(direction) == TransactionDirection.CREDIT.value
+            and value == TransactionType.REFUND.value
         )
     )
 
@@ -91,7 +107,12 @@ def expense_category_candidate_mask(
         mask &= df["direction"].astype(str) == direction
     mask &= ~transfer_mask(df)
     if "transaction_type" in df.columns:
-        allowed = category_suggestion_candidate_values()
+        if direction == TransactionDirection.DEBIT.value:
+            allowed = {TransactionType.EXPENSE.value}
+        elif direction == TransactionDirection.CREDIT.value:
+            allowed = {TransactionType.REFUND.value}
+        else:
+            allowed = {TransactionType.EXPENSE.value, TransactionType.REFUND.value}
         tx_type = df["transaction_type"]
         mask &= tx_type.isna() | tx_type.astype(str).isin(allowed)
     return mask.fillna(False).astype(bool)
@@ -106,6 +127,7 @@ def debit_spending_filters(
 ) -> list[Any]:
     filters: list[Any] = [
         Transaction.direction == TransactionDirection.DEBIT.value,
+        effective_transaction_type_expr() == TransactionType.EXPENSE.value,
         *period_filters(start, end),
         *non_transfer_filters(include_transfers=include_transfers),
     ]

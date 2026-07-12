@@ -22,13 +22,14 @@ from finance.analytics.filters import (
     period_filters,
 )
 from finance.currencies import amount_base_expr
-from finance.domain.enums import TransactionDirection
+from finance.domain.enums import TransactionDirection, TransactionType
 from finance.domain.models import Transaction, UserProfile
 from finance.transactions.merchants import (
     load_merchant_alias_maps,
     merchant_display_label,
     merchant_identity,
 )
+from finance.transactions.type_decision import effective_transaction_type_expr
 
 PERIOD_WEEK = "week"
 PERIOD_MONTH = "month"
@@ -99,11 +100,21 @@ def _period_bounds(period: str, today: date) -> tuple[PeriodBounds, PeriodBounds
 def _expense_by_category(
     session: Session, bounds: PeriodBounds
 ) -> dict[str, Decimal]:
-    amount = func.coalesce(func.sum(func.abs(amount_base_expr())), 0)
+    amount = func.coalesce(
+        func.sum(
+            case(
+                (
+                    Transaction.direction == TransactionDirection.CREDIT.value,
+                    -func.abs(amount_base_expr()),
+                ),
+                else_=func.abs(amount_base_expr()),
+            )
+        ),
+        0,
+    )
     rows = session.execute(
         select(Transaction.category, amount)
         .where(
-            Transaction.direction == TransactionDirection.DEBIT.value,
             *period_filters(bounds.start, bounds.end),
             *non_transfer_filters(),
             category_candidate_type_filter(),
@@ -115,11 +126,16 @@ def _expense_by_category(
 
 
 def _cashflow(session: Session, bounds: PeriodBounds) -> dict[str, Decimal]:
+    tx_type = effective_transaction_type_expr()
     income = func.coalesce(
         func.sum(
             case(
                 (
-                    Transaction.direction == TransactionDirection.CREDIT.value,
+                    (Transaction.direction == TransactionDirection.CREDIT.value)
+                    & tx_type.in_([
+                        TransactionType.SALARY.value,
+                        TransactionType.INCOME.value,
+                    ]),
                     func.abs(amount_base_expr()),
                 ),
                 else_=0,
@@ -131,8 +147,25 @@ def _cashflow(session: Session, bounds: PeriodBounds) -> dict[str, Decimal]:
         func.sum(
             case(
                 (
-                    Transaction.direction == TransactionDirection.DEBIT.value,
-                    func.abs(amount_base_expr()),
+                    (
+                        (Transaction.direction == TransactionDirection.DEBIT.value)
+                        & tx_type.in_([
+                            TransactionType.EXPENSE.value,
+                            TransactionType.DEBT_PAYMENT.value,
+                            TransactionType.ASSET_ALLOCATION.value,
+                        ])
+                    )
+                    | (
+                        (Transaction.direction == TransactionDirection.CREDIT.value)
+                        & (tx_type == TransactionType.REFUND.value)
+                    ),
+                    case(
+                        (
+                            tx_type == TransactionType.REFUND.value,
+                            -func.abs(amount_base_expr()),
+                        ),
+                        else_=func.abs(amount_base_expr()),
+                    ),
                 ),
                 else_=0,
             )
@@ -157,6 +190,7 @@ def _top_merchants(
         select(Transaction.merchant, Transaction.title, func.abs(amount_base_expr()))
         .where(
             Transaction.direction == TransactionDirection.DEBIT.value,
+            effective_transaction_type_expr() == TransactionType.EXPENSE.value,
             *period_filters(bounds.start, bounds.end),
             *non_transfer_filters(),
         )

@@ -23,7 +23,7 @@ def _subscription_tx(month: int, merchant: str = "Spotify") -> Transaction:
         source="pekao",
         dedup_hash=f"sub-{merchant}-{month}",
         is_transfer=False,
-        transaction_type="purchase",
+        transaction_type="expense",
     )
 
 
@@ -91,7 +91,7 @@ def test_subscriptions_use_merchant_aliases_for_grouping(client, db_session) -> 
                 source="pekao",
                 dedup_hash=f"sub-netflix-alias-{idx}",
                 is_transfer=False,
-                transaction_type="purchase",
+                transaction_type="expense",
             )
         )
     db_session.commit()
@@ -131,7 +131,7 @@ def test_subscription_uses_title_when_merchant_is_generic(client, db_session) ->
                 source="pekao",
                 dedup_hash=f"generic-netflix-{idx}",
                 is_transfer=False,
-                transaction_type="purchase",
+                transaction_type="expense",
             )
         )
     db_session.commit()
@@ -167,7 +167,7 @@ def test_subscription_feedback_can_confirm_exact_subscription_key(client, db_ses
                 source="pekao",
                 dedup_hash=f"generic-netflix-feedback-{idx}",
                 is_transfer=False,
-                transaction_type="purchase",
+                transaction_type="expense",
             )
         )
     db_session.commit()
@@ -208,7 +208,7 @@ def test_manual_subscription_category_creates_confirmed_row(client, db_session) 
             source="pekao",
             dedup_hash="manual-netflix-sub",
             is_transfer=False,
-            transaction_type="purchase",
+            transaction_type="expense",
         )
     )
     db_session.commit()
@@ -356,7 +356,7 @@ def test_reject_manual_category_hides_subscription_not_transaction_category(
             source="pekao",
             dedup_hash=f"manual-reject-{month}",
             is_transfer=False,
-            transaction_type="purchase",
+            transaction_type="expense",
         )
         db_session.add(tx)
         db_session.flush()
@@ -396,7 +396,7 @@ def test_stale_unknown_cadence_subscription_is_not_active(db_session) -> None:
                 source="pekao",
                 dedup_hash="interviewme-old-1",
                 is_transfer=False,
-                transaction_type="purchase",
+                transaction_type="expense",
             ),
             Transaction(
                 booking_date=date(2024, 3, 11),
@@ -412,7 +412,7 @@ def test_stale_unknown_cadence_subscription_is_not_active(db_session) -> None:
                 source="pekao",
                 dedup_hash="interviewme-old-2",
                 is_transfer=False,
-                transaction_type="purchase",
+                transaction_type="expense",
             ),
         ]
     )
@@ -441,7 +441,7 @@ def test_confirmed_subscription_is_not_hidden_by_min_confidence(client, db_sessi
                 source="pekao",
                 dedup_hash="low-sub-1",
                 is_transfer=False,
-                transaction_type="purchase",
+                transaction_type="expense",
             ),
             Transaction(
                 booking_date=date(2026, 2, 1),
@@ -456,7 +456,7 @@ def test_confirmed_subscription_is_not_hidden_by_min_confidence(client, db_sessi
                 source="pekao",
                 dedup_hash="low-sub-2",
                 is_transfer=False,
-                transaction_type="purchase",
+                transaction_type="expense",
             ),
         ]
     )
@@ -500,7 +500,7 @@ def test_subscription_price_increase_status(client, db_session) -> None:
                 source="pekao",
                 dedup_hash=f"streaming-plus-{month}",
                 is_transfer=False,
-                transaction_type="purchase",
+                transaction_type="expense",
             )
         )
     db_session.commit()

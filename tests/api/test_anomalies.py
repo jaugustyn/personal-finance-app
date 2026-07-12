@@ -14,7 +14,7 @@ def _tx(
     merchant: str,
     is_transfer: bool = False,
     category: str | None = "food",
-    transaction_type: str = "purchase",
+    transaction_type: str = "expense",
 ) -> Transaction:
     return Transaction(
         booking_date=date(2026, 1, 1) + timedelta(days=day),

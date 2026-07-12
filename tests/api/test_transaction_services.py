@@ -158,7 +158,7 @@ def test_transaction_filters_needs_review_only_expense_candidates(db_session) ->
         dedup_hash="review-person",
         merchant="Anna Nowak",
         title="Przelew na telefon",
-        transaction_type="person_transfer",
+        transaction_type="other",
     )
     _tx(
         db_session,
@@ -168,7 +168,7 @@ def test_transaction_filters_needs_review_only_expense_candidates(db_session) ->
         transaction_type="own_transfer",
         is_transfer=True,
     )
-    _tx(
+    refund = _tx(
         db_session,
         dedup_hash="review-refund",
         amount=Decimal("100"),
@@ -199,7 +199,7 @@ def test_transaction_filters_needs_review_only_expense_candidates(db_session) ->
         offset=0,
     )
 
-    assert [row.id for row in rows] == [keep.id]
+    assert [row.id for row in rows] == [refund.id, keep.id]
 
 
 def test_merchant_groups_only_uncategorized_returns_expense_candidates(db_session) -> None:
@@ -220,7 +220,7 @@ def test_merchant_groups_only_uncategorized_returns_expense_candidates(db_sessio
             dedup_hash=f"group-transfer-{i}",
             merchant="Anna Nowak",
             title="Przelew na telefon",
-            transaction_type="person_transfer",
+            transaction_type="other",
         )
         _tx(
             db_session,
@@ -253,7 +253,7 @@ def test_merchant_groups_only_uncategorized_returns_expense_candidates(db_sessio
         limit=10,
     )
 
-    assert [group.merchant for group in groups] == ["Allegro"]
+    assert [group.merchant for group in groups] == ["Allegro", "Zalando"]
     assert groups[0].sample_merchants == ["Allegro"]
 
 
@@ -350,7 +350,7 @@ def test_bulk_categorize_and_delete(db_session) -> None:
     assert service.bulk_delete(db_session, [first.id, second.id]) == 2
 
 
-def test_bulk_categorize_skips_non_expense_candidates(db_session) -> None:
+def test_bulk_categorize_confirms_credit_as_refund(db_session) -> None:
     purchase = _tx(db_session, dedup_hash="bulk-purchase")
     income = _tx(
         db_session,
@@ -368,11 +368,12 @@ def test_bulk_categorize_skips_non_expense_candidates(db_session) -> None:
         mark_transfer=None,
     )
 
-    assert affected == 1
+    assert affected == 2
     db_session.refresh(purchase)
     db_session.refresh(income)
     assert purchase.category == "shopping"
-    assert income.category is None
+    assert income.category == "shopping"
+    assert income.transaction_type == "refund"
 
 
 def test_update_type_to_non_candidate_clears_category_and_prediction(db_session) -> None:
@@ -415,14 +416,14 @@ def test_bulk_set_transaction_type_keeps_category_when_still_candidate(db_sessio
         db_session,
         ids=[first.id, second.id],
         merchant=None,
-        transaction_type="bank_fee",
+        transaction_type="expense",
     )
 
     assert affected == 2
     db_session.refresh(first)
     db_session.refresh(second)
-    assert first.transaction_type == "bank_fee"
-    assert second.transaction_type == "bank_fee"
+    assert first.transaction_type == "expense"
+    assert second.transaction_type == "expense"
     assert first.category == "food"
     assert second.category == "shopping"
 
@@ -442,12 +443,12 @@ def test_bulk_set_transaction_type_clears_category_for_non_candidate(db_session)
         db_session,
         ids=[tx.id],
         merchant=None,
-        transaction_type="person_transfer",
+        transaction_type="other",
     )
 
     assert affected == 1
     db_session.refresh(tx)
-    assert tx.transaction_type == "person_transfer"
+    assert tx.transaction_type == "other"
     assert tx.category is None
     assert tx.category_predicted is None
     assert tx.category_suggestion_rejected is False
@@ -477,7 +478,11 @@ def test_accept_suggestions_promotes_high_confidence_predictions(db_session) -> 
     db_session.refresh(high)
     assert high.category == "food"
     assert high.category_source == "model"
-    event = db_session.execute(select(MlFeedbackEvent)).scalar_one()
+    event = db_session.execute(
+        select(MlFeedbackEvent).where(
+            MlFeedbackEvent.event_type == "accept_suggestion"
+        )
+    ).scalar_one()
     assert event.event_type == "accept_suggestion"
     assert event.transaction_id == high.id
     assert event.predicted_category == "food"
@@ -493,7 +498,7 @@ def test_accept_suggestions_promotes_only_expense_candidates(db_session) -> None
         category_predicted="shopping",
         category_confidence=0.91,
         category_predicted_source="model",
-        transaction_type="purchase",
+        transaction_type="expense",
     )
     credit = _tx(
         db_session,
@@ -621,7 +626,9 @@ def test_reject_suggestions_keeps_prediction_and_marks_rejected(db_session) -> N
     assert tx.category_confidence == 0.91
     assert tx.category_predicted_source == "model"
     assert tx.category_suggestion_rejected is True
-    event = db_session.execute(select(MlFeedbackEvent)).scalar_one()
+    event = db_session.execute(
+        select(MlFeedbackEvent).where(MlFeedbackEvent.event_type == "reject_suggestion")
+    ).scalar_one()
     assert event.event_type == "reject_suggestion"
     assert event.transaction_id == tx.id
     assert event.predicted_category == "food"
@@ -689,7 +696,9 @@ def test_update_category_records_manual_feedback(db_session) -> None:
     updated = service.update_category(db_session, tx.id, "food")
 
     assert updated is not None
-    event = db_session.execute(select(MlFeedbackEvent)).scalar_one()
+    event = db_session.execute(
+        select(MlFeedbackEvent).where(MlFeedbackEvent.event_type == "manual_category")
+    ).scalar_one()
     assert event.event_type == "manual_category"
     assert event.transaction_id == tx.id
     assert event.predicted_category == "transport"

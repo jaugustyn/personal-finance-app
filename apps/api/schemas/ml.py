@@ -17,7 +17,7 @@ class ClassifyRequest(BaseModel):
     amount: Decimal
     booking_date: date
     source: str = BankSource.UNKNOWN.value
-    transaction_type: TransactionType = TransactionType.PURCHASE
+    transaction_type: TransactionType = TransactionType.EXPENSE
     direction: TransactionDirection | None = None
     is_transfer: bool = False
     use_llm_fallback: bool = False
@@ -37,6 +37,7 @@ class ClassificationDecisionResponse(BaseModel):
 class ClassifyResponse(BaseModel):
     category: str
     confidence: float | None = None
+    model_confidence: float | None = None
     source: str = "model"
     model_category: str | None = None
     threshold: float = 0.55
@@ -54,15 +55,50 @@ class ReclassifyResponse(BaseModel):
 class RetrainResponse(BaseModel):
     status: str
     message: str
+    job_id: str | None = None
 
 
 class RetrainStatusResponse(BaseModel):
+    job_id: str | None = None
     status: str = "idle"
     message: str | None = None
     estimator: str | None = None
     feature_set: str | None = None
     started_at: str | None = None
     finished_at: str | None = None
+    report_path: str | None = None
+    result: dict[str, Any] = Field(default_factory=dict)
+    error: str | None = None
+
+
+class MlModelVersionResponse(BaseModel):
+    id: str
+    job_id: str | None = None
+    estimator: str
+    feature_set: str
+    status: str
+    artifact_sha256: str
+    dataset_fingerprint: str
+    evaluation_set_id: str | None = None
+    metrics: dict[str, Any] = Field(default_factory=dict)
+    gates: dict[str, Any] = Field(default_factory=dict)
+    promotable: bool
+    created_at: str
+    activated_at: str | None = None
+
+
+class MlEvaluationSetResponse(BaseModel):
+    active: bool
+    id: str | None = None
+    status: str | None = None
+    ontology_version: str | None = None
+    dataset_fingerprint: str | None = None
+    created_at: str | None = None
+    config: dict[str, Any] = Field(default_factory=dict)
+    time_count: int | None = None
+    merchant_count: int | None = None
+    excluded_training_count: int | None = None
+    data_readiness: dict[str, Any] | None = None
 
 
 class MlFeedbackRequest(BaseModel):
@@ -127,6 +163,7 @@ class MlModelStatus(BaseModel):
     exists: bool
     path: str
     updated_at: str | None = None
+    model_version_id: str | None = None
     estimator: str | None = None
     feature_set: str | None = None
     classes: list[str] = Field(default_factory=list)
@@ -157,6 +194,12 @@ class MlReadinessResponse(BaseModel):
     below_minimum_per_category: list[str]
     below_recommended_per_category: list[str]
     date_span_months: int | None = None
+    calendar_months: int = 0
+    date_span_days: int = 0
+    technical_ready: bool = False
+    thesis_data_ready: bool = False
+    training_ready: bool = False
+    training_preflight_reasons: list[str] = Field(default_factory=list)
     recommended_history_months: str
     training_labels_source: str
     category_predicted_is_ground_truth: bool

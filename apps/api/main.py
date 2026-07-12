@@ -31,8 +31,9 @@ from apps.api.scheduler import shutdown as scheduler_shutdown
 from apps.api.scheduler import start as scheduler_start
 from apps.api.security import auth_enabled, require_auth
 from finance.config import get_settings
-from finance.db import engine, get_session
+from finance.db import SessionLocal, engine, get_session
 from finance.llm.client import is_available as ollama_is_available
+from finance.ml.classification.lifecycle import mark_interrupted_jobs
 from finance.observability import configure_logging, get_logger
 
 configure_logging()
@@ -41,6 +42,14 @@ logger = get_logger("api")
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    if get_settings().app_env != "test":
+        try:
+            with SessionLocal() as session:
+                interrupted = mark_interrupted_jobs(session)
+                if interrupted:
+                    logger.warning("ml_training_jobs_interrupted", count=interrupted)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("ml_training_job_recovery_failed", error=str(exc))
     scheduler_start()
     logger.info(
         "api_started",

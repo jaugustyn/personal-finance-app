@@ -14,13 +14,17 @@ from finance.ml.classification.policy import (
 from finance.transactions.category_assignment import CategoryAssignmentService
 from finance.transactions.mutation_rules import InvalidCategoryAssignment, clean_tags
 from finance.transactions.suggestions import SuggestionAcceptanceService
-from finance.transactions.type_service import TransactionTypeService
+from finance.transactions.type_service import (
+    TransactionTypeDirectionMismatch,
+    TransactionTypeService,
+)
 
 UNCHANGED = object()
 
 __all__ = [
     "UNCHANGED",
     "InvalidCategoryAssignment",
+    "TransactionTypeDirectionMismatch",
     "accept_suggestions",
     "bulk_categorize",
     "bulk_delete",
@@ -53,10 +57,13 @@ def update_transaction_type(
     session: Session,
     tx_id: int,
     transaction_type: str,
+    *,
+    allow_direction_mismatch: bool = False,
 ) -> Transaction | None:
     return TransactionTypeService(session).update_transaction_type(
         tx_id,
         transaction_type,
+        allow_direction_mismatch=allow_direction_mismatch,
     )
 
 
@@ -96,6 +103,7 @@ def bulk_categorize(
     category: str | None | object = UNCHANGED,
     mark_transfer: bool | None = None,
     transaction_type: str | None = None,
+    allow_direction_mismatch: bool = False,
 ) -> int:
     return CategoryAssignmentService(session).bulk_categorize(
         ids=ids,
@@ -104,6 +112,7 @@ def bulk_categorize(
         category=category,
         mark_transfer=mark_transfer,
         transaction_type=transaction_type,
+        allow_direction_mismatch=allow_direction_mismatch,
         unchanged=UNCHANGED,
     )
 

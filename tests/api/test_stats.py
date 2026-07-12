@@ -163,9 +163,73 @@ def test_debt_payments_count_in_cashflow_but_not_category_breakdown(
     by_category_response = client.get("/stats/by-category?months=120&limit=10")
 
     assert overview_response.status_code == 200
-    assert Decimal(overview_response.json()["total_expenses"]) >= Decimal("600.00")
+    assert Decimal(overview_response.json()["total_debt_payments"]) >= Decimal(
+        "600.00"
+    )
+    assert Decimal(overview_response.json()["total_expenses"]) == Decimal("0")
     assert by_category_response.status_code == 200
     assert all(row["category"] is not None for row in by_category_response.json())
+
+
+def test_overview_uses_effective_economic_type_semantics(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    rows = [
+        ("salary", "credit", "1000", None, False),
+        ("income", "credit", "200", None, False),
+        ("expense", "debit", "-300", "food", False),
+        ("refund", "credit", "50", "food", False),
+        ("debt_payment", "debit", "-100", None, False),
+        ("asset_allocation", "debit", "-150", None, False),
+        ("cash_withdrawal", "debit", "-80", None, False),
+        ("own_transfer", "debit", "-500", None, True),
+    ]
+    for index, (tx_type, direction, amount, category, is_transfer) in enumerate(rows):
+        _add_tx(
+            db_session,
+            amount=Decimal(amount),
+            direction=direction,
+            category=category,
+            transaction_type=tx_type,
+            is_transfer=is_transfer,
+            dedup_hash=f"stats-economic-{index}",
+        )
+    db_session.commit()
+
+    overview = client.get("/stats/overview?months=120").json()
+    categories = client.get("/stats/by-category?months=120&limit=10").json()
+
+    assert Decimal(overview["total_income"]) == Decimal("1200")
+    assert Decimal(overview["gross_expenses"]) == Decimal("300")
+    assert Decimal(overview["total_refunds"]) == Decimal("50")
+    assert Decimal(overview["total_expenses"]) == Decimal("250")
+    assert Decimal(overview["total_debt_payments"]) == Decimal("100")
+    assert Decimal(overview["total_asset_allocations"]) == Decimal("150")
+    assert Decimal(overview["net_cashflow"]) == Decimal("700")
+    food = next(row for row in categories if row["category"] == "food")
+    assert Decimal(food["amount"]) == Decimal("250")
+
+
+def test_unconfirmed_type_suggestion_does_not_change_financial_totals(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    _add_tx(
+        db_session,
+        amount=Decimal("-75.00"),
+        transaction_type=None,
+        transaction_type_predicted="asset_allocation",
+        transaction_type_predicted_source="rule",
+        dedup_hash="stats-provisional-type-suggestion",
+    )
+    db_session.commit()
+
+    overview = client.get("/stats/overview?months=120").json()
+
+    assert Decimal(overview["gross_expenses"]) == Decimal("75.00")
+    assert Decimal(overview["total_asset_allocations"]) == Decimal("0")
+    assert overview["provisional_transaction_count"] == 1
 
 
 def test_overview_uses_base_amount_for_foreign_currency(

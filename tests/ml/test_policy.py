@@ -16,7 +16,7 @@ def _decide(
     confidence: float | None = 0.8,
     direction: str = "debit",
     is_transfer: bool = False,
-    transaction_type: str = "purchase",
+    transaction_type: str = "expense",
     policy: ClassificationPolicy | None = None,
 ):
     return decide_classification(
@@ -56,8 +56,8 @@ def test_low_confidence_expense_prediction_requires_manual_label() -> None:
     ("direction", "is_transfer", "transaction_type"),
     [
         ("credit", False, "income"),
-        ("debit", True, "purchase"),
-        ("debit", False, "person_transfer"),
+        ("debit", True, "expense"),
+        ("debit", False, "other"),
     ],
 )
 def test_non_expense_candidates_are_not_applicable(

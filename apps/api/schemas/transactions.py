@@ -1,7 +1,7 @@
 """Pydantic schemas for transaction API endpoints."""
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 
@@ -40,11 +40,27 @@ class TransactionRow(BaseModel):
     category: str | None
     subcategory: str | None = None
     category_source: str | None = None
+    category_confirmation_method: str | None = None
+    category_confirmed_at: datetime | None = None
+    category_origin_ref: str | None = None
     category_predicted: str | None
     category_confidence: float | None
     category_predicted_source: str | None = None
+    category_predicted_ref: str | None = None
     category_suggestion_rejected: bool = False
-    transaction_type: str = TransactionType.PURCHASE.value
+    raw_transaction_type: str | None = None
+    transaction_type: str | None = None
+    transaction_type_source: str | None = None
+    transaction_type_confirmation_method: str | None = None
+    transaction_type_confirmed_at: datetime | None = None
+    transaction_type_origin_ref: str | None = None
+    transaction_type_predicted: str | None = None
+    transaction_type_confidence: float | None = None
+    transaction_type_predicted_source: str | None = None
+    transaction_type_predicted_ref: str | None = None
+    transaction_type_effective: str | None = None
+    transaction_type_is_provisional: bool = True
+    transaction_type_needs_review: bool = False
     source: str
     is_transfer: bool = False
     notes: str | None = None
@@ -110,6 +126,7 @@ class ReviewSummary(BaseModel):
     confusion_hotspots: list[dict[str, Any]] = Field(default_factory=list)
     anomaly_feedback: dict[str, Any] = Field(default_factory=dict)
     subscription_feedback: dict[str, Any] = Field(default_factory=dict)
+    transaction_type_quality: dict[str, Any] = Field(default_factory=dict)
     confidence_threshold: float
     rare_class_threshold: int
 
@@ -122,6 +139,7 @@ class CategoryUpdate(BaseModel):
 
 class TypeUpdate(BaseModel):
     transaction_type: TransactionType
+    allow_direction_mismatch: bool = False
 
 
 class AnnotationUpdate(BaseModel):
@@ -136,6 +154,7 @@ class BulkCategorize(BaseModel):
     category: str | None = None
     mark_transfer: bool | None = None
     transaction_type: TransactionType | None = None
+    allow_direction_mismatch: bool = False
 
 
 class BulkResult(BaseModel):

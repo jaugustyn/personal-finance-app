@@ -119,6 +119,7 @@ class RevolutParser(BankParser):
                     merchant=(row.get("Opis") or "").strip(),
                     title=(row.get("Rodzaj") or "").strip(),
                     raw_category=(row.get("Rodzaj") or "").strip() or None,
+                    raw_transaction_type=(row.get("Rodzaj") or "").strip() or None,
                     source=BankSource.REVOLUT,
                 )
             )

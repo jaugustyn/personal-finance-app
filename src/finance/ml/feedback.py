@@ -19,6 +19,10 @@ EVENT_ACCEPT_SUGGESTION = "accept_suggestion"
 EVENT_REJECT_SUGGESTION = "reject_suggestion"
 EVENT_MANUAL_CATEGORY = "manual_category"
 EVENT_MANUAL_CLEAR = "manual_clear"
+EVENT_AUTO_RULE_CATEGORY = "auto_rule_category"
+EVENT_MANUAL_TRANSACTION_TYPE = "manual_transaction_type"
+EVENT_ACCEPT_TRANSACTION_TYPE = "accept_transaction_type_suggestion"
+EVENT_AUTO_TRANSACTION_TYPE = "auto_transaction_type"
 EVENT_ANOMALY_RELEVANT = "anomaly_relevant"
 EVENT_ANOMALY_NOT_RELEVANT = "anomaly_not_relevant"
 EVENT_ANOMALY_IGNORE_MERCHANT = "anomaly_ignore_merchant"
@@ -34,7 +38,13 @@ class FeedbackEventInput:
     entity_type: str | None = None
     entity_key: str | None = None
     predicted_category: str | None = None
+    previous_category: str | None = None
     final_category: str | None = None
+    predicted_transaction_type: str | None = None
+    previous_transaction_type: str | None = None
+    final_transaction_type: str | None = None
+    confirmation_method: str | None = None
+    origin_ref: str | None = None
     confidence: float | None = None
     source: str | None = None
     model_artifact: str | None = None
@@ -50,7 +60,13 @@ def record_feedback_event(
         entity_key=event.entity_key,
         event_type=event.event_type,
         predicted_category=event.predicted_category,
+        previous_category=event.previous_category,
         final_category=event.final_category,
+        predicted_transaction_type=event.predicted_transaction_type,
+        previous_transaction_type=event.previous_transaction_type,
+        final_transaction_type=event.final_transaction_type,
+        confirmation_method=event.confirmation_method,
+        origin_ref=event.origin_ref,
         confidence=event.confidence,
         source=event.source,
         model_artifact=event.model_artifact,
@@ -66,6 +82,10 @@ def record_transaction_feedback(
     event_type: str,
     final_category: str | None = None,
     model_artifact: str | None = None,
+    previous_category: str | None = None,
+    confirmation_method: str | None = None,
+    origin_ref: str | None = None,
+    source: str | None = None,
 ) -> MlFeedbackEvent:
     return record_feedback_event(
         session,
@@ -78,8 +98,11 @@ def record_transaction_feedback(
             if tx.category_predicted is not None
             else None,
             final_category=final_category,
+            previous_category=previous_category,
+            confirmation_method=confirmation_method,
+            origin_ref=origin_ref,
             confidence=tx.category_confidence,
-            source=tx.category_predicted_source,
+            source=source if source is not None else tx.category_predicted_source,
             model_artifact=model_artifact,
         ),
     )

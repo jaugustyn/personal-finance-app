@@ -109,6 +109,7 @@ class PekaoParser(BankParser):
             merchant = (row.get("Nadawca / Odbiorca") or "").strip()
             title = (row.get("Tytułem") or "").strip()
             raw_category = (row.get("Kategoria") or "").strip() or None
+            raw_transaction_type = (row.get("Typ operacji") or "").strip() or None
 
             out.append(
                 TransactionDTO(
@@ -120,6 +121,7 @@ class PekaoParser(BankParser):
                     merchant=merchant,
                     title=title,
                     raw_category=raw_category,
+                    raw_transaction_type=raw_transaction_type,
                     category=map_pekao_category(raw_category),
                     source=BankSource.PEKAO,
                     external_id=_strip_quote(row.get("Numer referencyjny")) or None,

@@ -8,14 +8,16 @@ from __future__ import annotations
 
 import argparse
 import json
+import platform
 import shutil
+import subprocess
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 import pandas as pd
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, select, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, sessionmaker
@@ -24,7 +26,10 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from finance.db import SessionLocal  # noqa: E402
-from finance.domain.models import Transaction  # noqa: E402
+from finance.domain.enums import CATEGORY_CONFIRMATION_METHOD_VALUES, Category  # noqa: E402
+from finance.domain.models import MlModelVersion, Transaction, UserProfile  # noqa: E402
+from finance.ml.classification.artifacts import runtime_versions  # noqa: E402
+from finance.ml.classification.evaluation_sets import evaluation_set_summary  # noqa: E402
 from finance.ml.classification.external import load_kaggle_personal_finance  # noqa: E402
 from finance.ml.classification.train import (  # noqa: E402
     _load_from_files,
@@ -58,17 +63,33 @@ def _safe_db_error(exc: SQLAlchemyError, database_url: str | None) -> str:
     return message
 
 
+def _begin_consistent_snapshot(session: Session) -> None:
+    """Pin all PostgreSQL evidence reads to one read-only database snapshot."""
+    if session.get_bind().dialect.name == "postgresql":
+        session.execute(
+            text("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
+        )
+
+
 def _load_all_from_db(session: Session) -> pd.DataFrame:
+    profile = session.get(UserProfile, 1)
+    base_currency = str(profile.base_currency if profile else "PLN").upper()
     rows = session.execute(
         select(
+            Transaction.id,
             Transaction.booking_date,
             Transaction.amount,
+            Transaction.amount_base,
+            Transaction.base_currency,
+            Transaction.currency,
             Transaction.direction,
             Transaction.merchant,
             Transaction.title,
             Transaction.raw_category,
             Transaction.category,
             Transaction.category_source,
+            Transaction.category_confirmation_method,
+            Transaction.category_confirmed_at,
             Transaction.category_predicted,
             Transaction.category_predicted_source,
             Transaction.source,
@@ -79,14 +100,20 @@ def _load_all_from_db(session: Session) -> pd.DataFrame:
     df = pd.DataFrame(
         rows,
         columns=[
+            "transaction_id",
             "booking_date",
-            "amount",
+            "original_amount",
+            "amount_base",
+            "base_currency",
+            "currency",
             "direction",
             "merchant",
             "title",
             "raw_category",
             "category",
             "category_source",
+            "category_confirmation_method",
+            "category_confirmed_at",
             "category_predicted",
             "category_predicted_source",
             "source",
@@ -96,10 +123,135 @@ def _load_all_from_db(session: Session) -> pd.DataFrame:
     )
     if df.empty:
         return df
-    df["abs_amount"] = df["amount"].abs().astype(float)
+    same_currency = df["currency"].fillna("").str.upper() == base_currency
+    df["amount"] = df["amount_base"].where(
+        df["amount_base"].notna(),
+        df["original_amount"].where(same_currency),
+    )
+    df["amount_resolved"] = df["amount"].notna()
+    df["abs_amount"] = df["amount"].fillna(0).abs().astype(float)
+    confirmed = (
+        df["category_confirmation_method"].isin(CATEGORY_CONFIRMATION_METHOD_VALUES)
+        & df["category_confirmed_at"].notna()
+    )
+    df.loc[~confirmed, "category"] = None
+    df.attrs["currency_diagnostics"] = {
+        "base_currency": base_currency,
+        "resolved_rows": int(df["amount_resolved"].sum()),
+        "excluded_unresolved_rows": int((~df["amount_resolved"]).sum()),
+        "unresolved_currencies": sorted(
+            df.loc[~df["amount_resolved"], "currency"].dropna().astype(str).unique()
+        ),
+    }
     df["day_of_week"] = pd.to_datetime(df["booking_date"]).dt.dayofweek
     df["text"] = (df["merchant"].fillna("") + " " + df["title"].fillna("")).str.strip()
     return df
+
+
+def _load_ml_state(session: Session) -> dict[str, Any]:
+    active = session.execute(
+        select(MlModelVersion)
+        .where(
+            MlModelVersion.status == "active",
+        )
+        .order_by(MlModelVersion.activated_at.desc())
+    ).scalars().first()
+    return {
+        "active_model_id": active.id if active else None,
+        "active_estimator": active.estimator if active else None,
+        "active_feature_set": active.feature_set if active else None,
+        "active_dataset_fingerprint": active.dataset_fingerprint if active else None,
+        "active_evaluation_set_id": active.evaluation_set_id if active else None,
+        "active_gates": dict(active.gates or {}) if active else {},
+        "active_metrics": dict(active.metrics or {}) if active else {},
+        "active_confidence_policy": dict(active.confidence_policy or {}) if active else {},
+        "evaluation_set": evaluation_set_summary(session),
+    }
+
+
+def _registry_classification_report(
+    df: pd.DataFrame,
+    ml_state: dict[str, Any],
+) -> dict[str, Any]:
+    """Build DB evidence from registered candidate metrics without re-evaluation."""
+    labels = sorted(item.value for item in Category)
+    confirmed = df[df["category"].isin(labels)].copy() if "category" in df else df.iloc[0:0]
+    counts = confirmed["category"].astype(str).value_counts().to_dict()
+    class_counts = {label: int(counts.get(label, 0)) for label in labels}
+    dates = pd.to_datetime(confirmed.get("booking_date"), errors="coerce").dropna()
+    span_months = (
+        int((dates.max().year - dates.min().year) * 12 + dates.max().month - dates.min().month)
+        if len(dates) > 1
+        else None
+    )
+
+    metrics = ml_state.get("active_metrics")
+    metrics = metrics if isinstance(metrics, dict) else {}
+    estimator = ml_state.get("active_estimator")
+    models: dict[str, Any] = {}
+    if estimator and metrics:
+        ranking_value = metrics.get("ranking")
+        time_value = metrics.get("time")
+        merchant_value = metrics.get("merchant")
+        ranking: dict[str, Any] = ranking_value if isinstance(ranking_value, dict) else {}
+        time_metrics: dict[str, Any] = time_value if isinstance(time_value, dict) else {}
+        merchant_metrics: dict[str, Any] = (
+            merchant_value if isinstance(merchant_value, dict) else {}
+        )
+        weighted = [
+            float(value)
+            for value in (
+                time_metrics.get("weighted_f1"),
+                merchant_metrics.get("weighted_f1"),
+            )
+            if isinstance(value, int | float)
+        ]
+        models[str(estimator)] = {
+            "macro_f1": ranking.get("mean_macro_f1"),
+            "weighted_f1": sum(weighted) / len(weighted) if weighted else None,
+            "confusion_matrix": time_metrics.get("confusion_matrix", []),
+            "time": time_metrics,
+            "merchant": merchant_metrics,
+            "oof": metrics.get("oof", {}),
+            "p99_ms": metrics.get("p99_ms"),
+        }
+
+    below_minimum: list[str] = []
+    below_recommended = [label for label, count in class_counts.items() if count < 50]
+    readiness_level = (
+        "recommended"
+        if not below_recommended
+        else "minimum"
+        if not below_minimum
+        else "insufficient"
+    )
+    return {
+        "report_type": "classification_registry_snapshot",
+        "methodology": "candidate_evaluation_v1",
+        "selected_experiment": "registered_active_model" if estimator else None,
+        "models": models,
+        "class_counts": class_counts,
+        "n_total_labelled": int(len(confirmed)),
+        "n_classes": int(sum(count > 0 for count in class_counts.values())),
+        "labels": labels,
+        "validation_slices": {
+            key: metrics[key] for key in ("time", "merchant") if key in metrics
+        },
+        "confidence_policy": dict(ml_state.get("active_confidence_policy") or {}),
+        "label_readiness": {
+            "level": readiness_level,
+            "total_labelled": int(len(confirmed)),
+            "minimum_total": 300,
+            "recommended_total": 800,
+            "ideal_total": 2000,
+            "minimum_per_category": 0,
+            "below_minimum_per_category": below_minimum,
+            "below_recommended_per_category": below_recommended,
+            "date_span_months": span_months,
+        },
+        "model_lifecycle": ml_state,
+        "privacy_note": "Only aggregate registry metrics and label counts are included.",
+    }
 
 
 def _write_json(path: Path, payload: dict[str, Any]) -> None:
@@ -133,17 +285,42 @@ def _apply_precision_review(summary: dict[str, Any], review_df: pd.DataFrame) ->
         top = labels[:k]
         labelled_top = [v for v in top if v is not None]
         key = f"precision_at_{k}"
+        summary[f"reviewed_at_{k}"] = len(labelled_top)
         summary[key] = (
-            float(sum(1 for v in labelled_top if v) / len(labelled_top))
-            if labelled_top
+            float(sum(1 for v in labelled_top if v) / k)
+            if len(top) == k and len(labelled_top) == k
             else None
         )
     summary["precision_at_k"] = summary.get("precision_at_20")
     if reviewed:
         summary["precision_note"] = (
-            "Computed from private anomaly review labels in is_relevant column."
+            "precision@k is emitted only when every row in the first k was reviewed."
         )
     return summary
+
+
+def _code_manifest() -> dict[str, Any]:
+    def run_git(*args: str) -> str | None:
+        try:
+            result = subprocess.run(
+                ["git", *args],
+                cwd=ROOT,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+        except OSError:
+            return None
+        return result.stdout.strip() if result.returncode == 0 else None
+
+    status = run_git("status", "--porcelain")
+    return {
+        "git_commit": run_git("rev-parse", "HEAD"),
+        "git_dirty": bool(status),
+        "runtime_versions": runtime_versions(),
+        "platform": platform.platform(),
+        "python_executable": sys.executable,
+    }
 
 
 def _raw_values(df: pd.DataFrame) -> set[str]:
@@ -172,8 +349,14 @@ def _privacy_check(public_payloads: list[dict[str, Any]], df: pd.DataFrame) -> d
 def _model_table(report: dict[str, Any]) -> str:
     lines = ["| Model | Macro-F1 | Weighted-F1 |", "|---|---:|---:|"]
     for name, info in report["models"].items():
+        macro = info.get("macro_f1")
+        weighted = info.get("weighted_f1")
+        macro_text = f"{macro:.3f}" if isinstance(macro, int | float) else "n/a"
+        weighted_text = (
+            f"{weighted:.3f}" if isinstance(weighted, int | float) else "n/a"
+        )
         lines.append(
-            f"| `{name}` | {info['macro_f1']:.3f} | {info['weighted_f1']:.3f} |"
+            f"| `{name}` | {macro_text} | {weighted_text} |"
         )
     return "\n".join(lines)
 
@@ -254,7 +437,7 @@ Reason: {feature_decision.get('reason', 'n/a')}
   (minimum `{label_readiness.get('minimum_total', 300)}`, recommended \
   `{label_readiness.get('recommended_total', 800)}`, ideal \
   `{label_readiness.get('ideal_total', 2000)}`)
-- Per-category minimum: `{label_readiness.get('minimum_per_category', 20)}`
+- Required per-category minimum: `{label_readiness.get('minimum_per_category', 0)}`
 - Below minimum: `{', '.join(label_readiness.get('below_minimum_per_category', [])) or 'none'}`
 - Date span: `{label_readiness.get('date_span_months')}` months
 
@@ -264,11 +447,11 @@ External data provided: `{external_data.get('provided', False)}`
 
 Task: `{transaction_type.get('classification_task', 'multiclass_transaction_type')}`
 
-Label source: `{transaction_type.get('label_source', 'silver_transaction_type')}`
+Label source: `{transaction_type.get('label_source', 'confirmed_transaction_type')}`
 
 Runtime policy: `{tx_runtime_policy}`
 
-Total silver labels: `{transaction_type.get('n_total_labelled', 0)}`
+Total confirmed labels: `{transaction_type.get('n_total_labelled', 0)}`
 
 Classes: `{transaction_type.get('n_classes', 0)}`
 
@@ -340,15 +523,20 @@ def main(argv: list[str] | None = None) -> int:
     if args.from_db:
         source_name = "db"
         engine = None
+        ml_state: dict[str, Any] = {}
         try:
             if args.database_url:
                 engine = create_engine(args.database_url)
                 SessionMaker = sessionmaker(bind=engine)
                 with SessionMaker() as session:
+                    _begin_consistent_snapshot(session)
                     df = _load_all_from_db(session)
+                    ml_state = _load_ml_state(session)
             else:
                 with SessionLocal() as session:
+                    _begin_consistent_snapshot(session)
                     df = _load_all_from_db(session)
+                    ml_state = _load_ml_state(session)
         except SQLAlchemyError as exc:
             details = _safe_db_error(exc, args.database_url)
             raise SystemExit(f"Could not load transactions from local DB: {details}") from None
@@ -357,6 +545,7 @@ def main(argv: list[str] | None = None) -> int:
                 engine.dispose()
     else:
         source_name = "files"
+        ml_state = {}
         df = _load_from_files(list(args.from_files))
 
     synth = _load_synthetic(args.augment) if args.augment else None
@@ -367,17 +556,31 @@ def main(argv: list[str] | None = None) -> int:
     )
     ts = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
 
-    classification = build_evidence_report(
-        df,
-        augmented_df=synth,
-        external_df=external,
+    if args.from_db:
+        classification = _registry_classification_report(df, ml_state)
+        classification["separate_experiments"] = {
+            "synthetic_rows": int(len(synth)) if synth is not None else 0,
+            "external_rows": int(len(external)) if external is not None else 0,
+            "note": "Synthetic and external data are not mixed with registered runtime metrics.",
+        }
+    else:
+        classification = build_evidence_report(
+            df,
+            augmented_df=synth,
+            external_df=external,
+        )
+        classification["model_lifecycle"] = ml_state
+    monetary_df = (
+        df[df["amount_resolved"]].copy()
+        if "amount_resolved" in df.columns
+        else df
     )
-    eda = build_eda_summary(df)
-    forecasting = build_forecasting_evidence(df)
+    eda = build_eda_summary(monetary_df)
+    forecasting = build_forecasting_evidence(monetary_df)
     transaction_type = build_transaction_type_evidence_report(df)
-    subscriptions = build_subscription_evidence(df)
+    subscriptions = build_subscription_evidence(monetary_df)
 
-    review = build_anomaly_review(df, top_n=args.anomaly_top_n)
+    review = build_anomaly_review(monetary_df, top_n=args.anomaly_top_n)
     anomaly_summary = review.public_summary
     review_for_precision = review.private_rows
     if args.review_file is not None and args.review_file.exists():
@@ -392,6 +595,8 @@ def main(argv: list[str] | None = None) -> int:
         forecasting=forecasting,
         anomaly_detection=anomaly_summary,
         subscriptions=subscriptions,
+        manifest=_code_manifest(),
+        currency_diagnostics=dict(df.attrs.get("currency_diagnostics", {})),
     )
     privacy = _privacy_check(
         [

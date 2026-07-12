@@ -17,6 +17,7 @@ from finance.transactions.merchants import (
     merchant_display_label,
     merchant_identity,
 )
+from finance.transactions.type_decision import effective_transaction_type
 
 
 def transaction_frame(session: Session) -> pd.DataFrame:
@@ -56,7 +57,7 @@ def transaction_frame(session: Session) -> pd.DataFrame:
                 "category": row.category,
                 "category_source": row.category_source,
                 "is_transfer": row.is_transfer,
-                "transaction_type": row.transaction_type,
+                "transaction_type": effective_transaction_type(row),
             }
         )
     return pd.DataFrame(items)

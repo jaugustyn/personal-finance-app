@@ -24,6 +24,7 @@ from finance.transactions.merchants import (
     merchant_canonical_key,
     merchant_identity,
 )
+from finance.transactions.type_decision import effective_transaction_type
 
 RARE_LABEL_THRESHOLD = 20
 WEAK_LABEL_THRESHOLD = 50
@@ -170,7 +171,7 @@ def review_queue(
             confidence=tx.category_confidence,
             direction=tx.direction,
             is_transfer=tx.is_transfer,
-            transaction_type=tx.transaction_type,
+            transaction_type=effective_transaction_type(tx),
             policy=policy,
         )
         uncertainty, uncertainty_reason = _uncertainty_score(

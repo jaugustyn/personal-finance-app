@@ -40,10 +40,12 @@ def test_revolut_parser_polish() -> None:
     assert exchange.direction is TransactionDirection.CREDIT
     assert exchange.currency == "USD"
     assert exchange.title == "Wymiana"
+    assert exchange.raw_transaction_type == "Wymiana"
     assert exchange.category is None  # exchange rows must not be auto-labelled
 
     assert payment.amount == Decimal("-10.00")
     assert payment.direction is TransactionDirection.DEBIT
+    assert payment.raw_transaction_type == "Płatność kartą"
     assert "GitHub" in payment.merchant
 
 

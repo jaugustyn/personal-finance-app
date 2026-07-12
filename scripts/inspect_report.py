@@ -75,7 +75,25 @@ def _validate_category_section(report: dict[str, Any], prefix: str) -> list[str]
         ["models", "class_counts", "n_total_labelled", "n_classes"],
         prefix,
     )
-    errors.extend(_validate_model_metrics(report, prefix))
+    if report.get("report_type") == "classification_registry_snapshot":
+        lifecycle = report.get("model_lifecycle")
+        if not isinstance(lifecycle, dict) or not lifecycle.get("active_model_id"):
+            errors.append(f"{prefix}.model_lifecycle.active_model_id is required")
+        models = report.get("models")
+        if isinstance(models, dict):
+            for model_name, model in models.items():
+                if not isinstance(model, dict):
+                    errors.append(f"{prefix}.models.{model_name} must be an object")
+                    continue
+                errors.extend(
+                    _require_keys(
+                        model,
+                        ["macro_f1", "weighted_f1", "confusion_matrix", "time", "merchant", "oof"],
+                        f"{prefix}.models.{model_name}",
+                    )
+                )
+    else:
+        errors.extend(_validate_model_metrics(report, prefix))
     return errors
 
 
@@ -85,10 +103,12 @@ def _validate_transaction_type_section(report: dict[str, Any], prefix: str) -> l
         ["label_source", "runtime_policy", "models", "class_counts"],
         prefix,
     )
-    if report.get("label_source") != "silver_transaction_type":
-        errors.append(f"{prefix}.label_source must be silver_transaction_type")
+    if report.get("label_source") != "confirmed_transaction_type":
+        errors.append(f"{prefix}.label_source must be confirmed_transaction_type")
     if report.get("runtime_policy") != "evidence_only_rules_remain_source_of_truth":
-        errors.append(f"{prefix}.runtime_policy must keep runtime rules as source of truth")
+        errors.append(
+            f"{prefix}.runtime_policy must keep transaction-type ML evidence-only"
+        )
     errors.extend(_validate_model_metrics(report, prefix))
     return errors
 
@@ -301,11 +321,17 @@ def _print_privacy(report: dict[str, Any] | None) -> list[str]:
     return [] if report.get("passed") is True else ["privacy check failed"]
 
 
-def inspect_reports(reports_dir: Path, *, strict: bool) -> int:
+def inspect_reports(
+    reports_dir: Path,
+    *,
+    strict: bool = False,
+    profile: str | None = None,
+) -> int:
     errors: list[str] = []
     warnings: list[str] = []
 
-    if strict:
+    strict_files = strict or profile is not None
+    if strict_files:
         missing = [
             filename
             for filename in [*LATEST_REPORTS.values(), "summary.md"]
@@ -329,36 +355,36 @@ def inspect_reports(reports_dir: Path, *, strict: bool) -> int:
     transaction_type = _load_json(reports_dir / LATEST_REPORTS["transaction_type"])
     if transaction_type is not None:
         warnings.extend(_print_transaction_type(transaction_type))
-    elif strict:
+    elif strict_files:
         errors.append("missing latest_transaction_type_classification.json")
 
     eda = _load_json(reports_dir / LATEST_REPORTS["eda"])
     if eda is not None:
         _print_eda(eda)
-    elif strict:
+    elif strict_files:
         errors.append("missing latest_eda.json")
 
     forecasting = _load_json(reports_dir / LATEST_REPORTS["forecasting"])
     if forecasting is not None:
         warnings.extend(_print_forecasting(forecasting))
-    elif strict:
+    elif strict_files:
         errors.append("missing latest_forecasting.json")
 
     subscriptions = _load_json(reports_dir / LATEST_REPORTS["subscriptions"])
     if subscriptions is not None:
         _print_subscriptions(subscriptions)
-    elif strict:
+    elif strict_files:
         errors.append("missing latest_subscriptions.json")
 
     anomaly = _load_json(reports_dir / LATEST_REPORTS["anomaly"])
     if anomaly is not None:
         warnings.extend(_print_anomaly(anomaly))
-    elif strict:
+    elif strict_files:
         errors.append("missing latest_anomaly_summary.json")
 
     privacy = _load_json(reports_dir / LATEST_REPORTS["privacy"])
     privacy_issues = _print_privacy(privacy)
-    if privacy is None and not strict:
+    if privacy is None and not strict_files:
         warnings.extend(privacy_issues)
     else:
         errors.extend(privacy_issues)
@@ -368,11 +394,34 @@ def inspect_reports(reports_dir: Path, *, strict: bool) -> int:
     package = reports_dir / LATEST_REPORTS["evidence_package"]
     print("Evidence package:", "present" if package.exists() else "missing")
     evidence_package = _load_json(package)
-    if strict:
+    if strict_files:
         if evidence_package is None:
             errors.append("missing latest_evidence_package.json")
         else:
             errors.extend(_validate_package_sections(evidence_package))
+            statuses = evidence_package.get("section_status", {})
+            if profile == "classification-strict":
+                if statuses.get("category_classification") not in {
+                    "complete",
+                    "thesis_ready",
+                }:
+                    errors.append(
+                        "classification-strict requires complete category classification"
+                    )
+            elif profile == "thesis-strict":
+                if statuses.get("category_classification") != "thesis_ready":
+                    errors.append(
+                        "thesis-strict requires thesis_ready category classification"
+                    )
+                incomplete = [
+                    key
+                    for key in EVIDENCE_SECTIONS
+                    if statuses.get(key) not in {"complete", "thesis_ready"}
+                ]
+                if incomplete:
+                    errors.append(
+                        "thesis-strict has incomplete sections: " + ", ".join(incomplete)
+                    )
 
     if warnings:
         print("\nWarnings:")
@@ -394,8 +443,14 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Require complete latest_* evidence files and passing privacy check.",
     )
+    parser.add_argument(
+        "--profile",
+        choices=["classification-strict", "thesis-strict"],
+        default=None,
+        help="Apply the selected evidence-completeness profile.",
+    )
     args = parser.parse_args(argv)
-    return inspect_reports(args.reports_dir, strict=args.strict)
+    return inspect_reports(args.reports_dir, strict=args.strict, profile=args.profile)
 
 
 if __name__ == "__main__":

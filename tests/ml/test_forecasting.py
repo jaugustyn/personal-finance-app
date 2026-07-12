@@ -102,8 +102,8 @@ def test_build_monthly_series_fills_missing_months_and_excludes_non_candidates()
         "category": ["food", "food", "food", "food", "food"],
         "is_transfer": [False, "false", True, False, False],
         "transaction_type": [
-            "purchase",
-            "purchase",
+            "expense",
+            "expense",
             "own_transfer",
             "refund",
             "debt_payment",

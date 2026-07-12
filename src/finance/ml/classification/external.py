@@ -48,9 +48,9 @@ def infer_kaggle_transaction_type(raw_category: str | None, tx_type: str | None)
     if category == "Salary" or (kind == "income" and category.lower() == "salary"):
         return TransactionType.SALARY.value
     if category == "Investment":
-        return TransactionType.SAVINGS_INVESTMENT.value
+        return TransactionType.ASSET_ALLOCATION.value
     return (
-        TransactionType.PURCHASE.value
+        TransactionType.EXPENSE.value
         if kind == "expense"
         else TransactionType.OTHER.value
     )

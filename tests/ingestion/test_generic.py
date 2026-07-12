@@ -90,6 +90,25 @@ def test_generic_parser_with_explicit_column_map() -> None:
     assert dtos[0].amount == -50
 
 
+def test_generic_parser_preserves_explicit_operation_type() -> None:
+    raw = (
+        b"Date,Amount,Merchant,Operation\n"
+        b"2026-04-01,-50.00,Shop,CARD PAYMENT\n"
+    )
+    parser = GenericCsvParser(
+        {
+            "date": "Date",
+            "amount": "Amount",
+            "merchant": "Merchant",
+            "transaction_type": "Operation",
+        }
+    )
+
+    dtos = parser.parse(io.BytesIO(raw))
+
+    assert dtos[0].raw_transaction_type == "CARD PAYMENT"
+
+
 def test_generic_parser_maps_source_categories() -> None:
     raw = (
         b"Date,Amount,Currency,Description,Category\n"

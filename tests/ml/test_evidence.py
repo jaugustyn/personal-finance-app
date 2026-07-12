@@ -25,7 +25,7 @@ def _df() -> pd.DataFrame:
                 "title": "Zakupy",
                 "category": "food",
                 "is_transfer": False,
-                "transaction_type": "purchase",
+                "transaction_type": "expense",
             }
         )
     rows.append(
@@ -38,7 +38,7 @@ def _df() -> pd.DataFrame:
             "title": "Large",
             "category": "other",
             "is_transfer": False,
-            "transaction_type": "purchase",
+            "transaction_type": "expense",
         }
     )
     rows.append(
@@ -92,7 +92,7 @@ def test_build_subscription_evidence_uses_aliases() -> None:
                 "title": "subskrypcja",
                 "category": "subscriptions",
                 "is_transfer": False,
-                "transaction_type": "purchase",
+                "transaction_type": "expense",
             },
             {
                 "booking_date": date(2026, 2, 1),
@@ -103,7 +103,7 @@ def test_build_subscription_evidence_uses_aliases() -> None:
                 "title": "subskrypcja",
                 "category": "subscriptions",
                 "is_transfer": False,
-                "transaction_type": "purchase",
+                "transaction_type": "expense",
             },
         ]
     )

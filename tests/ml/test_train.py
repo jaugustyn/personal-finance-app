@@ -57,7 +57,8 @@ def test_build_label_readiness_reports_data_targets() -> None:
     assert readiness["ideal_total"] == 2000
     assert readiness["category_predicted_is_ground_truth"] is False
     assert readiness["category_counts"]["food"] == 5
-    assert "health" in readiness["below_minimum_per_category"]
+    assert readiness["minimum_per_category"] == 0
+    assert readiness["below_minimum_per_category"] == []
 
 
 def test_filter_category_training_rows_excludes_transfers_and_non_candidates() -> None:
@@ -84,13 +85,13 @@ def test_filter_category_training_rows_excludes_transfers_and_non_candidates() -
                 "shopping",
             ],
             "transaction_type": [
-                "purchase",
-                "purchase",
+                "expense",
+                "expense",
                 "own_transfer",
-                "person_transfer",
+                "other",
                 "salary",
                 "income",
-                "purchase",
+                "expense",
             ],
             "is_transfer": [False, False, True, False, False, False, False],
             "direction": [
@@ -133,13 +134,17 @@ def test_build_evidence_report_includes_real_and_augmented() -> None:
     report = train.build_evidence_report(df, augmented_df=synth, n_splits=2)
     assert report["selected_experiment"] == "real_only"
     assert report["selected_experiment_note"]
-    assert set(report["experiments"]) == {"real_only", "augmented"}
+    assert set(report["experiments"]) == {"real_only", "augmented_training_only"}
+    assert report["experiments"]["augmented_training_only"]["evaluation_rows"] == (
+        "real_only"
+    )
     assert set(report["feature_variants"]) == {"baseline", "feature_v2"}
     assert report["feature_decision"]["recommended_feature_set"] in {
         "baseline",
         "feature_v2",
     }
-    assert set(report["validation_slices"]) == {
+    assert set(report["validation_slices"]) == {"baseline", "feature_v2"}
+    assert set(report["validation_slices"]["feature_v2"]) == {
         "stratified_cv",
         "time_holdout",
         "merchant_group_holdout",
@@ -147,7 +152,7 @@ def test_build_evidence_report_includes_real_and_augmented() -> None:
     assert "confidence_policy" in report
     assert "per_category" in next(iter(report["models"].values()))
     assert report["label_readiness"]["training_labels_source"] == (
-        "confirmed Transaction.category only"
+        "explicitly confirmed 9-class expense Transaction.category only"
     )
     assert report["target_macro_f1"] == 0.75
 
@@ -160,7 +165,9 @@ def test_build_evidence_report_includes_external_experiments() -> None:
     report = train.build_evidence_report(df, external_df=external, n_splits=2)
 
     assert report["selected_experiment"] == "real_only"
-    assert {"external_only", "real_plus_external"}.issubset(report["experiments"])
+    assert {"external_only", "real_plus_external_training_only"}.issubset(
+        report["experiments"]
+    )
     assert report["external_data"]["provided"] is True
     assert report["external_data"]["n_labelled"] == len(external)
     assert report["external_data_note"]
@@ -170,7 +177,7 @@ def test_evaluate_feature_v2_returns_metrics() -> None:
     df = _tiny_labelled_df()
     df["merchant"] = ["Biedronka", "Orlen"] * 5
     df["booking_date"] = pd.date_range("2026-01-01", periods=len(df), freq="D")
-    df["transaction_type"] = "purchase"
+    df["transaction_type"] = "expense"
     report = train.evaluate_feature_v2(df, n_splits=2)
     assert "linear_svc" in report["models"]
 
@@ -207,7 +214,7 @@ def test_fit_final_returns_fitted_pipeline() -> None:
 def test_fit_final_filters_non_category_training_rows() -> None:
     df = _tiny_labelled_df()
     df["direction"] = "debit"
-    df["transaction_type"] = "purchase"
+    df["transaction_type"] = "expense"
     income_rows = pd.DataFrame(
         [
             {
@@ -238,7 +245,7 @@ def test_fit_final_feature_v2_returns_fitted_pipeline() -> None:
     df = _tiny_labelled_df()
     df["merchant"] = ["Biedronka", "Orlen"] * 5
     df["booking_date"] = pd.date_range("2026-01-01", periods=len(df), freq="D")
-    df["transaction_type"] = "purchase"
+    df["transaction_type"] = "expense"
     pipe = train.fit_final(df, "linear_svc", feature_set="feature_v2")
     preds = pipe.predict(train.to_features_v2(df.head(2)))
     assert len(preds) == 2

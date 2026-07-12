@@ -166,7 +166,7 @@ def update_category(
     return CategoryRow.model_validate(cat)
 
 
-@router.delete("/{category_id}", status_code=204)
+@router.delete("/{category_id}", status_code=204, response_model=None)
 def delete_category(
     category_id: int, session: Session = Depends(get_session)
 ) -> None:

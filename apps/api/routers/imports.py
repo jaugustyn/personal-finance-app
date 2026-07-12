@@ -44,7 +44,7 @@ from finance.db import SessionLocal, get_session
 from finance.domain.dto import ImportSummary
 from finance.domain.enums import BankSource
 from finance.domain.models import Import, Transaction
-from finance.ingestion import ParseError
+from finance.ingestion import BankParser, ParseError
 from finance.ingestion.generic import GenericCsvParser, preview_csv
 from finance.ingestion.quality import ImportQualityReport, assess_import_quality
 from finance.ingestion.registry import detect_source, get_parser
@@ -150,6 +150,7 @@ def preview_import(
     detected_source = detect_source(prev.headers)
     requested_source = (source or "").strip().lower()
     requested_mapping = _parse_column_map(column_map)
+    quality_parser: BankParser
 
     if requested_source == "generic" or requested_mapping is not None:
         quality_source = BankSource.UNKNOWN

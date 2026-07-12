@@ -7,7 +7,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from apps.api.dependencies.transactions import TransactionFilterParams, enum_value
-from apps.api.errors import not_found, validation_error
+from apps.api.errors import conflict, not_found, validation_error
 from apps.api.schemas.transactions import (
     AcceptSuggestions,
     AnnotationUpdate,
@@ -31,19 +31,22 @@ from finance.db import get_session
 from finance.ml.classification.policy import (
     ClassificationPolicy,
     decide_classification,
-    policy_from_report,
 )
-from finance.ml.classification.status import REPORTS_DIR, load_latest_report
+from finance.ml.classification.predict import active_classification_policy
 from finance.transactions import service as tx_service
 from finance.transactions.merchants import load_merchant_alias_maps, merchant_identity
+from finance.transactions.type_decision import (
+    effective_transaction_type,
+    transaction_type_is_provisional,
+    transaction_type_needs_review,
+)
+from finance.transactions.type_service import TransactionTypeService
 
 router = APIRouter(prefix="/transactions", tags=["transactions"])
 
 
-def _classification_policy() -> ClassificationPolicy:
-    latest = load_latest_report(REPORTS_DIR)
-    report = latest["report"] if isinstance(latest["report"], dict) else None
-    return policy_from_report(report)
+def _classification_policy(session: Session) -> ClassificationPolicy:
+    return active_classification_policy(session=session)
 
 
 def _classification_decision(tx: Any, policy: ClassificationPolicy):
@@ -52,7 +55,7 @@ def _classification_decision(tx: Any, policy: ClassificationPolicy):
         confidence=tx.category_confidence,
         direction=tx.direction,
         is_transfer=tx.is_transfer,
-        transaction_type=tx.transaction_type,
+        transaction_type=effective_transaction_type(tx),
         policy=policy,
     )
 
@@ -75,6 +78,9 @@ def _transaction_row(
     row.merchant_display = identity.display_label
     row.merchant_canonical_key = identity.canonical_key or None
     row.merchant_alias_key = identity.alias_key or None
+    row.transaction_type_effective = effective_transaction_type(tx)
+    row.transaction_type_is_provisional = transaction_type_is_provisional(tx)
+    row.transaction_type_needs_review = transaction_type_needs_review(tx)
     row.classification_decision = ClassificationDecisionResponse(
         **_classification_decision(tx, policy).__dict__,
     )
@@ -82,7 +88,7 @@ def _transaction_row(
 
 
 def _transaction_response(session: Session, tx: Any) -> TransactionRow:
-    policy = _classification_policy()
+    policy = _classification_policy(session)
     alias_map, label_map = load_merchant_alias_maps(session)
     return _transaction_row(tx, policy, alias_map=alias_map, label_map=label_map)
 
@@ -94,7 +100,7 @@ def list_transactions(
     limit: int = Query(default=100, le=1000),
     offset: int = 0,
 ) -> list[TransactionRow]:
-    policy = _classification_policy()
+    policy = _classification_policy(session)
     rows = tx_service.list_transactions(
         session,
         filters.to_filters(),
@@ -185,7 +191,7 @@ def review_summary(
     recurring_limit: int = Query(default=10, ge=1, le=100),
 ) -> ReviewSummary:
     """Data-quality buckets that most improve ML training data (Review Center)."""
-    policy = _classification_policy()
+    policy = _classification_policy(session)
     data = tx_service.review_summary(
         session,
         policy=policy,
@@ -203,6 +209,7 @@ def review_summary(
         confusion_hotspots=data["confusion_hotspots"],
         anomaly_feedback=data["anomaly_feedback"],
         subscription_feedback=data["subscription_feedback"],
+        transaction_type_quality=data["transaction_type_quality"],
         confidence_threshold=data["confidence_threshold"],
         rare_class_threshold=data["rare_class_threshold"],
     )
@@ -237,11 +244,33 @@ def update_type(
     session: Session = Depends(get_session),
 ) -> TransactionRow:
     """Manual override of a transaction type (e.g. mark a personal transfer)."""
-    tx = tx_service.update_transaction_type(
-        session, tx_id, payload.transaction_type.value
-    )
+    try:
+        tx = tx_service.update_transaction_type(
+            session,
+            tx_id,
+            payload.transaction_type.value,
+            allow_direction_mismatch=payload.allow_direction_mismatch,
+        )
+    except tx_service.TransactionTypeDirectionMismatch as exc:
+        raise conflict(
+            {
+                "code": "transaction_type_direction_mismatch",
+                "message": str(exc),
+            }
+        ) from exc
     if tx is None:
         raise not_found("Transaction not found or invalid type")
+    return _transaction_response(session, tx)
+
+
+@router.post("/{tx_id}/type-suggestion/accept", response_model=TransactionRow)
+def accept_type_suggestion(
+    tx_id: int,
+    session: Session = Depends(get_session),
+) -> TransactionRow:
+    tx = TransactionTypeService(session).accept_suggestion(tx_id)
+    if tx is None:
+        raise not_found("Provisional transaction type not found")
     return _transaction_response(session, tx)
 
 
@@ -289,7 +318,15 @@ def bulk_categorize(
             ),
             mark_transfer=payload.mark_transfer,
             transaction_type=enum_value(payload.transaction_type),
+            allow_direction_mismatch=payload.allow_direction_mismatch,
         )
+    except tx_service.TransactionTypeDirectionMismatch as exc:
+        raise conflict(
+            {
+                "code": "transaction_type_direction_mismatch",
+                "message": str(exc),
+            }
+        ) from exc
     except ValueError as exc:
         raise validation_error("Invalid transaction type.") from exc
     return BulkResult(affected=affected)
@@ -300,7 +337,7 @@ def accept_suggestions(
     payload: AcceptSuggestions,
     session: Session = Depends(get_session),
 ) -> BulkResult:
-    policy = _classification_policy()
+    policy = _classification_policy(session)
     affected = tx_service.accept_suggestions(
         session,
         ids=payload.ids,
@@ -329,6 +366,16 @@ def restore_suggestions(
     return BulkResult(affected=affected)
 
 
+@router.post("/bulk/type-suggestions/accept", response_model=BulkResult)
+def bulk_accept_type_suggestions(
+    payload: RejectSuggestions,
+    session: Session = Depends(get_session),
+) -> BulkResult:
+    return BulkResult(
+        affected=TransactionTypeService(session).accept_suggestions(ids=payload.ids)
+    )
+
+
 @router.post("/bulk/delete", response_model=BulkResult)
 def bulk_delete(
     payload: BulkDelete, session: Session = Depends(get_session)
@@ -336,7 +383,7 @@ def bulk_delete(
     return BulkResult(affected=tx_service.bulk_delete(session, payload.ids))
 
 
-@router.delete("/{tx_id}", status_code=204)
+@router.delete("/{tx_id}", status_code=204, response_model=None)
 def delete_transaction(
     tx_id: int, session: Session = Depends(get_session)
 ) -> None:

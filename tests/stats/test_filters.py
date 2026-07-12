@@ -23,33 +23,33 @@ def test_expense_category_candidate_mask_matches_runtime_semantics() -> None:
             ],
             "is_transfer": [False, False, True, "false", False, False, False, False],
             "transaction_type": [
-                "purchase",
-                "purchase",
-                "purchase",
-                "purchase",
+                "expense",
+                "expense",
+                "expense",
+                "expense",
                 "own_transfer",
                 "refund",
-                "bank_fee",
-                "savings_investment",
+                "expense",
+                "asset_allocation",
             ],
         }
     )
 
     mask = expense_category_candidate_mask(df).tolist()
 
-    assert mask == [True, False, False, True, False, False, True, True]
+    assert mask == [True, False, False, True, False, False, True, False]
 
 
 def test_is_expense_category_candidate_treats_false_string_as_not_transfer() -> None:
-    assert is_expense_category_candidate("debit", "false", "purchase")
-    assert not is_expense_category_candidate("debit", "true", "purchase")
+    assert is_expense_category_candidate("debit", "false", "expense")
+    assert not is_expense_category_candidate("debit", "true", "expense")
 
 
 def test_expense_category_candidate_mask_handles_training_frames_without_direction() -> None:
     df = pd.DataFrame(
         {
             "is_transfer": [False, True],
-            "transaction_type": ["purchase", "purchase"],
+            "transaction_type": ["expense", "expense"],
         }
     )
 

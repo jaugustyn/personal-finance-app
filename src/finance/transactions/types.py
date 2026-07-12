@@ -16,6 +16,14 @@ CategoryState = Literal[
     "rejected",
 ]
 
+TransactionTypeState = Literal[
+    "all",
+    "confirmed",
+    "provisional",
+    "needs_review",
+    "suggested",
+]
+
 
 @dataclass(frozen=True)
 class TransactionFilters:
@@ -33,6 +41,8 @@ class TransactionFilters:
     min_confidence: float | None = None
     max_confidence: float | None = None
     transaction_type: str | None = None
+    transaction_type_state: TransactionTypeState = "all"
+    transaction_type_source: str | None = None
     review_priority: bool = False
 
 

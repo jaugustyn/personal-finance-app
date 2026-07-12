@@ -26,6 +26,7 @@ class RuleDecision:
     rule_id: str
     reason: str
     matched: str | None = None
+    mode: str = "suggest_only"
 
 
 @dataclass(frozen=True)
@@ -38,6 +39,7 @@ class TransactionTypeRule:
     keywords: tuple[str, ...]
     regexes: tuple[re.Pattern[str], ...]
     special: str | None = None
+    mode: str = "suggest_only"
 
 
 @dataclass(frozen=True)
@@ -46,11 +48,6 @@ class SystemRulesRegistry:
     category_suggestion_candidate_types: frozenset[str]
     rule_categories_by_type: dict[str, str]
     transaction_type_rules: tuple[TransactionTypeRule, ...]
-    person_transfer_patterns: tuple[re.Pattern[str], ...]
-    person_transfer_exclusions: tuple[str, ...]
-    person_transfer_source_categories: frozenset[str]
-    person_refund_keywords: tuple[str, ...]
-    business_counterparty_terms: frozenset[str]
     pekao_category_map: dict[str, str | None]
     source_category_map: dict[str, str | None]
     llm_category_aliases: tuple[tuple[str, str], ...]
@@ -200,17 +197,16 @@ def _transaction_rules(data: Any) -> tuple[TransactionTypeRule, ...]:
         keywords = _string_list(rule.get("keywords", []), path=f"{rule_id}.keywords")
         regexes = _compile_patterns(rule.get("regexes", []), path=f"{rule_id}.regexes")
         special = rule.get("special")
-        if special is not None and special != "person_transfer":
+        if special is not None:
             raise SystemRulesError(f"{rule_id}.special has unsupported value: {special!r}.")
-        if special == "person_transfer" and result != TransactionType.PERSON_TRANSFER.value:
-            raise SystemRulesError(
-                f"{rule_id}.special=person_transfer must return person_transfer."
-            )
-        if special is None and not keywords and not regexes:
+        if not keywords and not regexes:
             raise SystemRulesError(f"{rule_id} must define keywords or regexes.")
         raw_reason = rule.get("reason")
         reason = raw_reason.strip() if isinstance(raw_reason, str) else ""
         reason = reason or "System transaction-type rule."
+        mode = str(rule.get("mode", "suggest_only"))
+        if mode not in {"auto_apply", "suggest_only"}:
+            raise SystemRulesError(f"{rule_id}.mode has unsupported value: {mode!r}.")
         rules.append(
             TransactionTypeRule(
                 id=rule_id,
@@ -221,6 +217,7 @@ def _transaction_rules(data: Any) -> tuple[TransactionTypeRule, ...]:
                 keywords=keywords,
                 regexes=regexes,
                 special=special,
+                mode=mode,
             )
         )
     if not rules:
@@ -259,7 +256,6 @@ def build_registry(data: dict[str, Any]) -> SystemRulesRegistry:
     version = data.get("version")
     if not isinstance(version, int) or version < 1:
         raise SystemRulesError("version must be a positive integer.")
-    person = _as_dict(data.get("person_transfer"), path="person_transfer")
     return SystemRulesRegistry(
         version=version,
         category_suggestion_candidate_types=_candidate_types(
@@ -270,32 +266,6 @@ def build_registry(data: dict[str, Any]) -> SystemRulesRegistry:
         ),
         rule_categories_by_type=_rule_categories_by_type(data.get("rule_categories_by_type")),
         transaction_type_rules=_transaction_rules(data.get("transaction_type_rules")),
-        person_transfer_patterns=_compile_patterns(
-            person.get("patterns", []),
-            path="person_transfer.patterns",
-        ),
-        person_transfer_exclusions=_string_list(
-            person.get("expense_exclusion_keywords", []),
-            path="person_transfer.expense_exclusion_keywords",
-        ),
-        person_transfer_source_categories=frozenset(
-            normalize_text(value)
-            for value in _string_list(
-                person.get("source_categories", []),
-                path="person_transfer.source_categories",
-            )
-        ),
-        person_refund_keywords=_string_list(
-            person.get("person_refund_keywords", []),
-            path="person_transfer.person_refund_keywords",
-        ),
-        business_counterparty_terms=frozenset(
-            normalize_text(value)
-            for value in _string_list(
-                person.get("business_counterparty_terms", []),
-                path="person_transfer.business_counterparty_terms",
-            )
-        ),
         pekao_category_map=_category_map(
             data.get("pekao_category_map"),
             path="pekao_category_map",

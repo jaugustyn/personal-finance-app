@@ -56,6 +56,10 @@ _TITLE_ALIASES = {
     "memo", "details", "narrative", "rodzaj", "type",
 }
 _CATEGORY_ALIASES = {"kategoria", "category", "tag"}
+_TRANSACTION_TYPE_ALIASES = {
+    "typ operacji", "rodzaj operacji", "transaction type", "operation type",
+    "transaction_type", "operation_type",
+}
 _EXTERNAL_ID_ALIASES = {
     "numer referencyjny", "referencja", "reference", "transaction id",
     "id", "external id",
@@ -69,6 +73,7 @@ _FIELD_ALIASES: dict[str, set[str]] = {
     "merchant": _MERCHANT_ALIASES,
     "title": _TITLE_ALIASES,
     "category": _CATEGORY_ALIASES,
+    "transaction_type": _TRANSACTION_TYPE_ALIASES,
     "external_id": _EXTERNAL_ID_ALIASES,
 }
 
@@ -171,6 +176,7 @@ class GenericCsvParser(BankParser):
         merchant_col = mapping.get("merchant")
         title_col = mapping.get("title")
         category_col = mapping.get("category")
+        transaction_type_col = mapping.get("transaction_type")
         ext_col = mapping.get("external_id")
 
         out: list[TransactionDTO] = []
@@ -188,6 +194,9 @@ class GenericCsvParser(BankParser):
             merchant = (row.get(merchant_col, "") if merchant_col else "").strip()
             title = (row.get(title_col, "") if title_col else "").strip()
             raw_category = (row.get(category_col, "") if category_col else "").strip() or None
+            raw_transaction_type = (
+                row.get(transaction_type_col, "") if transaction_type_col else ""
+            ).strip() or None
             external_id = (row.get(ext_col, "") if ext_col else "").strip() or None
 
             out.append(
@@ -200,6 +209,7 @@ class GenericCsvParser(BankParser):
                     merchant=merchant or title or "(brak)",
                     title=title,
                     raw_category=raw_category,
+                    raw_transaction_type=raw_transaction_type,
                     category=map_source_category(raw_category),
                     source=BankSource.UNKNOWN,
                     external_id=external_id,

@@ -62,6 +62,65 @@ def test_personal_rule_can_auto_apply_transfer_type(db_session) -> None:
     assert values["category_source"] is None
 
 
+def test_personal_suggest_only_type_precedes_bank_mapping(db_session) -> None:
+    create_rule(
+        db_session,
+        pattern="lidl",
+        transaction_type="asset_allocation",
+        mode="suggest_only",
+    )
+
+    values = transaction_values_for_dto(
+        db_session,
+        _dto(raw_transaction_type="PŁATNOŚĆ BLIK"),
+        import_id=1,
+        dedup_hash="bank-before-suggestion",
+    )
+
+    assert values["transaction_type"] is None
+    assert values["transaction_type_source"] is None
+    assert values["transaction_type_confirmation_method"] is None
+    assert values["transaction_type_predicted"] == "asset_allocation"
+    assert values["transaction_type_predicted_source"] == "rule"
+
+
+def test_bank_mapping_stays_a_suggestion(db_session) -> None:
+    values = transaction_values_for_dto(
+        db_session,
+        _dto(raw_transaction_type="PŁATNOŚĆ BLIK"),
+        import_id=1,
+        dedup_hash="bank-type-suggestion",
+    )
+
+    assert values["transaction_type"] is None
+    assert values["transaction_type_source"] is None
+    assert values["transaction_type_predicted"] == "expense"
+    assert values["transaction_type_predicted_source"] == "bank"
+    assert values["transaction_type_confidence"] is None
+
+
+def test_personal_suggest_only_type_stays_a_suggestion(db_session) -> None:
+    create_rule(
+        db_session,
+        pattern="cel oszczednosciowy",
+        pattern_target="title",
+        transaction_type="asset_allocation",
+        mode="suggest_only",
+    )
+
+    values = transaction_values_for_dto(
+        db_session,
+        _dto(merchant="Bank", title="Cel oszczednosciowy"),
+        import_id=1,
+        dedup_hash="personal-type-suggestion",
+    )
+
+    assert values["transaction_type"] is None
+    assert values["transaction_type_predicted"] == "asset_allocation"
+    assert values["transaction_type_predicted_source"] == "rule"
+    assert values["transaction_type_confidence"] is None
+
+
 def test_rule_category_is_not_applied_to_credit_income(db_session) -> None:
     values = transaction_values_for_dto(
         db_session,
@@ -75,7 +134,8 @@ def test_rule_category_is_not_applied_to_credit_income(db_session) -> None:
         dedup_hash="hash",
     )
 
-    assert values["transaction_type"] == "income"
+    assert values["transaction_type"] is None
+    assert values["transaction_type_predicted"] == "income"
     assert values["category"] is None
     assert values["category_source"] is None
 
@@ -102,5 +162,7 @@ def test_skip_categories_default_does_not_override(db_session) -> None:
         dedup_hash="hash",
         skip_categories=False,
     )
-    assert values["category"] == "food"
-    assert values["category_source"] == "bank"
+    assert values["category"] is None
+    assert values["category_predicted"] == "food"
+    assert values["category_confidence"] is None
+    assert values["category_predicted_source"] == "bank"
