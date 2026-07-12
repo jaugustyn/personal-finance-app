@@ -2,9 +2,10 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import {
   api,
+  apiErrorMessage,
   type CategoryState,
   type Direction,
   type FilterSummary,
@@ -49,19 +50,18 @@ export interface TransactionInitialFilters {
 export function ListView({ reviewMode, initialFilters }: ListViewProps) {
   const { t } = useT();
   const confirm = useConfirm();
-  const storagePrefix = reviewMode
-    ? "finance.transactions.review"
-    : "finance.transactions.list";
+  const commonStoragePrefix = "finance.transactions.filters";
+  const reviewStoragePrefix = "finance.transactions.review";
   const [search, setSearch] = useLocalStorageState(
-    `${storagePrefix}.search`,
+    `${commonStoragePrefix}.search`,
     "",
   );
   const [direction, setDirection] = useLocalStorageState<Direction>(
-    `${storagePrefix}.direction`,
+    `${commonStoragePrefix}.direction`,
     "all",
   );
   const [category, setCategory] = useLocalStorageState(
-    `${storagePrefix}.category`,
+    `${commonStoragePrefix}.category`,
     "",
   );
   const [page, setPage] = useState(0);
@@ -72,27 +72,27 @@ export function ListView({ reviewMode, initialFilters }: ListViewProps) {
     string | undefined
   >(initialFilters?.merchantCanonicalKey);
   const [includeTransfers, setIncludeTransfers] = useLocalStorageState(
-    `${storagePrefix}.includeTransfers`,
-    !reviewMode,
+    `${commonStoragePrefix}.includeTransfers`,
+    true,
   );
   const [transactionType, setTransactionType] = useLocalStorageState(
-    `${storagePrefix}.transactionType`,
+    `${commonStoragePrefix}.transactionType`,
     "",
   );
   const [dateFrom, setDateFrom] = useLocalStorageState(
-    `${storagePrefix}.dateFrom`,
+    `${commonStoragePrefix}.dateFrom`,
     "",
   );
   const [dateTo, setDateTo] = useLocalStorageState(
-    `${storagePrefix}.dateTo`,
+    `${commonStoragePrefix}.dateTo`,
     "",
   );
   const [minConfidence, setMinConfidence] = useLocalStorageState(
-    `${storagePrefix}.minConfidence`,
+    `${reviewStoragePrefix}.minConfidence`,
     "",
   );
   const [reviewState, setReviewState] = useLocalStorageState<CategoryState>(
-    `${storagePrefix}.reviewState`,
+    `${reviewStoragePrefix}.reviewState`,
     "assignable",
   );
   const [selected, setSelected] = useState<Set<number>>(new Set());
@@ -115,7 +115,7 @@ export function ListView({ reviewMode, initialFilters }: ListViewProps) {
     setImportId(initialFilters.importId);
     setMinConfidence("");
     setReviewState(initialFilters.reviewState ?? "assignable");
-    setIncludeTransfers(initialFilters.includeTransfers ?? !reviewMode);
+    setIncludeTransfers(initialFilters.includeTransfers ?? true);
     setPage(0);
   }, [
     initialFilters?.key,
@@ -151,7 +151,7 @@ export function ListView({ reviewMode, initialFilters }: ListViewProps) {
     import_id: importId,
     include_transfers: includeTransfers,
     category_state: (reviewMode ? reviewState : "all") as CategoryState,
-    min_confidence: confidenceFilter,
+    min_confidence: reviewMode ? confidenceFilter : undefined,
     transaction_type: transactionType || undefined,
     review_priority: reviewMode,
   };
@@ -164,11 +164,13 @@ export function ListView({ reviewMode, initialFilters }: ListViewProps) {
         offset: page * PAGE_SIZE,
         ...filterParams,
       }),
+    placeholderData: keepPreviousData,
   });
 
   const summaryQuery = useQuery<FilterSummary>({
     queryKey: transactionQueryKeys.filterSummary(filterParams),
     queryFn: () => api.filterSummary(filterParams),
+    placeholderData: keepPreviousData,
   });
 
   const filtered = useMemo<Transaction[]>(() => {
@@ -196,19 +198,31 @@ export function ListView({ reviewMode, initialFilters }: ListViewProps) {
         .map((tx) => tx.id),
     [filtered, selected],
   );
+  const selectedTypeSuggestionIds = useMemo(
+    () =>
+      filtered
+        .filter(
+          (tx) =>
+            selected.has(tx.id) &&
+            Boolean(tx.transaction_type_needs_review),
+        )
+        .map((tx) => tx.id),
+    [filtered, selected],
+  );
 
   const {
     patchCategory,
     deleteOne,
     patchType,
+    acceptTypeSuggestion,
     patchAnnotations,
     bulkCategorize,
     bulkSetType,
     bulkDelete,
-    markTransfer,
     acceptSuggestions,
     rejectSuggestions,
     restoreSuggestions,
+    acceptTypeSuggestions,
   } = useTransactionMutations({
     clearSelection: () => setSelected(new Set()),
     clearBulkCategory: () => setBulkCat(null),
@@ -222,8 +236,8 @@ export function ListView({ reviewMode, initialFilters }: ListViewProps) {
     transactionType !== "" ||
     dateFrom !== "" ||
     dateTo !== "" ||
-    minConfidence !== "" ||
-    includeTransfers !== !reviewMode ||
+    (reviewMode && minConfidence !== "") ||
+    includeTransfers !== true ||
     (reviewMode && reviewState !== "assignable") ||
     merchantCanonicalKey !== undefined ||
     importId !== undefined;
@@ -235,9 +249,11 @@ export function ListView({ reviewMode, initialFilters }: ListViewProps) {
     setTransactionType("");
     setDateFrom("");
     setDateTo("");
-    setMinConfidence("");
-    setIncludeTransfers(!reviewMode);
-    setReviewState("assignable");
+    setIncludeTransfers(true);
+    if (reviewMode) {
+      setMinConfidence("");
+      setReviewState("assignable");
+    }
     setImportId(undefined);
     setMerchantCanonicalKey(undefined);
     setPage(0);
@@ -336,9 +352,11 @@ export function ListView({ reviewMode, initialFilters }: ListViewProps) {
       />
 
       <BulkActionsBar
+        reviewMode={reviewMode}
         selectedCount={selected.size}
         selectedSuggestionCount={selectedSuggestionIds.length}
         selectedRejectedSuggestionCount={selectedRejectedSuggestionIds.length}
+        selectedTypeSuggestionCount={selectedTypeSuggestionIds.length}
         bulkCategory={bulkCat}
         bulkType={bulkType}
         bulkCategorizePending={bulkCategorize.isPending}
@@ -346,6 +364,7 @@ export function ListView({ reviewMode, initialFilters }: ListViewProps) {
         bulkDeletePending={bulkDelete.isPending}
         rejectPending={rejectSuggestions.isPending}
         restorePending={restoreSuggestions.isPending}
+        typeSuggestionPending={acceptTypeSuggestions.isPending}
         onBulkCategoryChange={setBulkCat}
         onBulkTypeChange={(value) =>
           setBulkType(value === "none" ? "" : value)
@@ -368,23 +387,25 @@ export function ListView({ reviewMode, initialFilters }: ListViewProps) {
         onRestoreSuggestions={() =>
           restoreSuggestions.mutate(selectedRejectedSuggestionIds)
         }
-        onMarkTransfer={() =>
-          markTransfer.mutate({
-            ids: Array.from(selected),
-            transfer: true,
-          })
+        onAcceptTypeSuggestions={() =>
+          acceptTypeSuggestions.mutate(selectedTypeSuggestionIds)
         }
         onDelete={onConfirmDelete}
         onCancel={() => {
           setSelected(new Set());
+          setBulkCat(null);
           setBulkType("");
         }}
       />
 
       {query.isError ? (
-        <ErrorState onRetry={() => query.refetch()} />
+        <ErrorState
+          description={apiErrorMessage(query.error)}
+          onRetry={() => query.refetch()}
+        />
       ) : (
         <TransactionsTable
+          reviewMode={reviewMode}
           rows={filtered}
           fetchedCount={query.data?.length ?? 0}
           totalCount={summaryQuery.data?.count}
@@ -394,10 +415,11 @@ export function ListView({ reviewMode, initialFilters }: ListViewProps) {
           acceptPending={acceptSuggestions.isPending}
           rejectPending={rejectSuggestions.isPending}
           restorePending={restoreSuggestions.isPending}
+          typeAcceptPending={acceptTypeSuggestion.isPending}
           onToggleAll={toggleAll}
           onToggleOne={toggleOne}
-          onPatchCategory={(id, value, subcategory, rememberRule) =>
-            patchCategory.mutate({ id, value, subcategory, rememberRule })
+          onPatchCategory={(id, value, subcategory) =>
+            patchCategory.mutate({ id, value, subcategory })
           }
           onPatchType={(id, value) => patchType.mutate({ id, value })}
           onAcceptSuggestion={(id) =>
@@ -409,6 +431,7 @@ export function ListView({ reviewMode, initialFilters }: ListViewProps) {
           }
           onRejectSuggestion={(id) => rejectSuggestions.mutate([id])}
           onRestoreSuggestion={(id) => restoreSuggestions.mutate([id])}
+          onAcceptTypeSuggestion={(id) => acceptTypeSuggestion.mutate(id)}
           onDeleteOne={onDeleteOne}
           onPatchAnnotations={(id, notes, tags) =>
             patchAnnotations.mutate({ id, notes, tags })

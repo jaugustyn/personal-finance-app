@@ -18,7 +18,7 @@ import {
 import { TableCell, TableRow } from "@/components/ui/table";
 import type { Transaction } from "@/lib/api";
 import { tTransactionType, useT } from "@/lib/i18n";
-import { formatCurrency, formatDate } from "@/lib/utils";
+import { cn, formatCurrency, formatDate } from "@/lib/utils";
 import {
   ArrowLeftRight,
   Check,
@@ -35,12 +35,14 @@ import { TransactionCategoryCell } from "./transaction-category-cell";
 
 interface TransactionRowProps {
   tx: Transaction;
+  reviewMode: boolean;
   selected: boolean;
   editing: boolean;
   editingType: boolean;
   acceptPending: boolean;
   rejectPending: boolean;
   restorePending: boolean;
+  typeAcceptPending: boolean;
   onToggle: () => void;
   onEdit: () => void;
   onCancelEdit: () => void;
@@ -49,12 +51,12 @@ interface TransactionRowProps {
   onPatchCategory: (
     value: string | null,
     subcategory: string | null,
-    rememberRule?: boolean,
   ) => void;
   onPatchType: (value: string) => void;
   onAcceptSuggestion: () => void;
   onRejectSuggestion: () => void;
   onRestoreSuggestion: () => void;
+  onAcceptTypeSuggestion: () => void;
   onDelete: () => void;
   annotating: boolean;
   onAnnotate: () => void;
@@ -64,12 +66,14 @@ interface TransactionRowProps {
 
 export function TransactionRow({
   tx,
+  reviewMode,
   selected,
   editing,
   editingType,
   acceptPending,
   rejectPending,
   restorePending,
+  typeAcceptPending,
   onToggle,
   onEdit,
   onCancelEdit,
@@ -80,6 +84,7 @@ export function TransactionRow({
   onAcceptSuggestion,
   onRejectSuggestion,
   onRestoreSuggestion,
+  onAcceptTypeSuggestion,
   onDelete,
   annotating,
   onAnnotate,
@@ -96,9 +101,31 @@ export function TransactionRow({
     Boolean(tx.title) &&
     !sameDisplayText(tx.title, merchantDisplay) &&
     !sameDisplayText(tx.title, rawMerchant);
+  const typeSource =
+    tx.transaction_type_source ??
+    tx.transaction_type_predicted_source ??
+    "direction";
+  const typeSourceLabels: Record<string, string> = {
+    manual: t("transactions.typeSource.manual"),
+    model: t("transactions.typeSource.model"),
+    rule: t("transactions.typeSource.rule"),
+    bank: t("transactions.typeSource.bank"),
+    direction: t("transactions.typeSource.direction"),
+  };
+  const typeSourceLabel = typeSourceLabels[typeSource] ?? typeSource;
+  const typeNeedsReview = tx.transaction_type_needs_review ?? false;
+  const typeStatusLabel = t("transactions.needsReview");
+  const displayedType = typeNeedsReview
+    ? tx.transaction_type_predicted
+    : tx.transaction_type_effective;
 
   return (
-    <TableRow className={selected ? "bg-primary/5" : ""}>
+    <TableRow
+      className={cn(
+        "divide-x divide-border/40",
+        selected && "bg-primary/5",
+      )}
+    >
       <TableCell>
         <Checkbox
           checked={selected}
@@ -162,17 +189,46 @@ export function TransactionRow({
       >
         {editingType ? (
           <TransactionTypeInlineSelect
-            value={tx.transaction_type || "purchase"}
+            value={displayedType || "expense"}
             onChange={onPatchType}
             onCancel={onCancelEditType}
           />
         ) : (
-          <Badge variant="outline" className="max-w-full truncate">
-            {tx.is_transfer ? (
-              <ArrowLeftRight className="mr-1 h-3 w-3 shrink-0" />
+          <div className="space-y-1">
+            <Badge
+              variant="outline"
+              className={cn(
+                "max-w-full truncate",
+                typeNeedsReview && "border-dashed",
+              )}
+              title={`${typeSourceLabel}${typeNeedsReview ? ` · ${typeStatusLabel}` : ""}`}
+            >
+              {tx.is_transfer ? (
+                <ArrowLeftRight className="mr-1 h-3 w-3 shrink-0" />
+              ) : null}
+              {tTransactionType(t, displayedType)}
+            </Badge>
+            {typeNeedsReview ? (
+              <div className="flex items-center gap-1">
+                <span className="text-[10px] text-muted-foreground">
+                  {typeStatusLabel}
+                </span>
+                {tx.transaction_type_predicted || tx.transaction_type ? (
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant="ghost"
+                    className="h-6 w-6 text-positive hover:text-positive"
+                    disabled={typeAcceptPending}
+                    onClick={onAcceptTypeSuggestion}
+                    aria-label={t("transactions.acceptSuggestion")}
+                  >
+                    <Check className="h-3 w-3" />
+                  </Button>
+                ) : null}
+              </div>
             ) : null}
-            {tTransactionType(t, tx.transaction_type)}
-          </Badge>
+          </div>
         )}
       </TableCell>
       <TableCell
@@ -187,6 +243,7 @@ export function TransactionRow({
       >
         <TransactionCategoryCell
           tx={tx}
+          reviewMode={reviewMode}
           editing={editing}
           acceptPending={acceptPending}
           rejectPending={rejectPending}
@@ -257,9 +314,9 @@ export function TransactionRow({
                     <DropdownMenuItem
                       key={type}
                       onClick={() => onPatchType(type)}
-                      disabled={tx.transaction_type === type}
+                      disabled={tx.transaction_type_effective === type}
                     >
-                      {tx.transaction_type === type ? (
+                      {tx.transaction_type_effective === type ? (
                         <Check className="h-4 w-4 text-primary" />
                       ) : (
                         <span className="h-4 w-4" />

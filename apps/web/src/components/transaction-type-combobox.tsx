@@ -10,7 +10,6 @@ import {
   CircleDollarSign,
   CreditCard,
   HelpCircle,
-  Landmark,
   Receipt,
   RotateCcw,
   WalletCards,
@@ -39,16 +38,14 @@ import {
 import { cn } from "@/lib/utils";
 
 const TYPE_ICONS: Record<TransactionTypeOption, LucideIcon> = {
-  purchase: CreditCard,
-  person_transfer: ArrowLeftRight,
-  own_transfer: ArrowLeftRight,
+  expense: CreditCard,
   salary: Banknote,
   income: CircleDollarSign,
   refund: RotateCcw,
+  own_transfer: ArrowLeftRight,
   cash_withdrawal: ArrowDownCircle,
   debt_payment: Receipt,
-  bank_fee: Landmark,
-  savings_investment: WalletCards,
+  asset_allocation: WalletCards,
   other: HelpCircle,
 };
 

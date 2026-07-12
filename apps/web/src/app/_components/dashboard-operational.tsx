@@ -24,6 +24,8 @@ import { transactionsHref } from "@/lib/transaction-links";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
+type AttentionTone = "info" | "negative" | "warning";
+
 export function AttentionPanel({
   reviewRows,
   anomalies,
@@ -148,7 +150,7 @@ export function AttentionPanel({
 
         <AttentionSection
           icon={CalendarClock}
-          tone="primary"
+          tone="warning"
           title={t("dashboard.operational.payments")}
           count={upcoming.length}
           href="/subscriptions"
@@ -156,7 +158,7 @@ export function AttentionPanel({
           loading={subscriptionsLoading}
         >
           {upcoming.slice(0, 2).map((row) => (
-            <UpcomingRow key={row.subscription_key} row={row} tone="primary" />
+            <UpcomingRow key={row.subscription_key} row={row} tone="warning" />
           ))}
         </AttentionSection>
       </CardContent>
@@ -175,7 +177,7 @@ function AttentionSection({
   children,
 }: {
   icon: LucideIcon;
-  tone: "info" | "negative" | "primary";
+  tone: AttentionTone;
   title: string;
   count: number;
   href: string;
@@ -192,8 +194,8 @@ function AttentionSection({
             tone === "info" && "border-info/20 bg-info/10 text-info",
             tone === "negative" &&
               "border-negative/20 bg-negative/10 text-negative",
-            tone === "primary" &&
-              "border-primary/20 bg-primary/10 text-primary",
+            tone === "warning" &&
+              "border-warning/20 bg-warning/10 text-warning",
           )}
         >
           <Icon className="h-4 w-4" />
@@ -235,7 +237,7 @@ function AttentionItem({
   children,
 }: {
   href: string;
-  tone: "info" | "negative" | "primary";
+  tone: AttentionTone;
   children: ReactNode;
 }) {
   return (
@@ -248,7 +250,7 @@ function AttentionItem({
           "absolute bottom-2.5 left-1.5 top-2.5 w-0.5 rounded-full opacity-70 transition-opacity group-hover:opacity-100",
           tone === "info" && "bg-info",
           tone === "negative" && "bg-negative",
-          tone === "primary" && "bg-primary",
+          tone === "warning" && "bg-warning",
         )}
       />
       {children}
@@ -261,7 +263,7 @@ function UpcomingRow({
   tone,
 }: {
   row: SubscriptionUpcomingPayment;
-  tone: "info" | "negative" | "primary";
+  tone: AttentionTone;
 }) {
   return (
     <AttentionItem href="/subscriptions" tone={tone}>

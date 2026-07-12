@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 import { FeedbackQualityCard } from "./_components/feedback-quality-card";
 import { MetricCard } from "./_components/metric-card";
+import { ModelLifecycleCard } from "./_components/model-lifecycle-card";
 import { ModelComparisonCard } from "./_components/model-comparison-card";
 import { RetrainSignalCard } from "./_components/retrain-signal-card";
 import {
@@ -50,7 +51,9 @@ export default function MlPage() {
     queryKey: ["mlRetrainStatus"],
     queryFn: () => api.retrainStatus(),
     refetchInterval: (query) =>
-      query.state.data?.status === "running" ? 2500 : false,
+      ["queued", "running"].includes(query.state.data?.status ?? "")
+        ? 2500
+        : false,
   });
   const currentRetrainStatus = retrainStatus.data?.status ?? "idle";
 
@@ -58,32 +61,45 @@ export default function MlPage() {
     const previousStatus = lastRetrainStatusRef.current;
     const message = retrainStatus.data?.message;
 
-    if (currentRetrainStatus === "running") {
-      if (previousStatus !== "running") {
+    if (["queued", "running"].includes(currentRetrainStatus)) {
+      if (!previousStatus || !["queued", "running"].includes(previousStatus)) {
         toast.loading(t("ml.retrainRunning"), { id: RETRAIN_TOAST_ID });
       }
       lastRetrainStatusRef.current = currentRetrainStatus;
       return;
     }
 
-    if (previousStatus === "running") {
+    if (previousStatus && ["queued", "running"].includes(previousStatus)) {
       if (currentRetrainStatus === "completed") {
         toast.success(t("ml.retrainDone"), { id: RETRAIN_TOAST_ID });
         void qc.invalidateQueries({ queryKey: ["mlDashboard"] });
-      } else if (currentRetrainStatus === "aborted") {
+        void qc.invalidateQueries({ queryKey: ["mlModelVersions"] });
+      } else if (["aborted", "interrupted"].includes(currentRetrainStatus)) {
         toast.error(message ?? t("ml.retrainAborted"), { id: RETRAIN_TOAST_ID });
       } else if (currentRetrainStatus === "failed") {
-        toast.error(message ?? t("ml.retrainFailed"), { id: RETRAIN_TOAST_ID });
+        toast.error(
+          retrainStatus.data?.error ?? message ?? t("ml.retrainFailed"),
+          { id: RETRAIN_TOAST_ID },
+        );
       } else {
         toast.dismiss(RETRAIN_TOAST_ID);
       }
     }
 
     lastRetrainStatusRef.current = currentRetrainStatus;
-  }, [currentRetrainStatus, qc, retrainStatus.data?.message, t]);
+  }, [
+    currentRetrainStatus,
+    qc,
+    retrainStatus.data?.error,
+    retrainStatus.data?.message,
+    t,
+  ]);
 
   const retrain = useMutation({
-    mutationFn: (params: { estimator: string; feature_set: string }) =>
+    mutationFn: (params: {
+      estimator?: string;
+      feature_set?: string;
+    }) =>
       api.retrainClassifier(params),
     onSuccess: () => {
       lastRetrainStatusRef.current = "running";
@@ -109,7 +125,10 @@ export default function MlPage() {
   const best = status?.best_model;
   const recommendation = data?.recommendation;
   const isRetraining =
-    retrain.isPending || retrainStatus.data?.status === "running";
+    retrain.isPending ||
+    ["queued", "running"].includes(retrainStatus.data?.status ?? "");
+  const trainingReady = data?.readiness.training_ready ?? false;
+  const reclassificationAvailable = Boolean(status?.exists && !status.load_error);
   const showModelStatusBadge = Boolean(
     data &&
       status &&
@@ -117,13 +136,9 @@ export default function MlPage() {
         !status.exists ||
         data.retrain_signal.retrain_recommended),
   );
-  const retrainParams = {
-    estimator: recommendation?.estimator ?? "linear_svc_calibrated",
-    feature_set: recommendation?.feature_set ?? "feature_v2",
-  };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       <PageHeader title={t("ml.title")} description={t("ml.subtitle")} />
 
       {query.isLoading ? (
@@ -137,7 +152,7 @@ export default function MlPage() {
             <TabsTrigger value="technical">{t("ml.tab.technical")}</TabsTrigger>
           </TabsList>
 
-          <TabsContent value="overview" className="space-y-4">
+          <TabsContent value="overview" className="space-y-3">
             <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.75fr)]">
               <Card>
                 <CardHeader className="flex flex-row items-start justify-between gap-3">
@@ -229,7 +244,7 @@ export default function MlPage() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  <div className="min-h-[104px] rounded-md border bg-muted/20 p-4">
+                  <div className="rounded-md border bg-muted/20 p-3">
                     <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
                       <span>{t("ml.comparison.nextTraining")}</span>
                     </div>
@@ -241,10 +256,10 @@ export default function MlPage() {
                     </p>
                   </div>
 
-                  <div className="flex min-h-[66px] flex-wrap items-start gap-2">
+                  <div className="flex flex-wrap items-start gap-2">
                     <Button
-                      onClick={() => retrain.mutate(retrainParams)}
-                      disabled={isRetraining}
+                      onClick={() => retrain.mutate({})}
+                      disabled={isRetraining || !trainingReady}
                     >
                       {isRetraining ? (
                         <Loader2 className="h-4 w-4 animate-spin" />
@@ -256,7 +271,9 @@ export default function MlPage() {
                     <Button
                       variant="outline"
                       onClick={() => reclassify.mutate()}
-                      disabled={reclassify.isPending}
+                      disabled={
+                        reclassify.isPending || !reclassificationAvailable
+                      }
                     >
                       {reclassify.isPending ? (
                         <Loader2 className="h-4 w-4 animate-spin" />
@@ -272,11 +289,25 @@ export default function MlPage() {
                       <span>{t("ml.retrainRunningHint")}</span>
                     </div>
                   ) : null}
+                  {!trainingReady ? (
+                    <div className="rounded-md border border-warning/30 bg-warning/10 p-3 text-xs text-muted-foreground">
+                      <div className="font-medium text-warning">
+                        {t("ml.trainingDataNotReady")}
+                      </div>
+                      <p className="mt-1">
+                        {t("ml.trainingDataProgress", {
+                          current: data.readiness.total_labelled,
+                          minimum: data.readiness.minimum_total,
+                        })}
+                      </p>
+                    </div>
+                  ) : null}
                 </CardContent>
               </Card>
             </div>
 
             <RetrainSignalCard signal={data.retrain_signal} />
+            <ModelLifecycleCard />
           </TabsContent>
 
           <TabsContent value="technical" className="space-y-4">

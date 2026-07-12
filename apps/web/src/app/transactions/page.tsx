@@ -8,8 +8,13 @@ import { PageHeader } from "@/components/page-header";
 import { useLocalStorageState } from "@/hooks/use-local-storage-state";
 import { GroupsView } from "./_components/groups-view";
 import { ListView, type TransactionInitialFilters } from "./_components/list-view";
+import { SubjectSwitcher } from "./_components/subject-switcher";
+import { TypeReviewView } from "./_components/type-review-view";
 import { ViewSwitcher } from "./_components/view-switcher";
-import type { TransactionsView } from "./_lib/constants";
+import type {
+  TransactionsSubject,
+  TransactionsView,
+} from "./_lib/constants";
 
 export default function TransactionsPage() {
   const { t } = useT();
@@ -17,16 +22,23 @@ export default function TransactionsPage() {
     "finance.transactions.view",
     "list",
   );
+  const [subject, setSubject] = useLocalStorageState<TransactionsSubject>(
+    "finance.transactions.subject",
+    "category",
+  );
   const [initialFilters, setInitialFilters] =
     useState<TransactionInitialFilters>({ key: "" });
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const urlView = parseView(params.get("view"));
+    const urlSubject = parseSubject(params.get("subject"));
+    const hasFilters = hasTransactionFilterParams(params);
     if (urlView) setView(urlView);
-    else if (hasTransactionFilterParams(params)) setView("list");
+    else if (hasFilters) setView("list");
+    if (urlSubject) setSubject(urlSubject);
     setInitialFilters({
-      key: window.location.search,
+      key: hasFilters ? window.location.search : "",
       search: valueOrUndefined(params.get("search")),
       category: valueOrUndefined(params.get("category")),
       merchantCanonicalKey: valueOrUndefined(params.get("merchant_canonical_key")),
@@ -40,17 +52,30 @@ export default function TransactionsPage() {
         (urlView === "review" ? "assignable" : undefined),
       includeTransfers: parseIncludeTransfers(params.get("include_transfers")),
     });
-  }, [setView]);
+  }, [setSubject, setView]);
+
+  const handleViewChange = (nextView: TransactionsView) => {
+    setView(nextView);
+    setInitialFilters({ key: "" });
+  };
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        title={t("transactions.title")}
-        actions={<ViewSwitcher value={view} onChange={setView} />}
-      />
+      <PageHeader title={t("transactions.title")} />
+      <div className="flex w-fit max-w-full flex-wrap items-center gap-1 rounded-lg border bg-card p-1 shadow-sm">
+        <ViewSwitcher value={view} onChange={handleViewChange} />
+        {view === "review" ? (
+          <>
+            <div className="mx-1 hidden h-6 w-px bg-border sm:block" />
+            <SubjectSwitcher value={subject} onChange={setSubject} />
+          </>
+        ) : null}
+      </div>
 
       {view === "groups" ? (
         <GroupsView />
+      ) : view === "review" && subject === "transaction_type" ? (
+        <TypeReviewView />
       ) : (
         <ListView
           key={`${view}:${initialFilters.key}`}
@@ -60,6 +85,11 @@ export default function TransactionsPage() {
       )}
     </div>
   );
+}
+
+function parseSubject(value: string | null): TransactionsSubject | null {
+  if (value === "category" || value === "transaction_type") return value;
+  return null;
 }
 
 function valueOrUndefined(value: string | null): string | undefined {

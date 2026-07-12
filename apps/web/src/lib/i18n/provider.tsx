@@ -107,7 +107,7 @@ export function tTransactionType(
   t: I18nContextValue["t"],
   transactionType: string | null | undefined,
 ): string {
-  if (!transactionType) return t("transactions.type.purchase");
+  if (!transactionType) return t("transactions.type.expense");
   const key = `transactions.type.${transactionType}` as TranslationKey;
   if (key in DICT.pl) return t(key);
   return transactionType;

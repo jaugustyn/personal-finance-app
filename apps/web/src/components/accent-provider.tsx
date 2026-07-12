@@ -1,7 +1,6 @@
 "use client";
 
 import * as React from "react";
-import { withThemeTransition } from "@/lib/theme-transition";
 
 export const ACCENTS = ["emerald", "teal", "blue", "violet"] as const;
 export type Accent = (typeof ACCENTS)[number];
@@ -32,11 +31,9 @@ export function AccentProvider({ children }: { children: React.ReactNode }) {
   }, [accent]);
 
   const setAccent = React.useCallback((next: Accent) => {
-    withThemeTransition(() => {
-      setAccentState(next);
-      applyAccent(next);
-      window.localStorage.setItem(STORAGE_KEY, next);
-    });
+    setAccentState(next);
+    applyAccent(next);
+    window.localStorage.setItem(STORAGE_KEY, next);
   }, []);
 
   const value = React.useMemo(

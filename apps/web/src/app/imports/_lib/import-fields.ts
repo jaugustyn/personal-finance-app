@@ -8,6 +8,7 @@ export const LOGICAL_FIELDS = [
   { key: "merchant", required: true, recommended: false, description: "" },
   { key: "title", required: false, recommended: true, description: "" },
   { key: "category", required: false, recommended: false, description: "" },
+  { key: "transaction_type", required: false, recommended: false, description: "" },
   { key: "external_id", required: false, recommended: false, description: "" },
 ] as const;
 

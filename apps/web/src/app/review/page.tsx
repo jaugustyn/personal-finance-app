@@ -2,7 +2,12 @@
 
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
-import { api, type ReviewQueueItem, type ReviewSummary } from "@/lib/api";
+import {
+  api,
+  type CategoryState,
+  type ReviewQueueItem,
+  type ReviewSummary,
+} from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -12,18 +17,36 @@ import { PageHeader } from "@/components/page-header";
 import { EmptyState } from "@/components/empty-state";
 import { ErrorState } from "@/components/error-state";
 import { CardGridSkeleton } from "@/components/ui/skeleton";
-import { useT, tCategory, type TranslationKey } from "@/lib/i18n";
+import {
+  useT,
+  tCategory,
+  tTransactionType,
+  type TranslationKey,
+} from "@/lib/i18n";
 import { transactionsHref } from "@/lib/transaction-links";
 import { ClipboardCheck, Layers, ListChecks, Repeat } from "lucide-react";
 
-const COUNT_KEYS = [
+type CountKey = keyof ReviewSummary["counts"];
+
+const PRIMARY_COUNT_KEYS: CountKey[] = [
+  "categorized",
   "uncategorized",
+  "ready_to_accept",
+];
+const SECONDARY_COUNT_KEYS: CountKey[] = [
   "no_suggestion",
   "low_confidence",
-  "ready_to_accept",
   "rejected",
-  "categorized",
-] as const;
+];
+
+const COUNT_FILTERS: Record<CountKey, CategoryState> = {
+  categorized: "categorized",
+  uncategorized: "uncategorized",
+  no_suggestion: "uncategorized",
+  low_confidence: "needs_review",
+  ready_to_accept: "suggested",
+  rejected: "rejected",
+};
 
 type RareClassRow = { category: string; count: number };
 type RecurringMerchantRow = {
@@ -114,27 +137,134 @@ export default function ReviewPage() {
         <EmptyState title={t("common.empty")} icon={ClipboardCheck} />
       ) : (
         <div className="space-y-6">
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {COUNT_KEYS.map((key) => (
-              <Card key={key}>
-                <CardContent className="space-y-1 p-4">
-                  <div className="text-xs text-muted-foreground">
-                    {t(`review.counts.${key}`)}
-                  </div>
-                  <div className="text-2xl font-semibold tabular-nums">
-                    {query.data!.counts[key]}
-                  </div>
-                </CardContent>
-              </Card>
+          <div className="grid gap-3 sm:grid-cols-3">
+            {PRIMARY_COUNT_KEYS.map((key) => (
+              <ReviewCountCard
+                key={key}
+                label={t(`review.counts.${key}`)}
+                count={query.data.counts[key]}
+                categoryState={COUNT_FILTERS[key]}
+              />
             ))}
           </div>
+
+          <div className="flex flex-wrap gap-x-6 gap-y-2 rounded-lg border bg-muted/20 px-4 py-3">
+            {SECONDARY_COUNT_KEYS.map((key) => (
+              <Link
+                key={key}
+                href={transactionsHref({
+                  view: "review",
+                  category_state: COUNT_FILTERS[key],
+                })}
+                className="inline-flex items-baseline gap-2 text-sm hover:text-primary"
+              >
+                <span className="text-muted-foreground">
+                  {t(`review.counts.${key}`)}
+                </span>
+                <span className="font-semibold tabular-nums">
+                  {query.data.counts[key]}
+                </span>
+              </Link>
+            ))}
+          </div>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">{t("review.types.title")}</CardTitle>
+              <p className="text-xs text-muted-foreground">
+                {t("review.types.subtitle")}
+              </p>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                <TypeQualityMetric
+                  label={t("review.types.confirmed")}
+                  value={query.data.transaction_type_quality.confirmed}
+                />
+                <TypeQualityMetric
+                  label={t("review.types.needsReview")}
+                  value={query.data.transaction_type_quality.needs_review}
+                  href={transactionsHref({
+                    view: "review",
+                    subject: "transaction_type",
+                  })}
+                />
+                <TypeQualityMetric
+                  label={t("review.types.suggested")}
+                  value={query.data.transaction_type_quality.suggested}
+                />
+                <TypeQualityMetric
+                  label={t("review.types.unsupported")}
+                  value={query.data.transaction_type_quality.unsupported_classes.length}
+                />
+              </div>
+              <div className="grid gap-4 border-t pt-4 lg:grid-cols-2">
+                <div className="space-y-4">
+                  <TypeDistribution
+                    title={t("review.types.sources")}
+                    values={query.data.transaction_type_quality.source_counts}
+                  />
+                  <TypeDistribution
+                    title={t("review.types.suggestionSources")}
+                    values={
+                      query.data.transaction_type_quality.suggestion_source_counts
+                    }
+                  />
+                </div>
+                <div>
+                  <div className="text-xs font-medium text-muted-foreground">
+                    {t("review.types.corrections")}
+                  </div>
+                  <div className="mt-2 space-y-1 text-sm">
+                    {query.data.transaction_type_quality.corrections.length ? (
+                      query.data.transaction_type_quality.corrections
+                        .slice(0, 5)
+                        .map((row) => (
+                          <div
+                            key={`${row.source}:${row.suggested_or_previous}:${row.final}`}
+                            className="flex justify-between gap-3"
+                          >
+                            <span className="truncate text-muted-foreground">
+                              {row.source}: {row.suggested_or_previous} → {row.final}
+                            </span>
+                            <span className="font-medium tabular-nums">{row.count}</span>
+                          </div>
+                        ))
+                    ) : (
+                      <span className="text-muted-foreground">
+                        {t("review.types.noCorrections")}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+              {query.data.transaction_type_quality.unsupported_classes.length ? (
+                <div className="border-t pt-4">
+                  <div className="text-xs font-medium text-muted-foreground">
+                    {t("review.types.unsupportedList")}
+                  </div>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {query.data.transaction_type_quality.unsupported_classes.map(
+                      (type) => (
+                        <Badge key={type} variant="outline">
+                          {tTransactionType(t, type)}
+                        </Badge>
+                      ),
+                    )}
+                  </div>
+                </div>
+              ) : null}
+            </CardContent>
+          </Card>
+
+          <ReviewActionPanel data={query.data} />
 
           <ReviewQueuePanel
             rows={queueQuery.data}
             isLoading={queueQuery.isLoading}
+            isError={queueQuery.isError}
+            onRetry={() => queueQuery.refetch()}
           />
-
-          <ReviewActionPanel data={query.data} />
 
           <div className="grid gap-6 lg:grid-cols-2">
             <Card>
@@ -185,6 +315,73 @@ export default function ReviewPage() {
   );
 }
 
+function TypeQualityMetric({
+  label,
+  value,
+  href,
+}: {
+  label: string;
+  value: number;
+  href?: string;
+}) {
+  const content = (
+    <div className="rounded-md border bg-muted/10 p-3 transition-colors hover:bg-muted/30">
+      <div className="text-xs text-muted-foreground">{label}</div>
+      <div className="mt-1 text-xl font-semibold tabular-nums">{value}</div>
+    </div>
+  );
+  return href ? <Link href={href}>{content}</Link> : content;
+}
+
+function TypeDistribution({
+  title,
+  values,
+}: {
+  title: string;
+  values: Record<string, number>;
+}) {
+  return (
+    <div>
+      <div className="text-xs font-medium text-muted-foreground">{title}</div>
+      <div className="mt-2 flex flex-wrap gap-2">
+        {Object.entries(values).length ? (
+          Object.entries(values).map(([source, count]) => (
+            <Badge key={source} variant="outline">
+              {source}: {count}
+            </Badge>
+          ))
+        ) : (
+          <span className="text-sm text-muted-foreground">—</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ReviewCountCard({
+  label,
+  count,
+  categoryState,
+}: {
+  label: string;
+  count: number;
+  categoryState: CategoryState;
+}) {
+  return (
+    <Link
+      href={transactionsHref({ view: "review", category_state: categoryState })}
+      className="rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+    >
+      <Card className="h-full transition-colors hover:border-primary/40 hover:bg-muted/20">
+        <CardContent className="space-y-1 p-4">
+          <div className="text-xs text-muted-foreground">{label}</div>
+          <div className="text-2xl font-semibold tabular-nums">{count}</div>
+        </CardContent>
+      </Card>
+    </Link>
+  );
+}
+
 function reviewReasonLabel(code: string, t: ReturnType<typeof useT>["t"]): string {
   const keys: Record<string, TranslationKey> = {
     manual_required: "review.queue.reason.manual_required",
@@ -208,9 +405,13 @@ function reviewReasonLabel(code: string, t: ReturnType<typeof useT>["t"]): strin
 function ReviewQueuePanel({
   rows,
   isLoading,
+  isError,
+  onRetry,
 }: {
   rows: ReviewQueueItem[] | undefined;
   isLoading: boolean;
+  isError: boolean;
+  onRetry: () => void;
 }) {
   const { t } = useT();
   const columns: DataTableColumn<ReviewQueueItem>[] = [
@@ -305,15 +506,24 @@ function ReviewQueuePanel({
         </p>
       </CardHeader>
       <CardContent>
-        <DataTable
-          columns={columns}
-          data={rows}
-          isLoading={isLoading}
-          rowKey={(row) => row.transaction_id}
-          emptyTitle={t("review.queue.empty")}
-          initialSort={{ id: "score", dir: "desc" }}
-          tableClassName="min-w-[760px]"
-        />
+        {isError ? (
+          <div className="flex items-center justify-between gap-3 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm">
+            <span className="text-destructive">{t("review.queue.error")}</span>
+            <Button variant="outline" size="sm" onClick={onRetry}>
+              {t("common.retry")}
+            </Button>
+          </div>
+        ) : (
+          <DataTable
+            columns={columns}
+            data={rows}
+            isLoading={isLoading}
+            rowKey={(row) => row.transaction_id}
+            emptyTitle={t("review.queue.empty")}
+            initialSort={{ id: "score", dir: "desc" }}
+            tableClassName="min-w-[760px]"
+          />
+        )}
       </CardContent>
     </Card>
   );
@@ -321,7 +531,7 @@ function ReviewQueuePanel({
 
 function ReviewActionPanel({ data }: { data: ReviewSummary }) {
   const { t } = useT();
-  const needsReview = data.counts.uncategorized + data.counts.no_suggestion;
+  const needsReview = data.counts.uncategorized;
   const rareCount = data.rare_classes.length;
   const recurringCount = data.recurring_unruled.length;
   const hasActions = needsReview > 0 || rareCount > 0 || recurringCount > 0;

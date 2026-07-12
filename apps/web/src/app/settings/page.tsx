@@ -28,16 +28,14 @@ import {
 const PROFILE_KEY = ["profile"] as const;
 const RULES_KEY = ["personalRules"] as const;
 const TRANSACTION_TYPES = [
-  "purchase",
-  "own_transfer",
-  "person_transfer",
+  "expense",
   "salary",
   "income",
   "refund",
+  "own_transfer",
   "cash_withdrawal",
   "debt_payment",
-  "bank_fee",
-  "savings_investment",
+  "asset_allocation",
   "other",
 ] as const;
 

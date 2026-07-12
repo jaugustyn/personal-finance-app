@@ -4,19 +4,16 @@ export { TRANSACTION_TYPE_OPTIONS } from "@/lib/transaction-types";
 export const PAGE_SIZE = 100;
 
 export type TransactionsView = "list" | "review" | "groups";
-
-export const CATEGORY_CANDIDATE_TYPES = new Set([
-  "purchase",
-  "bank_fee",
-  "savings_investment",
-  "other",
-]);
+export type TransactionsSubject = "category" | "transaction_type";
 
 export function isCategoryCandidate(tx: Transaction): boolean {
+  const effectiveType = tx.transaction_type_effective ??
+    tx.transaction_type ??
+    (tx.direction === "credit" ? "income" : "expense");
   return (
-    tx.direction === "debit" &&
     !tx.is_transfer &&
-    CATEGORY_CANDIDATE_TYPES.has(tx.transaction_type || "purchase")
+    ((tx.direction === "debit" && effectiveType === "expense") ||
+      (tx.direction === "credit" && effectiveType === "refund"))
   );
 }
 

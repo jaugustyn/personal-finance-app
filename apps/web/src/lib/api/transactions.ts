@@ -6,6 +6,7 @@ import type {
   MerchantGroup,
   ReviewSummary,
   Transaction,
+  TransactionTypeState,
 } from "./types";
 
 export type TransactionFilterParams = {
@@ -23,6 +24,8 @@ export type TransactionFilterParams = {
   min_confidence?: number;
   max_confidence?: number;
   transaction_type?: string;
+  transaction_type_state?: TransactionTypeState;
+  transaction_type_source?: string;
   review_priority?: boolean;
 };
 
@@ -52,6 +55,11 @@ function transactionFilterQueryValues(
     min_confidence: params.min_confidence,
     max_confidence: params.max_confidence,
     transaction_type: params.transaction_type,
+    transaction_type_state:
+      params.transaction_type_state && params.transaction_type_state !== "all"
+        ? params.transaction_type_state
+        : undefined,
+    transaction_type_source: params.transaction_type_source,
     review_priority: params.review_priority ? true : undefined,
   };
 }
@@ -90,10 +98,18 @@ export const transactionsApi = {
         remember_rule: options.remember_rule ?? false,
       }),
     }),
-  patchType: (id: number, transaction_type: string) =>
+  patchType: (
+    id: number,
+    transaction_type: string,
+    allow_direction_mismatch = false,
+  ) =>
     request<Transaction>(`/transactions/${id}/type`, {
       method: "PATCH",
-      body: JSON.stringify({ transaction_type }),
+      body: JSON.stringify({ transaction_type, allow_direction_mismatch }),
+    }),
+  acceptTypeSuggestion: (id: number) =>
+    request<Transaction>(`/transactions/${id}/type-suggestion/accept`, {
+      method: "POST",
     }),
   deleteTransaction: (id: number) =>
     request<void>(`/transactions/${id}`, { method: "DELETE" }),
@@ -112,6 +128,7 @@ export const transactionsApi = {
     category?: string | null;
     mark_transfer?: boolean;
     transaction_type?: string | null;
+    allow_direction_mismatch?: boolean;
   }) =>
     request<{ affected: number }>("/transactions/bulk/categorize", {
       method: "POST",
@@ -129,6 +146,11 @@ export const transactionsApi = {
     }),
   restoreSuggestions: (payload: { ids?: number[] }) =>
     request<{ affected: number }>("/transactions/bulk/restore-suggestions", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  acceptTypeSuggestions: (payload: { ids?: number[] }) =>
+    request<{ affected: number }>("/transactions/bulk/type-suggestions/accept", {
       method: "POST",
       body: JSON.stringify(payload),
     }),

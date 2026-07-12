@@ -7,22 +7,36 @@ export type CategoryState =
   | "assignable"
   | "needs_review"
   | "rejected";
+export type TransactionTypeState =
+  | "all"
+  | "confirmed"
+  | "provisional"
+  | "needs_review"
+  | "suggested";
 
 export interface OverviewStats {
   period_from: string | null;
   period_to: string | null;
   total_income: number;
+  gross_expenses: number;
+  total_refunds: number;
   total_expenses: number;
+  total_debt_payments: number;
+  total_asset_allocations: number;
   net_cashflow: number;
   savings_rate: number;
   tx_count: number;
   base_currency: string;
+  provisional_transaction_count: number;
 }
 
 export interface CashflowPoint {
   month: string;
   income: number;
   expenses: number;
+  refunds: number;
+  debt_payments: number;
+  asset_allocations: number;
   net: number;
 }
 
@@ -73,11 +87,27 @@ export interface Transaction {
   category: string | null;
   subcategory: string | null;
   category_source: string | null;
+  category_confirmation_method?: string | null;
+  category_confirmed_at?: string | null;
+  category_origin_ref?: string | null;
   category_predicted: string | null;
   category_confidence: number | null;
   category_predicted_source: string | null;
+  category_predicted_ref?: string | null;
   category_suggestion_rejected: boolean;
-  transaction_type: string;
+  raw_transaction_type?: string | null;
+  transaction_type: string | null;
+  transaction_type_source?: string | null;
+  transaction_type_confirmation_method?: string | null;
+  transaction_type_confirmed_at?: string | null;
+  transaction_type_origin_ref?: string | null;
+  transaction_type_predicted?: string | null;
+  transaction_type_confidence?: number | null;
+  transaction_type_predicted_source?: string | null;
+  transaction_type_predicted_ref?: string | null;
+  transaction_type_effective?: string | null;
+  transaction_type_is_provisional?: boolean;
+  transaction_type_needs_review?: boolean;
   source: string;
   is_transfer?: boolean;
   notes?: string | null;
@@ -179,6 +209,25 @@ export interface ReviewSummary {
   confusion_hotspots: Record<string, unknown>[];
   anomaly_feedback: Record<string, unknown>;
   subscription_feedback: Record<string, unknown>;
+  transaction_type_quality: {
+    total: number;
+    confirmed: number;
+    provisional: number;
+    needs_review: number;
+    suggested: number;
+    rejected: number;
+    confirmed_share: number | null;
+    class_counts: Record<string, number>;
+    source_counts: Record<string, number>;
+    suggestion_source_counts: Record<string, number>;
+    corrections: {
+      source: string;
+      suggested_or_previous: string;
+      final: string;
+      count: number;
+    }[];
+    unsupported_classes: string[];
+  };
   confidence_threshold: number;
   rare_class_threshold: number;
 }
@@ -623,6 +672,7 @@ export interface MlModelStatus {
   exists: boolean;
   path: string;
   updated_at: string | null;
+  model_version_id: string | null;
   estimator: string | null;
   feature_set: string | null;
   classes: string[];
@@ -666,6 +716,12 @@ export interface MlReadiness {
   below_minimum_per_category: string[];
   below_recommended_per_category: string[];
   date_span_months: number | null;
+  calendar_months: number;
+  date_span_days: number;
+  technical_ready: boolean;
+  thesis_data_ready: boolean;
+  training_ready: boolean;
+  training_preflight_reasons: string[];
   recommended_history_months: string;
   training_labels_source: string;
   category_predicted_is_ground_truth: boolean;
@@ -716,15 +772,57 @@ export interface MlComparison {
 export interface MlRetrainResponse {
   status: string;
   message: string;
+  job_id: string | null;
 }
 
 export interface MlRetrainStatus {
+  job_id: string | null;
   status: "idle" | "running" | "completed" | "aborted" | "failed" | string;
   message: string | null;
   estimator: string | null;
   feature_set: string | null;
   started_at: string | null;
   finished_at: string | null;
+  report_path: string | null;
+  result: Record<string, unknown>;
+  error: string | null;
+}
+
+export interface MlModelVersion {
+  id: string;
+  job_id: string | null;
+  estimator: string;
+  feature_set: string;
+  status: "candidate" | "active" | "archived" | "rejected" | string;
+  artifact_sha256: string;
+  dataset_fingerprint: string;
+  evaluation_set_id: string | null;
+  metrics: Record<string, unknown>;
+  gates: Record<string, unknown>;
+  promotable: boolean;
+  created_at: string;
+  activated_at: string | null;
+}
+
+export interface MlEvaluationSet {
+  active: boolean;
+  id: string | null;
+  status: string | null;
+  ontology_version: string | null;
+  dataset_fingerprint: string | null;
+  created_at: string | null;
+  config: Record<string, unknown>;
+  time_count: number | null;
+  merchant_count: number | null;
+  excluded_training_count: number | null;
+  data_readiness: {
+    ready: boolean;
+    total: number;
+    category_counts: Record<string, number>;
+    calendar_months: number;
+    date_span_days: number;
+    failures: string[];
+  } | null;
 }
 
 export interface MlReclassifyResponse {

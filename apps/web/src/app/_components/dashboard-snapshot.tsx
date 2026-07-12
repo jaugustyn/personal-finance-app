@@ -1,6 +1,8 @@
+/* eslint-disable react-hooks/refs -- the ref intentionally preserves the last settled tone while fetching */
 "use client";
 
 import type { ComponentType } from "react";
+import { useEffect, useRef } from "react";
 import {
   ArrowDownCircle,
   ArrowUpCircle,
@@ -19,6 +21,7 @@ export function FinancialSnapshot({
   savingsRate,
   currency,
   isLoading,
+  isFetching,
 }: {
   income: number;
   expenses: number;
@@ -26,8 +29,14 @@ export function FinancialSnapshot({
   savingsRate: number;
   currency: string;
   isLoading: boolean;
+  isFetching: boolean;
 }) {
   const { t } = useT();
+  const netTone = netToneForValue(net);
+  const savingsTone = savingsRateTone(savingsRate);
+  const isPending = isLoading || isFetching;
+  const stableNetTone = useStableTone(netTone, isPending);
+  const stableSavingsTone = useStableTone(savingsTone, isPending);
 
   return (
     <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -47,13 +56,13 @@ export function FinancialSnapshot({
         label={t("dashboard.kpi.net")}
         value={isLoading ? "..." : formatCurrency(net, currency)}
         icon={PiggyBank}
-        tone="pink"
+        tone={stableNetTone}
       />
       <SnapshotCard
         label={t("dashboard.kpi.savings")}
         value={isLoading ? "..." : formatPercent(savingsRate)}
         icon={Percent}
-        tone={savingsRateTone(savingsRate)}
+        tone={stableSavingsTone}
       />
     </section>
   );
@@ -77,15 +86,15 @@ function SnapshotCard({
           <div className="text-sm font-medium text-muted-foreground">{label}</div>
           <div
             className={cn(
-              "flex h-8 w-8 items-center justify-center rounded-md border",
+              "flex h-8 w-8 items-center justify-center rounded-md border transition-colors duration-200 ease-out",
               tone === "positive" &&
                 "border-positive/20 bg-positive/10 text-positive",
               tone === "negative" &&
                 "border-negative/20 bg-negative/10 text-negative",
-              tone === "info" && "border-info/20 bg-info/10 text-info",
               tone === "warning" &&
                 "border-warning/20 bg-warning/10 text-warning",
-              tone === "pink" && "border-chart-6/20 bg-chart-6/10 text-chart-6",
+              tone === "neutral" &&
+                "border-border bg-muted/60 text-muted-foreground",
             )}
           >
             <Icon className="h-4 w-4" />
@@ -99,11 +108,26 @@ function SnapshotCard({
   );
 }
 
-type SnapshotTone = "positive" | "negative" | "info" | "warning" | "pink";
+type SnapshotTone = "positive" | "negative" | "warning" | "neutral";
 
 function savingsRateTone(value: number): SnapshotTone {
   if (value < 0) return "negative";
-  if (value < 0.1) return "warning";
-  if (value < 0.3) return "info";
+  if (value < 0.2) return "warning";
   return "positive";
+}
+
+function netToneForValue(value: number): SnapshotTone {
+  if (value < 0) return "negative";
+  if (value > 0) return "positive";
+  return "neutral";
+}
+
+function useStableTone(tone: SnapshotTone, isPending: boolean) {
+  const stableTone = useRef(tone);
+
+  useEffect(() => {
+    if (!isPending) stableTone.current = tone;
+  }, [isPending, tone]);
+
+  return isPending ? stableTone.current : tone;
 }

@@ -16,5 +16,3 @@ export const transactionMutationInvalidationKeys = [
   ["byCategory"] as const,
   ["recent"] as const,
 ];
-
-export const personalRulesQueryKey = ["personalRules"] as const;

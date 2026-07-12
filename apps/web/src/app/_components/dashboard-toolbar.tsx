@@ -36,8 +36,8 @@ export function DashboardToolbar({
   };
 
   return (
-    <section className="sticky -top-4 z-40 -mx-4 border-b bg-background px-4 py-3 sm:-top-6 sm:-mx-6 sm:px-6">
-      <div className="flex flex-wrap items-end gap-3">
+    <section className="sticky -top-4 z-40 -mx-4 border-b border-border/70 bg-background/95 px-4 py-3 backdrop-blur sm:-top-6 sm:-mx-6 sm:px-6">
+      <div className="flex flex-wrap items-end gap-x-4 gap-y-2">
         <ToolbarGroup label={t("dashboard.toolbar.period")}>
           {RANGE_OPTIONS.map((value) => (
             <ToolbarButton
@@ -88,10 +88,10 @@ export function ToolbarGroup({
 }) {
   return (
     <div className="min-w-0">
-      <div className="flex h-4 items-center px-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+      <div className="mb-1 flex h-4 items-center px-0.5 text-xs font-medium text-muted-foreground">
         {label}
       </div>
-      <div className="mt-1 inline-flex min-h-10 max-w-full flex-wrap items-center gap-1 rounded-lg border bg-muted/40 p-1 shadow-inner shadow-foreground/[0.03]">
+      <div className="inline-flex min-h-9 max-w-full flex-wrap items-center gap-0.5 rounded-md bg-muted/55 p-0.5">
         {children}
       </div>
     </div>
@@ -112,10 +112,10 @@ export function ToolbarButton({
       type="button"
       onClick={onClick}
       className={cn(
-        "flex h-8 items-center whitespace-nowrap rounded-md px-3.5 text-xs font-medium leading-none transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background",
+        "flex h-8 items-center whitespace-nowrap rounded-[calc(var(--radius)-0.25rem)] px-3 text-xs font-medium leading-none transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background",
         active
-          ? "bg-card text-foreground shadow-sm ring-1 ring-border/80"
-          : "text-muted-foreground hover:bg-background/70 hover:text-foreground",
+          ? "bg-background text-foreground shadow-sm"
+          : "text-muted-foreground hover:bg-background/60 hover:text-foreground",
       )}
     >
       {children}

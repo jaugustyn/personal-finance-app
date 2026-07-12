@@ -2,13 +2,10 @@
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { api } from "@/lib/api";
+import { api, isApiError } from "@/lib/api";
 import { useT } from "@/lib/i18n";
 import { showErrorToast } from "@/lib/toasts";
-import {
-  personalRulesQueryKey,
-  transactionMutationInvalidationKeys,
-} from "./query-keys";
+import { transactionMutationInvalidationKeys } from "./query-keys";
 
 interface UseTransactionMutationsOptions {
   clearSelection: () => void;
@@ -35,20 +32,16 @@ export function useTransactionMutations({
       id,
       value,
       subcategory,
-      rememberRule,
     }: {
       id: number;
       value: string | null;
       subcategory?: string | null;
-      rememberRule?: boolean;
     }) =>
       api.patchCategory(id, value, {
         subcategory,
-        remember_rule: rememberRule,
       }),
     onSuccess: () => {
       invalidateAll();
-      qc.invalidateQueries({ queryKey: personalRulesQueryKey });
       toast.success(t("toast.saved"));
     },
     onError: (error) => showErrorToast(error, t("toast.error")),
@@ -64,8 +57,29 @@ export function useTransactionMutations({
   });
 
   const patchType = useMutation({
-    mutationFn: ({ id, value }: { id: number; value: string }) =>
-      api.patchType(id, value),
+    mutationFn: async ({ id, value }: { id: number; value: string }) => {
+      try {
+        return await api.patchType(id, value);
+      } catch (error) {
+        if (
+          isApiError(error) &&
+          error.code === "transaction_type_direction_mismatch" &&
+          window.confirm(t("transactions.typeDirectionWarning"))
+        ) {
+          return api.patchType(id, value, true);
+        }
+        throw error;
+      }
+    },
+    onSuccess: () => {
+      invalidateAll();
+      toast.success(t("toast.saved"));
+    },
+    onError: (error) => showErrorToast(error, t("toast.error")),
+  });
+
+  const acceptTypeSuggestion = useMutation({
+    mutationFn: (id: number) => api.acceptTypeSuggestion(id),
     onSuccess: () => {
       invalidateAll();
       toast.success(t("toast.saved"));
@@ -103,11 +117,27 @@ export function useTransactionMutations({
   });
 
   const bulkSetType = useMutation({
-    mutationFn: (vars: { ids: number[]; transactionType: string }) =>
-      api.bulkCategorize({
+    mutationFn: async (vars: { ids: number[]; transactionType: string }) => {
+      const payload = {
         ids: vars.ids,
         transaction_type: vars.transactionType,
-      }),
+      };
+      try {
+        return await api.bulkCategorize(payload);
+      } catch (error) {
+        if (
+          isApiError(error) &&
+          error.code === "transaction_type_direction_mismatch" &&
+          window.confirm(t("transactions.typeDirectionWarning"))
+        ) {
+          return api.bulkCategorize({
+            ...payload,
+            allow_direction_mismatch: true,
+          });
+        }
+        throw error;
+      }
+    },
     onSuccess: () => {
       invalidateAll();
       clearSelection();
@@ -180,10 +210,21 @@ export function useTransactionMutations({
     onError: (error) => showErrorToast(error, t("toast.error")),
   });
 
+  const acceptTypeSuggestions = useMutation({
+    mutationFn: (ids: number[]) => api.acceptTypeSuggestions({ ids }),
+    onSuccess: () => {
+      invalidateAll();
+      clearSelection();
+      toast.success(t("toast.saved"));
+    },
+    onError: (error) => showErrorToast(error, t("toast.error")),
+  });
+
   return {
     patchCategory,
     deleteOne,
     patchType,
+    acceptTypeSuggestion,
     patchAnnotations,
     bulkCategorize,
     bulkSetType,
@@ -192,5 +233,6 @@ export function useTransactionMutations({
     acceptSuggestions,
     rejectSuggestions,
     restoreSuggestions,
+    acceptTypeSuggestions,
   };
 }

@@ -1,11 +1,9 @@
 "use client";
 
-import { useState } from "react";
 import { CategoryCombobox } from "@/components/category-combobox";
 import { ConfidenceBadge } from "@/components/status-badge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import type { Transaction } from "@/lib/api";
 import { tCategory, type TranslationKey, useT } from "@/lib/i18n";
 import { Ban, Check, RotateCcw } from "lucide-react";
@@ -17,6 +15,7 @@ import {
 
 interface TransactionCategoryCellProps {
   tx: Transaction;
+  reviewMode: boolean;
   editing: boolean;
   acceptPending: boolean;
   rejectPending: boolean;
@@ -25,7 +24,6 @@ interface TransactionCategoryCellProps {
   onPatchCategory: (
     value: string | null,
     subcategory: string | null,
-    rememberRule?: boolean,
   ) => void;
   onAcceptSuggestion: () => void;
   onRejectSuggestion: () => void;
@@ -34,6 +32,7 @@ interface TransactionCategoryCellProps {
 
 export function TransactionCategoryCell({
   tx,
+  reviewMode,
   editing,
   acceptPending,
   rejectPending,
@@ -50,28 +49,15 @@ export function TransactionCategoryCell({
   const hasRejectedMarker =
     !tx.category && tx.category_suggestion_rejected && isCategoryCandidate(tx);
   const decisionAction = tx.classification_decision?.action;
-  const [rememberRule, setRememberRule] = useState(false);
 
   if (editing) {
     return (
-      <div className="space-y-2">
-        <CategoryCombobox
-          value={tx.category}
-          subValue={tx.subcategory}
-          onChange={(sel) =>
-            onPatchCategory(sel.category, sel.subcategory, rememberRule)
-          }
-          autoFocus
-        />
-        <label className="flex items-center gap-2 text-xs text-muted-foreground">
-          <Checkbox
-            checked={rememberRule}
-            onCheckedChange={(c) => setRememberRule(c === true)}
-            className="h-3.5 w-3.5"
-          />
-          {t("transactions.rememberRule")}
-        </label>
-      </div>
+      <CategoryCombobox
+        value={tx.category}
+        subValue={tx.subcategory}
+        onChange={(sel) => onPatchCategory(sel.category, sel.subcategory)}
+        autoFocus
+      />
     );
   }
 
@@ -81,6 +67,41 @@ export function TransactionCategoryCell({
         {tCategory(t, tx.category)}
       </Badge>
     );
+  }
+
+  if (!reviewMode && hasSuggestion) {
+    return (
+      <div className="flex items-start gap-1.5">
+        <button
+          type="button"
+          onClick={onEdit}
+          className="flex min-w-0 flex-1 flex-col items-start gap-1 text-left"
+          title={t("transactions.suggestion")}
+        >
+          <Badge variant="outline" className="max-w-full truncate border-dashed">
+            {tCategory(t, tx.category_predicted)}
+          </Badge>
+          <span className="text-[10px] text-muted-foreground">
+            {t("transactions.needsReview")}
+          </span>
+        </button>
+        <Button
+          size="icon"
+          variant="ghost"
+          className="h-7 w-7 shrink-0 text-positive hover:text-positive"
+          disabled={acceptPending}
+          onClick={onAcceptSuggestion}
+          title={t("transactions.acceptOne")}
+          aria-label={t("transactions.acceptOne")}
+        >
+          <Check className="h-3.5 w-3.5" />
+        </Button>
+      </div>
+    );
+  }
+
+  if (!reviewMode && (hasRejectedSuggestion || hasRejectedMarker)) {
+    return <span className="text-muted-foreground">-</span>;
   }
 
   if (hasRejectedSuggestion) {

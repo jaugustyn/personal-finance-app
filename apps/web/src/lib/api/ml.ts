@@ -6,9 +6,11 @@ import type {
   ForecastResponse,
   MlComparison,
   MlDashboard,
+  MlEvaluationSet,
   FeedbackReport,
   MlFeedbackInput,
   MlFeedbackResponse,
+  MlModelVersion,
   MlReclassifyResponse,
   MlRetrainResponse,
   MlRetrainStatus,
@@ -36,16 +38,30 @@ export const mlApi = {
   reclassifyTransactions: () =>
     request<MlReclassifyResponse>("/ml/reclassify", { method: "POST" }),
   retrainClassifier: (
-    params: { estimator?: string; feature_set?: string } = {},
+    params: {
+      estimator?: string;
+      feature_set?: string;
+      include_benchmarks?: boolean;
+    } = {},
   ) =>
     request<MlRetrainResponse>(
       withQuery("/ml/retrain", {
         estimator: params.estimator,
         feature_set: params.feature_set,
+        include_benchmarks: params.include_benchmarks || undefined,
       }),
       { method: "POST" },
     ),
   retrainStatus: () => request<MlRetrainStatus>("/ml/retrain/status"),
+  modelVersions: () => request<MlModelVersion[]>("/ml/model-versions"),
+  activateModelVersion: (modelId: string) =>
+    request<MlModelVersion>(`/ml/model-versions/${modelId}/activate`, {
+      method: "POST",
+    }),
+  currentEvaluationSet: () =>
+    request<MlEvaluationSet>("/ml/evaluation-sets/current"),
+  freezeEvaluationSet: () =>
+    request<MlEvaluationSet>("/ml/evaluation-sets/freeze", { method: "POST" }),
   forecast: (category: string | null, horizon = 3) =>
     request<ForecastResponse>(withQuery("/forecast", { horizon, category })),
   anomalies: (

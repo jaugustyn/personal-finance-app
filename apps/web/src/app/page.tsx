@@ -206,6 +206,14 @@ export default function DashboardPage() {
         onChartLimitChange={setChartLimit}
       />
 
+      {(overviewData?.provisional_transaction_count ?? 0) > 0 ? (
+        <div className="mt-3 rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-muted-foreground">
+          {t("dashboard.provisionalTypes", {
+            count: overviewData?.provisional_transaction_count ?? 0,
+          })}
+        </div>
+      ) : null}
+
       <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
         <main className="min-w-0 space-y-7">
           <DashboardSection
@@ -219,6 +227,7 @@ export default function DashboardPage() {
               savingsRate={savingsRate}
               currency={baseCurrency}
               isLoading={overview.isLoading}
+              isFetching={overview.isFetching}
             />
 
             <ChartCard title={t("dashboard.cashflowTitle")}>
@@ -368,7 +377,15 @@ function normalizeCashflowMonths(
     const point = byMonth.get(key);
     return point
       ? { ...point, month: key }
-      : { month: key, income: 0, expenses: 0, net: 0 };
+      : {
+          month: key,
+          income: 0,
+          expenses: 0,
+          refunds: 0,
+          debt_payments: 0,
+          asset_allocations: 0,
+          net: 0,
+        };
   });
 }
 

@@ -1,10 +1,14 @@
 import type { CategoryState, Direction } from "@/lib/api";
-import type { TransactionsView } from "@/app/transactions/_lib/constants";
+import type {
+  TransactionsSubject,
+  TransactionsView,
+} from "@/app/transactions/_lib/constants";
 import { buildQuery } from "@/lib/api/query";
 
 export function transactionsHref(
   params: {
     view?: TransactionsView;
+    subject?: TransactionsSubject;
     search?: string | null;
     category?: string | null;
     direction?: Direction | null;
@@ -18,9 +22,13 @@ export function transactionsHref(
   } = {},
 ): string {
   const categoryState =
-    params.category_state ?? (params.view === "review" ? "assignable" : null);
+    params.category_state ??
+    (params.view === "review" && params.subject !== "transaction_type"
+      ? "assignable"
+      : null);
   const qs = buildQuery({
     view: params.view && params.view !== "list" ? params.view : undefined,
+    subject: params.subject,
     search: params.search?.trim(),
     category: params.category,
     direction:

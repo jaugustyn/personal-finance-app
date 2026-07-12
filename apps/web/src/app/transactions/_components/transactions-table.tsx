@@ -25,6 +25,7 @@ import {
 import { TransactionRow } from "./transaction-row";
 
 interface TransactionsTableProps {
+  reviewMode: boolean;
   rows: Transaction[];
   fetchedCount: number;
   totalCount?: number;
@@ -34,18 +35,19 @@ interface TransactionsTableProps {
   acceptPending: boolean;
   rejectPending: boolean;
   restorePending: boolean;
+  typeAcceptPending: boolean;
   onToggleAll: () => void;
   onToggleOne: (id: number) => void;
   onPatchCategory: (
     id: number,
     value: string | null,
     subcategory: string | null,
-    rememberRule?: boolean,
   ) => void;
   onPatchType: (id: number, value: string) => void;
   onAcceptSuggestion: (id: number) => void;
   onRejectSuggestion: (id: number) => void;
   onRestoreSuggestion: (id: number) => void;
+  onAcceptTypeSuggestion: (id: number) => void;
   onDeleteOne: (id: number) => void;
   onPatchAnnotations: (
     id: number,
@@ -57,6 +59,7 @@ interface TransactionsTableProps {
 }
 
 export function TransactionsTable({
+  reviewMode,
   rows,
   fetchedCount,
   totalCount,
@@ -66,6 +69,7 @@ export function TransactionsTable({
   acceptPending,
   rejectPending,
   restorePending,
+  typeAcceptPending,
   onToggleAll,
   onToggleOne,
   onPatchCategory,
@@ -73,6 +77,7 @@ export function TransactionsTable({
   onAcceptSuggestion,
   onRejectSuggestion,
   onRestoreSuggestion,
+  onAcceptTypeSuggestion,
   onDeleteOne,
   onPatchAnnotations,
   onPreviousPage,
@@ -107,7 +112,7 @@ export function TransactionsTable({
           <>
             <Table className="table-fixed">
               <TableHeader>
-                <TableRow>
+                <TableRow className="divide-x divide-border/40">
                   <TableHead className="w-10">
                     <Checkbox
                       checked={allOnPageSelected}
@@ -163,19 +168,21 @@ export function TransactionsTable({
                   <TransactionRow
                     key={tx.id}
                     tx={tx}
+                    reviewMode={reviewMode}
                     selected={selected.has(tx.id)}
                     editing={editing === tx.id}
                     editingType={editingType === tx.id}
                     acceptPending={acceptPending}
                     rejectPending={rejectPending}
                     restorePending={restorePending}
+                    typeAcceptPending={typeAcceptPending}
                     onToggle={() => onToggleOne(tx.id)}
                     onEdit={() => setEditing(tx.id)}
                     onCancelEdit={() => setEditing(null)}
                     onEditType={() => setEditingType(tx.id)}
                     onCancelEditType={() => setEditingType(null)}
-                    onPatchCategory={(value, subcategory, rememberRule) => {
-                      onPatchCategory(tx.id, value, subcategory, rememberRule);
+                    onPatchCategory={(value, subcategory) => {
+                      onPatchCategory(tx.id, value, subcategory);
                       setEditing(null);
                     }}
                     onPatchType={(value) => {
@@ -185,6 +192,7 @@ export function TransactionsTable({
                     onAcceptSuggestion={() => onAcceptSuggestion(tx.id)}
                     onRejectSuggestion={() => onRejectSuggestion(tx.id)}
                     onRestoreSuggestion={() => onRestoreSuggestion(tx.id)}
+                    onAcceptTypeSuggestion={() => onAcceptTypeSuggestion(tx.id)}
                     onDelete={() => onDeleteOne(tx.id)}
                     annotating={annotating === tx.id}
                     onAnnotate={() => setAnnotating(tx.id)}

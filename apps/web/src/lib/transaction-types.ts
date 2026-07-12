@@ -1,14 +1,12 @@
 export const TRANSACTION_TYPE_OPTIONS = [
-  "purchase",
-  "person_transfer",
-  "own_transfer",
+  "expense",
   "salary",
   "income",
   "refund",
+  "own_transfer",
   "cash_withdrawal",
   "debt_payment",
-  "bank_fee",
-  "savings_investment",
+  "asset_allocation",
   "other",
 ] as const;
 
