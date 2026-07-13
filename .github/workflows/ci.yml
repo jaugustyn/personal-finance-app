@@ -40,7 +40,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v6
         with:
-          node-version: "20"
+          node-version: "24"
           cache: "npm"
           cache-dependency-path: apps/web/package-lock.json
       - name: Install
@@ -67,7 +67,7 @@ jobs:
           pip-audit --strict --progress-spinner off || true
       - uses: actions/setup-node@v6
         with:
-          node-version: "20"
+          node-version: "24"
           cache: "npm"
           cache-dependency-path: apps/web/package-lock.json
       - name: npm audit
