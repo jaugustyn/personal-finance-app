@@ -46,7 +46,7 @@ export default function RootLayout({
                       <Sidebar />
                       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
                         <AppHeader />
-                        <main className="min-w-0 flex-1 overflow-y-auto p-4 sm:p-6">
+                        <main className="min-w-0 flex-1 overflow-y-auto [scrollbar-gutter:stable] p-4 sm:p-6">
                           <ErrorBoundary>{children}</ErrorBoundary>
                         </main>
                       </div>
