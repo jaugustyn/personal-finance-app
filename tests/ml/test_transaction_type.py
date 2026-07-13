@@ -16,6 +16,7 @@ from finance.ml.transaction_type.train import build_evidence_report, evaluate
 
 def _multiclass_df() -> pd.DataFrame:
     rows: list[dict[str, object]] = []
+    confirmed_at = datetime.now(UTC)
     examples = {
         "expense": [
             ("Lidl", "zakupy spozywcze", -42.0, "debit"),
@@ -47,6 +48,8 @@ def _multiclass_df() -> pd.DataFrame:
                     "direction": direction,
                     "source": "synthetic",
                     "transaction_type": tx_type,
+                    "transaction_type_confirmation_method": "manual",
+                    "transaction_type_confirmed_at": confirmed_at,
                 }
             )
     return pd.DataFrame(rows)
@@ -66,6 +69,8 @@ def test_prepare_training_frame_filters_invalid_transaction_types() -> None:
                         "direction": "debit",
                         "source": "synthetic",
                         "transaction_type": "not_a_type",
+                        "transaction_type_confirmation_method": "manual",
+                        "transaction_type_confirmed_at": datetime.now(UTC),
                     },
                     {
                         "merchant": "Empty",
@@ -74,6 +79,8 @@ def test_prepare_training_frame_filters_invalid_transaction_types() -> None:
                         "direction": "debit",
                         "source": "synthetic",
                         "transaction_type": None,
+                        "transaction_type_confirmation_method": "manual",
+                        "transaction_type_confirmed_at": datetime.now(UTC),
                     },
                 ]
             ),
@@ -88,6 +95,29 @@ def test_prepare_training_frame_filters_invalid_transaction_types() -> None:
     assert (prepared["label_source"] == LABEL_SOURCE).all()
     assert prepared["text"].str.len().min() > 0
     assert prepared["abs_amount"].min() > 0
+
+
+def test_transaction_type_evidence_requires_gold_provenance() -> None:
+    without_provenance = _multiclass_df().drop(
+        columns=[
+            "transaction_type_confirmation_method",
+            "transaction_type_confirmed_at",
+        ]
+    )
+    report = build_evidence_report(without_provenance)
+
+    assert report["skipped"] is True
+    assert report["reason"] == "no_valid_gold_transaction_type_labels"
+    assert report["diagnostics"]["input_rows"] == len(without_provenance)
+
+
+def test_transaction_type_evidence_excludes_automatic_labels() -> None:
+    silver = _multiclass_df().assign(
+        transaction_type_confirmation_method="personal_rule_auto",
+        transaction_type_confirmed_at=None,
+    )
+
+    assert prepare_training_frame(silver).empty
 
 
 def test_evaluate_transaction_type_returns_metrics() -> None:
@@ -151,3 +181,8 @@ def test_db_training_set_contains_only_manual_and_accepted_type_labels(
     assert len(frame) == 2
     assert set(frame["label_source"]) == {"confirmed_transaction_type"}
     assert frame["text"].str.contains("CARD PAYMENT").all()
+    assert set(frame["transaction_type_confirmation_method"]) == {
+        "manual",
+        "accepted_suggestion",
+    }
+    assert len(prepare_training_frame(frame)) == 2

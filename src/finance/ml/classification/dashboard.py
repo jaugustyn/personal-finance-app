@@ -7,15 +7,14 @@ from typing import Any, cast
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from finance.domain.models import MlModelVersion
+from finance.domain.models import MlModelVersion, MlTrainingJob
 from finance.ml.classification.artifact_status import (
     empty_model_status,
     model_status_from_disk,
 )
 from finance.ml.classification.artifacts import artifact_sha256
 from finance.ml.classification.constants import (
-    MODEL_PATH,
-    REPORTS_DIR,
+    MODEL_MIN_CLASS_SUPPORT,
     RETRAIN_FEEDBACK_EVENTS_THRESHOLD,
     RETRAIN_LABEL_GROWTH_THRESHOLD,
     RETRAIN_REJECTION_MIN_EVENTS,
@@ -37,6 +36,11 @@ def readiness_summary(session: Session) -> dict[str, Any]:
     df = load_training_set(session)
     summary = dict(build_label_readiness(df))
     preflight = training_data_preflight(df)
+    summary["model_min_class_support"] = MODEL_MIN_CLASS_SUPPORT
+    summary["supported_classes"] = preflight["supported_classes"]
+    summary["unsupported_classes"] = preflight["unsupported_classes"]
+    summary["split_feasible"] = preflight["split_feasible"]
+    summary["split_error"] = preflight["split_error"]
     summary["training_ready"] = bool(preflight["ready"]) and bool(
         summary["technical_ready"]
     )
@@ -61,15 +65,11 @@ def _mapping(value: object) -> dict[str, Any]:
 
 def runtime_model_status(
     session: Session,
-    *,
-    model_path: Path = MODEL_PATH,
-    reports_dir: Path = REPORTS_DIR,
 ) -> dict[str, Any]:
     """Inspect only the artifact registered as active in the current database."""
-    del reports_dir  # Reports are evidence outputs, not runtime state.
     active = active_model_version(session)
     if active is None:
-        return empty_model_status(model_path=model_path)
+        return empty_model_status()
 
     active_path = Path(active.artifact_path)
     status = model_status_from_disk(model_path=active_path)
@@ -78,7 +78,8 @@ def runtime_model_status(
         and artifact_sha256(active_path) == active.artifact_sha256
     )
     if status.get("model_version_id") != active.id or not checksum_matches:
-        missing = empty_model_status(model_path=active_path)
+        missing = empty_model_status()
+        missing["path"] = str(active_path)
         missing["load_error"] = (
             "model_retrain_required: the active artifact is missing, changed or "
             "does not match the model registry."
@@ -119,10 +120,24 @@ def runtime_model_status(
 
 
 def registered_model_comparison(session: Session) -> list[dict[str, Any]]:
-    """Build dashboard rows only from candidates registered in the current DB."""
+    """Compare only candidates produced by the latest completed comparable job."""
+    latest_job = session.execute(
+        select(MlTrainingJob)
+        .where(MlTrainingJob.status == "completed")
+        .order_by(MlTrainingJob.finished_at.desc(), MlTrainingJob.created_at.desc())
+    ).scalars().first()
+    if latest_job is None:
+        return []
     versions = list(
         session.execute(
             select(MlModelVersion)
+            .where(MlModelVersion.job_id == latest_job.id)
+            .where(MlModelVersion.dataset_fingerprint == latest_job.dataset_fingerprint)
+            .where(
+                MlModelVersion.evaluation_set_id.is_not_distinct_from(
+                    latest_job.evaluation_set_id
+                )
+            )
             .order_by(MlModelVersion.created_at.desc())
         ).scalars()
     )
@@ -135,6 +150,7 @@ def registered_model_comparison(session: Session) -> list[dict[str, Any]]:
         gates = cast(dict[str, Any], version.gates or {})
         rows.append(
             {
+                "model_id": version.id,
                 "estimator": version.estimator,
                 "feature_set": version.feature_set,
                 "rank": None,
@@ -152,7 +168,7 @@ def registered_model_comparison(session: Session) -> list[dict[str, Any]]:
                     ]
                 ),
                 "time_holdout_macro_f1": time_metrics.get("macro_f1"),
-                "merchant_group_holdout_macro_f1": merchant_metrics.get("macro_f1"),
+                "merchant_group_macro_f1": merchant_metrics.get("macro_f1"),
                 "stability_score": ranking.get("worst_macro_f1"),
                 "confidence_note": gates.get("level"),
                 "skipped": not version.promotable,
@@ -226,35 +242,21 @@ def retrain_signal(
 
 def comparison_summary(
     session: Session,
-    *,
-    model_path: Path = MODEL_PATH,
-    reports_dir: Path = REPORTS_DIR,
 ) -> dict[str, Any]:
-    status = runtime_model_status(
-        session,
-        model_path=model_path,
-        reports_dir=reports_dir,
-    )
+    status = runtime_model_status(session)
     readiness = readiness_summary(session)
     status["retrain_signal"] = retrain_signal(session, status, readiness)
     comparison = registered_model_comparison(session)
     return {
         "models": comparison,
-        "recommendation": recommend_model(None, comparison, status, readiness),
+        "recommendation": recommend_model(comparison, status, readiness),
     }
 
 
 def dashboard_summary(
     session: Session,
-    *,
-    model_path: Path = MODEL_PATH,
-    reports_dir: Path = REPORTS_DIR,
 ) -> dict[str, Any]:
-    status = runtime_model_status(
-        session,
-        model_path=model_path,
-        reports_dir=reports_dir,
-    )
+    status = runtime_model_status(session)
     readiness = readiness_summary(session)
     signal = retrain_signal(session, status, readiness)
     status["retrain_signal"] = signal
@@ -267,7 +269,7 @@ def dashboard_summary(
         "readiness": readiness,
         "latest_report": latest,
         "model_comparison": comparison,
-        "recommendation": recommend_model(None, comparison, status, readiness),
+        "recommendation": recommend_model(comparison, status, readiness),
         "validation_slices": {
             key: active_metrics[key]
             for key in ("time", "merchant")

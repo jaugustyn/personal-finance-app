@@ -19,7 +19,7 @@ from finance.domain.models import MlModelVersion, MlTrainingJob
 from finance.ml.classification.artifacts import (
     artifact_sha256,
     build_model_artifact,
-    require_compatible_artifact,
+    require_runtime_artifact,
 )
 from finance.ml.classification.candidate_evaluation import (
     ALL_LABELS,
@@ -32,6 +32,7 @@ from finance.ml.classification.candidate_evaluation import (
     full_matrix_variants,
     prepare_experiment,
     rank_evaluations,
+    supported_classification_rows,
 )
 from finance.ml.classification.dataset import load_training_set
 from finance.ml.classification.evaluation_sets import (
@@ -55,7 +56,7 @@ class ModelActivationError(RuntimeError):
 
 
 def training_data_preflight(df: pd.DataFrame) -> dict[str, object]:
-    """Check whether the fixed matrix can produce leakage-free CV and holdouts."""
+    """Check whether supported classes can produce both required holdouts."""
     counts = (
         df["category"].astype(str).value_counts().to_dict() if not df.empty else {}
     )
@@ -63,18 +64,26 @@ def training_data_preflight(df: pd.DataFrame) -> dict[str, object]:
     reasons: list[str] = []
     if df.empty:
         reasons.append("no_confirmed_labels")
-    missing = [label for label, count in category_counts.items() if count == 0]
-    if missing:
-        reasons.append("missing_categories")
+    supported_classes: list[str] = []
+    unsupported_classes: dict[str, int] = dict(category_counts)
+    split_error: str | None = None
     if not reasons:
         try:
+            _, supported_classes, _, unsupported_classes = (
+                supported_classification_rows(df)
+            )
             prepare_experiment(df)
-        except ValueError:
-            reasons.append("holdouts_not_feasible")
+        except ValueError as exc:
+            reasons.append("validation_split_not_feasible")
+            split_error = str(exc)
     return {
         "ready": not reasons,
         "total": int(len(df)),
         "category_counts": category_counts,
+        "supported_classes": supported_classes,
+        "unsupported_classes": unsupported_classes,
+        "split_feasible": not reasons,
+        "split_error": split_error,
         "reason_codes": reasons,
     }
 
@@ -86,20 +95,11 @@ def enqueue_training_job(
     feature_set: str | None = None,
     include_benchmarks: bool = False,
 ) -> MlTrainingJob:
-    if include_benchmarks:
-        if estimator is not None or feature_set is not None:
-            raise ValueError(
-                "Research benchmark mode cannot be combined with candidate filters."
-            )
-        variants = full_matrix_variants()
-    else:
-        variants = [
-            (variant_estimator, variant_features, True)
-            for variant_estimator, variant_features in candidate_variants(
-                estimator,
-                feature_set,
-            )
-        ]
+    variants = training_job_variants(
+        estimator=estimator,
+        feature_set=feature_set,
+        include_benchmarks=include_benchmarks,
+    )
     job = MlTrainingJob(
         id=str(uuid4()),
         status="queued",
@@ -125,6 +125,30 @@ def enqueue_training_job(
     return job
 
 
+def training_job_variants(
+    *,
+    estimator: str | None = None,
+    feature_set: str | None = None,
+    include_benchmarks: bool = False,
+) -> list[tuple[str, str, bool]]:
+    """Validate a retrain request and return its deterministic variant list."""
+    if include_benchmarks:
+        if estimator is not None or feature_set is not None:
+            raise ValueError(
+                "Research benchmark mode cannot be combined with candidate filters."
+            )
+        variants = full_matrix_variants()
+    else:
+        variants = [
+            (variant_estimator, variant_features, True)
+            for variant_estimator, variant_features in candidate_variants(
+                estimator,
+                feature_set,
+            )
+        ]
+    return variants
+
+
 def mark_interrupted_jobs(session: Session) -> int:
     jobs = list(
         session.execute(
@@ -148,6 +172,8 @@ def _active_comparison(
     split_ids: dict[str, set[int]],
     evaluation_set_id: str | None,
 ) -> dict[str, object] | None:
+    if evaluation_set_id is None:
+        return None
     active = session.execute(
         select(MlModelVersion)
         .where(MlModelVersion.status == "active")
@@ -170,12 +196,16 @@ def _active_comparison(
         confidence_policy = (
             policy if isinstance(policy, dict) else dict(active.confidence_policy or {})
         )
+        labels = [str(label) for label in artifact.get("classes", [])]
+        if len(labels) < 2:
+            raise ValueError("Active artifact does not contain enough classes.")
         return evaluate_pipeline_slices(
             df,
             pipeline=pipeline,
             feature_set=active.feature_set,
             split_ids=split_ids,
             confidence_policy=confidence_policy,
+            labels=labels,
         )
     except Exception as exc:
         raise ValueError(
@@ -194,6 +224,7 @@ def _serializable_result(result: CandidateEvaluation) -> dict[str, object]:
         "feature_set": result.feature_set,
         "metrics": result.metrics,
         "confidence_policy": result.confidence_policy,
+        "confidence_diagnostics": result.confidence_diagnostics,
         "gates": result.gates,
     }
 
@@ -209,9 +240,11 @@ def _write_candidate_artifact(
     CANDIDATES_DIR.mkdir(parents=True, exist_ok=True)
     final_path = CANDIDATES_DIR / f"{model_id}.joblib"
     temporary_path = CANDIDATES_DIR / f".{model_id}.tmp.joblib"
+    labels = [str(label) for label in result.metrics.get("labels", [])]
     report = _serializable_result(result) | {
-        "labels": ALL_LABELS,
-        "n_classes": len(ALL_LABELS),
+        "labels": labels,
+        "known_labels": ALL_LABELS,
+        "n_classes": len(labels),
         "n_total_labelled": n_total_labelled,
     }
     artifact = build_model_artifact(
@@ -223,6 +256,7 @@ def _write_candidate_artifact(
         dataset_fingerprint=fingerprint,
         evaluation_set_id=evaluation_set_id,
         confidence_policy=result.confidence_policy,
+        confidence_diagnostics=result.confidence_diagnostics,
     )
     joblib.dump(artifact, temporary_path)
     temporary_path.replace(final_path)
@@ -366,6 +400,7 @@ def run_training_job(
                     promotable=bool(result.gates["promotable"]),
                 )
             )
+        recommended_row = next((row for row in model_rows if row.promotable), None)
         report = {
             "report_type": "classification_candidate_job",
             "job_id": job_id,
@@ -373,7 +408,7 @@ def run_training_job(
             "dataset_fingerprint": fingerprint,
             "evaluation_set_id": evaluation_set_id,
             "split_counts": {key: len(value) for key, value in split_ids.items()},
-            "recommended_model_id": model_rows[0].id,
+            "recommended_model_id": recommended_row.id if recommended_row else None,
             "candidates": summaries,
             "benchmarks": benchmarks,
             "failed_variants": failures,
@@ -395,7 +430,9 @@ def run_training_job(
             job.evaluation_set_id = evaluation_set_id
             job.report_path = str(report_path)
             job.result = {
-                "recommended_model_id": model_rows[0].id,
+                "recommended_model_id": (
+                    recommended_row.id if recommended_row else None
+                ),
                 "candidate_ids": [row.id for row in model_rows],
                 "failed_variants": failures,
             }
@@ -442,7 +479,7 @@ def activate_model_version(session: Session, model_id: str) -> MlModelVersion:
         raise ModelActivationError("Candidate artifact checksum mismatch.")
     try:
         artifact = joblib.load(path)
-        require_compatible_artifact(artifact)
+        require_runtime_artifact(artifact)
         if artifact.get("task", "category") != "category":
             raise ModelActivationError("Candidate artifact is not a category model.")
         _smoke_test_artifact(artifact)

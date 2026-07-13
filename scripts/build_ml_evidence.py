@@ -29,6 +29,10 @@ from finance.db import SessionLocal  # noqa: E402
 from finance.domain.enums import CATEGORY_CONFIRMATION_METHOD_VALUES, Category  # noqa: E402
 from finance.domain.models import MlModelVersion, Transaction, UserProfile  # noqa: E402
 from finance.ml.classification.artifacts import runtime_versions  # noqa: E402
+from finance.ml.classification.constants import (  # noqa: E402
+    MINIMUM_LABELLED_ROWS,
+    MODEL_MIN_CLASS_SUPPORT,
+)
 from finance.ml.classification.evaluation_sets import evaluation_set_summary  # noqa: E402
 from finance.ml.classification.external import load_kaggle_personal_finance  # noqa: E402
 from finance.ml.classification.train import (  # noqa: E402
@@ -95,6 +99,9 @@ def _load_all_from_db(session: Session) -> pd.DataFrame:
             Transaction.source,
             Transaction.is_transfer,
             Transaction.transaction_type,
+            Transaction.transaction_type_confirmation_method,
+            Transaction.transaction_type_confirmed_at,
+            Transaction.raw_transaction_type,
         )
     ).all()
     df = pd.DataFrame(
@@ -119,6 +126,9 @@ def _load_all_from_db(session: Session) -> pd.DataFrame:
             "source",
             "is_transfer",
             "transaction_type",
+            "transaction_type_confirmation_method",
+            "transaction_type_confirmed_at",
+            "raw_transaction_type",
         ],
     )
     if df.empty:
@@ -174,10 +184,24 @@ def _registry_classification_report(
     ml_state: dict[str, Any],
 ) -> dict[str, Any]:
     """Build DB evidence from registered candidate metrics without re-evaluation."""
-    labels = sorted(item.value for item in Category)
-    confirmed = df[df["category"].isin(labels)].copy() if "category" in df else df.iloc[0:0]
+    ontology_labels = sorted(item.value for item in Category)
+    confirmed = (
+        df[df["category"].isin(ontology_labels)].copy()
+        if "category" in df
+        else df.iloc[0:0]
+    )
     counts = confirmed["category"].astype(str).value_counts().to_dict()
-    class_counts = {label: int(counts.get(label, 0)) for label in labels}
+    class_counts = {label: int(counts.get(label, 0)) for label in ontology_labels}
+    supported_classes = sorted(
+        label
+        for label, count in class_counts.items()
+        if count >= MODEL_MIN_CLASS_SUPPORT
+    )
+    unsupported_classes = {
+        label: count
+        for label, count in class_counts.items()
+        if count < MODEL_MIN_CLASS_SUPPORT
+    }
     dates = pd.to_datetime(confirmed.get("booking_date"), errors="coerce").dropna()
     span_months = (
         int((dates.max().year - dates.min().year) * 12 + dates.max().month - dates.min().month)
@@ -216,28 +240,36 @@ def _registry_classification_report(
             "p99_ms": metrics.get("p99_ms"),
         }
 
-    below_minimum: list[str] = []
     below_recommended = [label for label, count in class_counts.items() if count < 50]
     readiness_level = (
-        "recommended"
-        if not below_recommended
-        else "minimum"
-        if not below_minimum
+        "thesis_data_ready"
+        if len(confirmed) >= 800 and not below_recommended
+        else "technical_ready"
+        if len(confirmed) >= MINIMUM_LABELLED_ROWS
         else "insufficient"
+    )
+    metric_labels = metrics.get("labels")
+    labels = (
+        [str(label) for label in metric_labels]
+        if isinstance(metric_labels, list)
+        else supported_classes
     )
     return {
         "report_type": "classification_registry_snapshot",
-        "methodology": "candidate_evaluation_v1",
+        "methodology": "shared_candidate_evaluation_v2",
         "selected_experiment": "registered_active_model" if estimator else None,
         "models": models,
         "class_counts": class_counts,
         "n_total_labelled": int(len(confirmed)),
-        "n_classes": int(sum(count > 0 for count in class_counts.values())),
+        "n_classes": len(labels),
         "labels": labels,
+        "ontology_labels": ontology_labels,
+        "unsupported_classes": unsupported_classes,
         "validation_slices": {
             key: metrics[key] for key in ("time", "merchant") if key in metrics
         },
         "confidence_policy": dict(ml_state.get("active_confidence_policy") or {}),
+        "oof_confidence_diagnostics": metrics.get("confidence_diagnostics", {}),
         "label_readiness": {
             "level": readiness_level,
             "total_labelled": int(len(confirmed)),
@@ -245,7 +277,10 @@ def _registry_classification_report(
             "recommended_total": 800,
             "ideal_total": 2000,
             "minimum_per_category": 0,
-            "below_minimum_per_category": below_minimum,
+            "model_min_class_support": MODEL_MIN_CLASS_SUPPORT,
+            "supported_classes": supported_classes,
+            "unsupported_classes": unsupported_classes,
+            "below_minimum_per_category": [],
             "below_recommended_per_category": below_recommended,
             "date_span_months": span_months,
         },
@@ -374,18 +409,8 @@ def _write_summary_markdown(
     subscriptions: dict[str, Any],
     privacy: dict[str, Any],
 ) -> None:
-    linear = classification["models"].get("linear_svc", {})
-    dummy = classification["models"].get("dummy_most_frequent", {})
-    feature_decision = classification.get("feature_decision", {})
     label_readiness = classification.get("label_readiness", {})
-    external_data = classification.get("external_data", {})
-    linear_macro = linear.get("macro_f1")
-    dummy_macro = dummy.get("macro_f1")
-    lift = (
-        f"{linear_macro - dummy_macro:.3f}"
-        if isinstance(linear_macro, float) and isinstance(dummy_macro, float)
-        else "n/a"
-    )
+    separate_experiments = classification.get("separate_experiments", {})
     forecast_lines = []
     for item in forecasting.get("series", []):
         if item.get("best_model"):
@@ -424,11 +449,10 @@ Selected experiment: `{classification.get('selected_experiment')}`
 
 {_model_table(classification)}
 
-LinearSVC macro-F1 lift vs dummy: `{lift}`
+Runtime candidates: `Logistic Regression + baseline` and \
+`calibrated LinearSVC + baseline`.
 
-Feature-set recommendation: `{feature_decision.get('recommended_feature_set', 'baseline')}`
-
-Reason: {feature_decision.get('reason', 'n/a')}
+Runtime confidence threshold: `0.55`.
 
 ## Label Readiness
 
@@ -437,11 +461,14 @@ Reason: {feature_decision.get('reason', 'n/a')}
   (minimum `{label_readiness.get('minimum_total', 300)}`, recommended \
   `{label_readiness.get('recommended_total', 800)}`, ideal \
   `{label_readiness.get('ideal_total', 2000)}`)
-- Required per-category minimum: `{label_readiness.get('minimum_per_category', 0)}`
-- Below minimum: `{', '.join(label_readiness.get('below_minimum_per_category', [])) or 'none'}`
+- Minimum support for a model class: `{label_readiness.get('model_min_class_support', 10)}`
+- Supported classes: `{', '.join(label_readiness.get('supported_classes', [])) or 'none'}`
+- Unsupported classes: `{', '.join(label_readiness.get('unsupported_classes', {})) or 'none'}`
 - Date span: `{label_readiness.get('date_span_months')}` months
 
-External data provided: `{external_data.get('provided', False)}`
+Separate synthetic rows: `{separate_experiments.get('synthetic_rows', 0)}`
+
+Separate external rows: `{separate_experiments.get('external_rows', 0)}`
 
 ## Transaction Type Classification
 
@@ -505,8 +532,8 @@ def main(argv: list[str] | None = None) -> int:
         type=Path,
         default=None,
         help=(
-            "Optional Kaggle Personal_Finance_Dataset.csv. Included only as "
-            "external_only and real_plus_external experiments."
+            "Optional Kaggle Personal_Finance_Dataset.csv. Reported only as "
+            "a separate experiment count."
         ),
     )
     parser.add_argument("--reports-dir", type=Path, default=Path("data/reports"))

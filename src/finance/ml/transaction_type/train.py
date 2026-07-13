@@ -63,15 +63,41 @@ def evaluate(
     n_splits: int = DEFAULT_N_SPLITS,
     seed: int = 42,
 ) -> dict[str, object]:
+    provenance_available = sorted(
+        column
+        for column in df.columns
+        if column
+        in {
+            "transaction_type_confirmation_method",
+            "transaction_type_confirmed_at",
+        }
+    )
+    method_counts = (
+        df["transaction_type_confirmation_method"]
+        .fillna("missing")
+        .astype(str)
+        .value_counts()
+        .to_dict()
+        if "transaction_type_confirmation_method" in df.columns
+        else {}
+    )
+    provenance_diagnostics = {
+        "input_rows": int(len(df)),
+        "available_provenance_columns": provenance_available,
+        "confirmation_method_counts": {
+            str(method): int(count) for method, count in method_counts.items()
+        },
+    }
     labelled = prepare_training_frame(df)
     if labelled.empty:
         return {
             "skipped": True,
-            "reason": "No valid confirmed transaction_type labels.",
+            "reason": "no_valid_gold_transaction_type_labels",
             "label_source": LABEL_SOURCE,
             "models": {},
             "class_counts": {},
             "dropped_rare_classes": {},
+            "diagnostics": provenance_diagnostics,
         }
 
     labelled, dropped = _filter_rare_classes(labelled)
@@ -85,6 +111,7 @@ def evaluate(
             "models": {},
             "class_counts": {},
             "dropped_rare_classes": dropped,
+            "diagnostics": provenance_diagnostics,
         }
 
     X = to_features(labelled)  # noqa: N806
@@ -145,6 +172,7 @@ def evaluate(
         "dropped_rare_classes": dropped,
         "n_splits": int(n_splits),
         "models": models,
+        "diagnostics": provenance_diagnostics,
     }
 
 

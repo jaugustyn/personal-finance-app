@@ -12,9 +12,18 @@ import numpy as np
 import pandas as pd
 import sklearn
 
+from finance.ml.classification.constants import DEFAULT_ACCEPT_THRESHOLD
 from finance.ml.classification.pipeline import FEATURE_V2_COLUMNS, REQUIRED_COLUMNS
 
-MODEL_ARTIFACT_SCHEMA_VERSION = "2.1"
+MODEL_ARTIFACT_SCHEMA_VERSION = "3.0"
+RUNTIME_ESTIMATORS = {"logreg", "linear_svc_calibrated"}
+RUNTIME_FEATURE_SET = "baseline"
+RUNTIME_CONFIDENCE_POLICY = {
+    "source": "fixed_runtime_threshold",
+    "default_threshold": DEFAULT_ACCEPT_THRESHOLD,
+    "per_category": {},
+    "allow_other_accept": False,
+}
 
 
 def artifact_sha256(path: Path) -> str:
@@ -48,6 +57,7 @@ def build_model_artifact(
     dataset_fingerprint: str | None = None,
     evaluation_set_id: str | None = None,
     confidence_policy: dict[str, Any] | None = None,
+    confidence_diagnostics: dict[str, Any] | None = None,
     ontology_version: str = "category_v1",
 ) -> dict[str, Any]:
     """Build the persisted classifier artifact with explicit runtime metadata."""
@@ -70,7 +80,8 @@ def build_model_artifact(
         "dataset_fingerprint": dataset_fingerprint,
         "evaluation_set_id": evaluation_set_id,
         "ontology_version": ontology_version,
-        "confidence_policy": confidence_policy or {},
+        "confidence_policy": confidence_policy or dict(RUNTIME_CONFIDENCE_POLICY),
+        "confidence_diagnostics": confidence_diagnostics or {},
         "metadata": {
             "artifact_schema_version": MODEL_ARTIFACT_SCHEMA_VERSION,
             "runtime_versions": runtime_versions(),
@@ -133,3 +144,31 @@ def require_compatible_artifact(
     )
     if warnings:
         raise ValueError("Incompatible classifier artifact: " + ", ".join(warnings))
+    if not isinstance(artifact, dict) or artifact.get("schema_version") != (
+        MODEL_ARTIFACT_SCHEMA_VERSION
+    ):
+        raise ValueError("Incompatible classifier artifact: artifact_schema_version_mismatch")
+
+
+def require_runtime_artifact(artifact: Any) -> None:
+    """Reject compatible artifacts that do not implement the simplified runtime."""
+    require_compatible_artifact(artifact)
+    if not isinstance(artifact, dict) or artifact.get("task") != "category":
+        raise ValueError("Incompatible classifier artifact: task_mismatch")
+    if artifact.get("estimator") not in RUNTIME_ESTIMATORS:
+        raise ValueError("Incompatible classifier artifact: estimator_not_promotable")
+    if artifact.get("feature_set") != RUNTIME_FEATURE_SET:
+        raise ValueError("Incompatible classifier artifact: feature_set_not_promotable")
+    policy = artifact.get("confidence_policy")
+    if not isinstance(policy, dict):
+        raise ValueError("Incompatible classifier artifact: missing_confidence_policy")
+    raw_threshold = policy.get("default_threshold")
+    threshold = (
+        float(raw_threshold) if isinstance(raw_threshold, int | float | str) else -1.0
+    )
+    if (
+        threshold != DEFAULT_ACCEPT_THRESHOLD
+        or policy.get("per_category") not in ({}, None)
+        or policy.get("allow_other_accept") is not False
+    ):
+        raise ValueError("Incompatible classifier artifact: runtime_policy_mismatch")

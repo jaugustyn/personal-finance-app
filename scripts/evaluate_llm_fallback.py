@@ -28,12 +28,13 @@ from finance.ml.classification.evaluation_sets import (  # noqa: E402
 from finance.ml.classification.predict import (  # noqa: E402
     active_classification_policy,
     predict_transaction,
+    require_registered_active_artifact,
 )
 
 LABELS = sorted(item.value for item in Category)
 
 
-def _evaluate_slice(frame, policy) -> dict[str, object]:
+def _evaluate_slice(frame, policy, artifact) -> dict[str, object]:
     truth: list[str] = []
     baseline: list[str] = []
     hybrid: list[str] = []
@@ -53,6 +54,7 @@ def _evaluate_slice(frame, policy) -> dict[str, object]:
             "direction": "debit",
             "is_transfer": False,
             "policy": policy,
+            "artifact": artifact,
         }
         base = predict_transaction(**common, use_llm_fallback=False)
         started = time.perf_counter_ns()
@@ -113,11 +115,13 @@ def main(argv: list[str] | None = None) -> int:
             raise SystemExit("Freeze a private evaluation set before the LLM experiment.")
         split_ids = split_transaction_ids(session, evaluation_set.id)
         df = load_training_set(session)
-    policy = active_classification_policy()
+        artifact = require_registered_active_artifact(session)
+    policy = active_classification_policy(artifact=artifact)
     slices = {
         name: _evaluate_slice(
             df[df["transaction_id"].astype(int).isin(ids)].reset_index(drop=True),
             policy,
+            artifact,
         )
         for name, ids in split_ids.items()
     }

@@ -33,23 +33,43 @@ class EvaluationSetError(ValueError):
 
 
 def dataset_fingerprint(df: pd.DataFrame) -> str:
-    """Hash label identity without serialising private transaction text."""
+    """Hash label, split and feature identity without exposing private values."""
     if df.empty:
         return hashlib.sha256(b"").hexdigest()
-    rows = []
+    columns = (
+        "transaction_id",
+        "category",
+        "category_confirmation_method",
+        "category_confirmed_at",
+        "booking_date",
+        "merchant",
+        "title",
+        "abs_amount",
+        "day_of_week",
+        "source",
+        "direction",
+        "transaction_type",
+    )
+    digest = hashlib.sha256(b"category_dataset_v2\0")
     for row in df.sort_values("transaction_id").itertuples(index=False):
-        confirmed = getattr(row, "category_confirmed_at", None)
-        isoformat = getattr(confirmed, "isoformat", None)
-        confirmed_value = isoformat() if callable(isoformat) else str(confirmed)
-        rows.append(
-            (
-                int(row.transaction_id),
-                str(row.category),
-                confirmed_value,
-            )
+        values = []
+        for column in columns:
+            value = getattr(row, column, None)
+            isoformat = getattr(value, "isoformat", None)
+            if callable(isoformat):
+                value = isoformat()
+            elif value is None or bool(pd.isna(value)):
+                value = None
+            elif isinstance(value, float):
+                value = value.hex()
+            else:
+                value = str(value)
+            values.append(value)
+        digest.update(
+            json.dumps(values, ensure_ascii=False, separators=(",", ":")).encode()
         )
-    payload = json.dumps(rows, ensure_ascii=True, separators=(",", ":"))
-    return hashlib.sha256(payload.encode()).hexdigest()
+        digest.update(b"\n")
+    return digest.hexdigest()
 
 
 def current_evaluation_set(session: Session) -> MlEvaluationSet | None:

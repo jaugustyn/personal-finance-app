@@ -33,6 +33,8 @@ def dtos_to_dataframe(dtos: Iterable[TransactionDTO]) -> pd.DataFrame:
                 "abs_amount": float(abs(d.amount or Decimal(0))),
                 "day_of_week": d.booking_date.weekday(),
                 "category": d.category.value if d.category else None,
+                "category_confirmation_method": None,
+                "category_confirmed_at": None,
                 "merchant": d.merchant,
                 "title": d.title,
                 "source": d.source.value,

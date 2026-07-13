@@ -376,8 +376,11 @@ def anomaly_feedback_summary(session: Session) -> dict[str, Any]:
         "reviewed": reviewed,
         "relevant": int(relevant or 0),
         "not_relevant": int(not_relevant or 0),
-        "precision": int(relevant or 0) / reviewed if reviewed else None,
-        "precision_at_20": int(relevant or 0) / reviewed if reviewed else None,
+        "relevant_share": int(relevant or 0) / reviewed if reviewed else None,
+        "metric_note": (
+            "Overall reviewed share; precision@k is computed only from ordered "
+            "private top-k evidence review."
+        ),
     }
 
 

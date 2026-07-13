@@ -27,8 +27,6 @@ from apps.api.routers import (
     subscriptions,
     transactions,
 )
-from apps.api.scheduler import shutdown as scheduler_shutdown
-from apps.api.scheduler import start as scheduler_start
 from apps.api.security import auth_enabled, require_auth
 from finance.config import get_settings
 from finance.db import SessionLocal, engine, get_session
@@ -50,14 +48,11 @@ async def lifespan(_: FastAPI):
                     logger.warning("ml_training_jobs_interrupted", count=interrupted)
         except Exception as exc:  # noqa: BLE001
             logger.warning("ml_training_job_recovery_failed", error=str(exc))
-    scheduler_start()
     logger.info(
         "api_started",
         auth_enabled=auth_enabled(),
-        scheduler_enabled=get_settings().scheduler_enabled,
     )
     yield
-    scheduler_shutdown()
 
 
 app = FastAPI(title="Personal Finance API", version="0.1.0", lifespan=lifespan)

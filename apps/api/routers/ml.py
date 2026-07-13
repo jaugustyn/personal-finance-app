@@ -7,7 +7,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-import joblib  # noqa: F401 - tests use apps.api.routers.ml.joblib for artifacts.
 from fastapi import APIRouter, BackgroundTasks, Depends, Query
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
@@ -47,6 +46,7 @@ from finance.ml.classification.lifecycle import (
     model_versions,
     run_training_job,
     training_job,
+    training_job_variants,
 )
 from finance.ml.classification.policy import ClassificationPolicy
 from finance.ml.classification.predict import (
@@ -55,12 +55,6 @@ from finance.ml.classification.predict import (
     predict_transaction,
     reclassify_unlabelled,
     require_registered_active_artifact,
-)
-from finance.ml.classification.status import (
-    MODEL_PATH as DEFAULT_MODEL_PATH,
-)
-from finance.ml.classification.status import (
-    REPORTS_DIR as DEFAULT_REPORTS_DIR,
 )
 from finance.ml.classification.status import (
     comparison_summary,
@@ -81,10 +75,6 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/ml", tags=["ml"])
 
-MODEL_PATH: Path = DEFAULT_MODEL_PATH
-REPORTS_DIR: Path = DEFAULT_REPORTS_DIR
-
-
 def _now_iso() -> str:
     return datetime.now(UTC).isoformat()
 
@@ -95,11 +85,7 @@ def _classification_policy(session: Session) -> ClassificationPolicy:
 
 @router.get("/status", response_model=MlModelStatus)
 def model_status(session: Session = Depends(get_session)) -> MlModelStatus:
-    status = runtime_model_status(
-        session,
-        model_path=MODEL_PATH,
-        reports_dir=REPORTS_DIR,
-    )
+    status = runtime_model_status(session)
     readiness_data = readiness_summary(session)
     status["retrain_signal"] = retrain_signal(session, status, readiness_data)
     return MlModelStatus(**status)
@@ -146,14 +132,14 @@ def model_comparison(
     session: Session = Depends(get_session),
 ) -> MlComparisonResponse:
     return MlComparisonResponse(
-        **comparison_summary(session, model_path=MODEL_PATH, reports_dir=REPORTS_DIR)
+        **comparison_summary(session)
     )
 
 
 @router.get("/dashboard", response_model=MlDashboardResponse)
 def dashboard(session: Session = Depends(get_session)) -> MlDashboardResponse:
     return MlDashboardResponse(
-        **dashboard_summary(session, model_path=MODEL_PATH, reports_dir=REPORTS_DIR)
+        **dashboard_summary(session)
     )
 
 
@@ -171,11 +157,7 @@ def review_queue_endpoint(
 def feedback_report_endpoint(
     session: Session = Depends(get_session),
 ) -> FeedbackReportResponse:
-    status = runtime_model_status(
-        session,
-        model_path=MODEL_PATH,
-        reports_dir=REPORTS_DIR,
-    )
+    status = runtime_model_status(session)
     readiness_data = readiness_summary(session)
     updated_at = status.get("updated_at")
     try:
@@ -202,16 +184,12 @@ def classify(
 ) -> ClassifyResponse:
     try:
         artifact = require_registered_active_artifact(session)
-        policy = active_classification_policy(
-            artifact=artifact,
-            fallback=ClassificationPolicy(default_threshold=req.threshold),
-        )
+        policy = active_classification_policy(artifact=artifact)
         result = predict_transaction(
             req.merchant,
             req.title,
             req.amount,
             req.booking_date,
-            threshold=req.threshold,
             use_llm_fallback=req.use_llm_fallback,
             source=req.source,
             transaction_type=req.transaction_type.value,
@@ -315,6 +293,14 @@ def retrain(
     include_benchmarks: bool = False,
     session: Session = Depends(get_session),
 ) -> RetrainResponse:
+    try:
+        training_job_variants(
+            estimator=estimator,
+            feature_set=feature_set,
+            include_benchmarks=include_benchmarks,
+        )
+    except ValueError as exc:
+        raise bad_request(str(exc)) from exc
     readiness_data = readiness_summary(session)
     if not bool(readiness_data.get("training_ready")):
         raise conflict(
@@ -334,8 +320,6 @@ def retrain(
             feature_set=feature_set,
             include_benchmarks=include_benchmarks,
         )
-    except ValueError as exc:
-        raise bad_request(str(exc)) from exc
     except TrainingJobConflict as exc:
         raise conflict(str(exc)) from exc
     background.add_task(_retrain_job, job.id)

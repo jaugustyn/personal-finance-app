@@ -12,12 +12,12 @@ from finance.ml.classification.artifacts import (
     artifact_metadata,
     compatibility_warnings,
 )
-from finance.ml.classification.constants import MODEL_PATH
+from finance.ml.classification.constants import DEFAULT_ACCEPT_THRESHOLD
 from finance.ml.classification.status_io import iso_mtime
 
 
 def _confidence_point(
-    model_report: dict[str, Any], threshold: float = 0.55
+    model_report: dict[str, Any], threshold: float = DEFAULT_ACCEPT_THRESHOLD
 ) -> tuple[float | None, float | None]:
     for point in model_report.get("confidence_curve") or []:
         if abs(float(point.get("threshold", -1.0)) - threshold) < 1e-9:
@@ -66,12 +66,12 @@ def _extract_model_classes(pipe: Any, report: dict[str, Any] | None) -> list[str
     return sorted(str(item) for item in classes)
 
 
-def empty_model_status(*, model_path: Path = MODEL_PATH) -> dict[str, Any]:
+def empty_model_status() -> dict[str, Any]:
     """Return a status that contains no report or artifact-derived stale data."""
     known_categories = sorted(category.value for category in Category)
     return {
         "exists": False,
-        "path": str(model_path),
+        "path": "",
         "updated_at": None,
         "model_version_id": None,
         "estimator": None,
@@ -94,10 +94,11 @@ def empty_model_status(*, model_path: Path = MODEL_PATH) -> dict[str, Any]:
 
 def model_status_from_disk(
     *,
-    model_path: Path = MODEL_PATH,
+    model_path: Path,
 ) -> dict[str, Any]:
     """Inspect only ``model_path``; never infer state from nearby report files."""
-    status = empty_model_status(model_path=model_path)
+    status = empty_model_status()
+    status["path"] = str(model_path)
     status["exists"] = model_path.exists()
     status["updated_at"] = iso_mtime(model_path)
     known_categories = status["known_categories"]

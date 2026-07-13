@@ -8,7 +8,10 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from finance.domain.enums import BankSource, TransactionDirection, TransactionType
-from finance.ml.classification.status import CONFIDENCE_RECOMMENDATION_THRESHOLD
+from finance.ml.classification.constants import (
+    CONFIDENCE_RECOMMENDATION_THRESHOLD,
+    DEFAULT_ACCEPT_THRESHOLD,
+)
 
 
 class ClassifyRequest(BaseModel):
@@ -21,7 +24,6 @@ class ClassifyRequest(BaseModel):
     direction: TransactionDirection | None = None
     is_transfer: bool = False
     use_llm_fallback: bool = False
-    threshold: float = Field(default=0.55, ge=0.0, le=1.0)
 
 
 class ClassificationDecisionResponse(BaseModel):
@@ -40,8 +42,8 @@ class ClassifyResponse(BaseModel):
     model_confidence: float | None = None
     source: str = "model"
     model_category: str | None = None
-    threshold: float = 0.55
-    threshold_used: float = 0.55
+    threshold: float = DEFAULT_ACCEPT_THRESHOLD
+    threshold_used: float = DEFAULT_ACCEPT_THRESHOLD
     fallback_used: bool = False
     top_predictions: list[dict[str, Any]] = Field(default_factory=list)
     recommended_action: str = "review"
@@ -127,6 +129,7 @@ class MlMetricSummary(BaseModel):
 
 
 class MlModelComparison(BaseModel):
+    model_id: str
     estimator: str
     feature_set: str
     rank: int | None = None
@@ -145,8 +148,9 @@ class MlModelComparison(BaseModel):
 
 
 class MlModelRecommendation(BaseModel):
-    estimator: str
-    feature_set: str
+    model_id: str | None = None
+    estimator: str | None = None
+    feature_set: str | None = None
     reason_code: str
     action_codes: list[str] = Field(default_factory=list)
     warning_codes: list[str] = Field(default_factory=list)
@@ -156,7 +160,6 @@ class MlModelRecommendation(BaseModel):
     accuracy_at_055: float | None = None
     confidence_threshold: float = CONFIDENCE_RECOMMENDATION_THRESHOLD
     based_on_report: bool = False
-    feature_decision_reason: str | None = None
 
 
 class MlModelStatus(BaseModel):
@@ -200,6 +203,11 @@ class MlReadinessResponse(BaseModel):
     thesis_data_ready: bool = False
     training_ready: bool = False
     training_preflight_reasons: list[str] = Field(default_factory=list)
+    model_min_class_support: int = 10
+    supported_classes: list[str] = Field(default_factory=list)
+    unsupported_classes: dict[str, int] = Field(default_factory=dict)
+    split_feasible: bool = False
+    split_error: str | None = None
     recommended_history_months: str
     training_labels_source: str
     category_predicted_is_ground_truth: bool

@@ -6,6 +6,7 @@ from datetime import UTC, date, datetime
 from decimal import Decimal
 from types import SimpleNamespace
 
+import joblib
 import numpy as np
 import pytest
 
@@ -19,7 +20,19 @@ from finance.domain.models import (
 from finance.ml.classification import predict as predict_mod
 from finance.ml.classification.artifacts import build_model_artifact
 from finance.ml.classification.lifecycle import _artifact_sha256
-from finance.ml.classification.policy import DEFAULT_POLICY, ClassificationPolicy
+
+
+def _artifact(*, confidence: float = 0.8) -> dict:
+    return {
+        "pipeline": _FakePipeline(confidence=confidence),
+        "model_version_id": "api-test-model",
+        "confidence_policy": {
+            "source": "fixed_runtime_threshold",
+            "default_threshold": 0.55,
+            "per_category": {},
+            "allow_other_accept": False,
+        },
+    }
 
 
 class _FakePipeline:
@@ -50,24 +63,17 @@ def _payload(**overrides):
 def _isolated_reports_dir(monkeypatch, tmp_path):
     reports_dir = tmp_path / "reports"
     reports_dir.mkdir()
-    monkeypatch.setattr(ml_router, "REPORTS_DIR", reports_dir)
-    monkeypatch.setattr(
-        ml_router,
-        "active_classification_policy",
-        lambda **kwargs: kwargs.get("fallback", DEFAULT_POLICY),
-    )
     monkeypatch.setattr(
         ml_router,
         "require_registered_active_artifact",
-        lambda _session: {},
+        lambda _session: _artifact(),
     )
     monkeypatch.setattr(
         predict_mod,
         "require_registered_active_artifact",
-        lambda _session: {},
+        lambda _session: _artifact(),
     )
-    predict_mod.get_classifier.cache_clear()
-    predict_mod.get_classifier_artifact.cache_clear()
+    predict_mod.load_registered_artifact.cache_clear()
     return reports_dir
 
 
@@ -125,7 +131,11 @@ def _register_active_model(
 
 
 def test_classify_returns_model_diagnostics(client, monkeypatch) -> None:
-    monkeypatch.setattr(predict_mod, "get_classifier", lambda: _FakePipeline(confidence=0.83))
+    monkeypatch.setattr(
+        ml_router,
+        "require_registered_active_artifact",
+        lambda _session: _artifact(confidence=0.83),
+    )
 
     response = client.post("/ml/classify", json=_payload())
 
@@ -145,7 +155,11 @@ def test_classify_returns_model_diagnostics(client, monkeypatch) -> None:
 
 
 def test_classify_low_confidence_does_not_fallback_by_default(client, monkeypatch) -> None:
-    monkeypatch.setattr(predict_mod, "get_classifier", lambda: _FakePipeline(confidence=0.51))
+    monkeypatch.setattr(
+        ml_router,
+        "require_registered_active_artifact",
+        lambda _session: _artifact(confidence=0.51),
+    )
     monkeypatch.setattr(predict_mod.llm_client, "is_available", lambda: True)
 
     response = client.post("/ml/classify", json=_payload())
@@ -160,7 +174,11 @@ def test_classify_low_confidence_does_not_fallback_by_default(client, monkeypatc
 
 
 def test_classify_marks_non_category_candidate(client, monkeypatch) -> None:
-    monkeypatch.setattr(predict_mod, "get_classifier", lambda: _FakePipeline(confidence=0.91))
+    monkeypatch.setattr(
+        ml_router,
+        "require_registered_active_artifact",
+        lambda _session: _artifact(confidence=0.91),
+    )
 
     response = client.post(
         "/ml/classify",
@@ -174,7 +192,11 @@ def test_classify_marks_non_category_candidate(client, monkeypatch) -> None:
 
 
 def test_classify_infers_credit_amount_as_non_category_candidate(client, monkeypatch) -> None:
-    monkeypatch.setattr(predict_mod, "get_classifier", lambda: _FakePipeline(confidence=0.91))
+    monkeypatch.setattr(
+        ml_router,
+        "require_registered_active_artifact",
+        lambda _session: _artifact(confidence=0.91),
+    )
 
     response = client.post(
         "/ml/classify",
@@ -187,33 +209,29 @@ def test_classify_infers_credit_amount_as_non_category_candidate(client, monkeyp
     assert body["classification_decision"]["action"] == "not_applicable"
 
 
-def test_classify_uses_category_threshold_from_latest_report(
-    client,
-    monkeypatch,
-    _isolated_reports_dir,
-) -> None:
-    monkeypatch.setattr(predict_mod, "get_classifier", lambda: _FakePipeline(confidence=0.83))
+def test_classify_uses_fixed_threshold_from_artifact(client, monkeypatch) -> None:
     monkeypatch.setattr(
         ml_router,
-        "active_classification_policy",
-        lambda **_kwargs: ClassificationPolicy(
-            default_threshold=0.55,
-            per_category_thresholds={"food": 0.90},
-        ),
+        "require_registered_active_artifact",
+        lambda _session: _artifact(confidence=0.83),
     )
 
-    response = client.post("/ml/classify", json=_payload())
+    response = client.post("/ml/classify", json=_payload(threshold=0.99))
 
     assert response.status_code == 200
     body = response.json()
-    assert body["recommended_action"] == "review"
-    assert body["threshold_used"] == 0.90
-    assert body["classification_decision"]["action"] == "review"
-    assert body["classification_decision"]["threshold_used"] == 0.90
+    assert body["recommended_action"] == "accept_candidate"
+    assert body["threshold_used"] == 0.55
+    assert body["classification_decision"]["action"] == "accept"
+    assert "threshold" not in client.get("/openapi.json").json()["components"]["schemas"]["ClassifyRequest"]["properties"]
 
 
 def test_classify_uses_valid_llm_fallback_when_enabled(client, monkeypatch) -> None:
-    monkeypatch.setattr(predict_mod, "get_classifier", lambda: _FakePipeline(confidence=0.51))
+    monkeypatch.setattr(
+        ml_router,
+        "require_registered_active_artifact",
+        lambda _session: _artifact(confidence=0.51),
+    )
     monkeypatch.setattr(predict_mod.llm_client, "is_available", lambda: True)
     monkeypatch.setattr(
         predict_mod,
@@ -242,7 +260,11 @@ def test_classify_uses_valid_llm_fallback_when_enabled(client, monkeypatch) -> N
 
 
 def test_classify_rejects_invalid_llm_category(client, monkeypatch) -> None:
-    monkeypatch.setattr(predict_mod, "get_classifier", lambda: _FakePipeline(confidence=0.51))
+    monkeypatch.setattr(
+        ml_router,
+        "require_registered_active_artifact",
+        lambda _session: _artifact(confidence=0.51),
+    )
     monkeypatch.setattr(predict_mod.llm_client, "is_available", lambda: True)
     monkeypatch.setattr(
         predict_mod,
@@ -268,9 +290,6 @@ def test_classify_rejects_invalid_llm_category(client, monkeypatch) -> None:
 
 
 def test_ml_status_reports_missing_model(client, monkeypatch, tmp_path) -> None:
-    monkeypatch.setattr(ml_router, "MODEL_PATH", tmp_path / "missing.joblib")
-    monkeypatch.setattr(ml_router, "REPORTS_DIR", tmp_path / "reports")
-
     response = client.get("/ml/status")
 
     assert response.status_code == 200
@@ -287,11 +306,9 @@ def test_ml_status_reports_artifact_metadata(
     monkeypatch,
     tmp_path,
 ) -> None:
-    model_path = tmp_path / "classifier_latest.joblib"
-    reports_dir = tmp_path / "reports"
-    reports_dir.mkdir(exist_ok=True)
+    model_path = tmp_path / "registered-model.joblib"
     artifact = build_model_artifact(
-        estimator="linear_svc",
+        estimator="logreg",
         feature_set="baseline",
         pipeline=_FakePipeline(),
         model_version_id="active-status-model",
@@ -300,7 +317,7 @@ def test_ml_status_reports_artifact_metadata(
             "n_total_labelled": 2,
             "n_classes": 2,
             "models": {
-                "linear_svc": {
+                "logreg": {
                     "macro_f1": 0.8,
                     "weighted_f1": 0.82,
                     "confidence_curve": [],
@@ -309,23 +326,21 @@ def test_ml_status_reports_artifact_metadata(
             },
         },
     )
-    ml_router.joblib.dump(artifact, model_path)
+    joblib.dump(artifact, model_path)
     _register_active_model(
         db_session,
         model_path,
         model_id="active-status-model",
-        estimator="linear_svc",
+        estimator="logreg",
     )
-    monkeypatch.setattr(ml_router, "MODEL_PATH", model_path)
-    monkeypatch.setattr(ml_router, "REPORTS_DIR", reports_dir)
 
     response = client.get("/ml/status")
 
     assert response.status_code == 200
     body = response.json()
     assert body["exists"] is True
-    assert body["estimator"] == "linear_svc"
-    assert body["artifact_metadata"]["artifact_schema_version"] == "2.1"
+    assert body["estimator"] == "logreg"
+    assert body["artifact_metadata"]["artifact_schema_version"] == "3.0"
     assert "sklearn" in body["artifact_metadata"]["runtime_versions"]
     assert body["compatibility_warnings"] == []
     assert body["retrain_signal"]["retrain_recommended"] is False
@@ -419,11 +434,9 @@ def test_ml_status_recommends_retraining_after_label_growth(
     tmp_path,
     db_session,
 ) -> None:
-    model_path = tmp_path / "classifier_latest.joblib"
-    reports_dir = tmp_path / "reports"
-    reports_dir.mkdir(exist_ok=True)
+    model_path = tmp_path / "growth-model.joblib"
     artifact = build_model_artifact(
-        estimator="linear_svc",
+        estimator="logreg",
         feature_set="baseline",
         pipeline=_FakePipeline(),
         model_version_id="growth-model",
@@ -434,15 +447,13 @@ def test_ml_status_recommends_retraining_after_label_growth(
             "models": {},
         },
     )
-    ml_router.joblib.dump(artifact, model_path)
+    joblib.dump(artifact, model_path)
     _register_active_model(
         db_session,
         model_path,
         model_id="growth-model",
-        estimator="linear_svc",
+        estimator="logreg",
     )
-    monkeypatch.setattr(ml_router, "MODEL_PATH", model_path)
-    monkeypatch.setattr(ml_router, "REPORTS_DIR", reports_dir)
     _tx(db_session, dedup_hash="growth-1", category="food")
     _tx(db_session, dedup_hash="growth-2", category="transport")
 
@@ -456,10 +467,8 @@ def test_ml_status_recommends_retraining_after_label_growth(
 
 
 def test_ml_status_ignores_unregistered_artifact(client, monkeypatch, tmp_path) -> None:
-    model_path = tmp_path / "classifier_latest.joblib"
-    reports_dir = tmp_path / "reports"
-    reports_dir.mkdir(exist_ok=True)
-    ml_router.joblib.dump(
+    model_path = tmp_path / "unregistered.joblib"
+    joblib.dump(
         {
             "estimator": "linear_svc",
             "feature_set": "baseline",
@@ -472,9 +481,6 @@ def test_ml_status_ignores_unregistered_artifact(client, monkeypatch, tmp_path) 
         },
         model_path,
     )
-    monkeypatch.setattr(ml_router, "MODEL_PATH", model_path)
-    monkeypatch.setattr(ml_router, "REPORTS_DIR", reports_dir)
-
     response = client.get("/ml/status")
 
     assert response.status_code == 200
@@ -511,10 +517,8 @@ def test_ml_readiness_uses_confirmed_expense_labels(client, db_session) -> None:
 def test_ml_dashboard_ignores_stale_reports_without_registered_models(
     client, monkeypatch, tmp_path
 ) -> None:
-    monkeypatch.setattr(ml_router, "MODEL_PATH", tmp_path / "missing.joblib")
     reports_dir = tmp_path / "reports"
     reports_dir.mkdir(exist_ok=True)
-    monkeypatch.setattr(ml_router, "REPORTS_DIR", reports_dir)
 
     def model_report(macro: float, weighted: float) -> dict:
         return {
@@ -578,9 +582,9 @@ def test_ml_dashboard_ignores_stale_reports_without_registered_models(
     assert response.status_code == 200
     body = response.json()
     recommendation = body["recommendation"]
-    assert recommendation["estimator"] == "linear_svc_calibrated"
-    assert recommendation["feature_set"] == "feature_v2"
-    assert recommendation["reason_code"] == "no_report"
+    assert recommendation["estimator"] is None
+    assert recommendation["feature_set"] is None
+    assert recommendation["reason_code"] == "no_promotable_candidate"
     assert recommendation["based_on_report"] is False
     assert "train_recommended" in recommendation["action_codes"]
     assert body["status"]["exists"] is False

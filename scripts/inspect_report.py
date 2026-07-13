@@ -52,7 +52,12 @@ def _validate_model_metrics(report: dict[str, Any], prefix: str) -> list[str]:
     models = report.get("models")
     if not isinstance(models, dict):
         return [f"{prefix}.models must be an object"]
-    for model_name in ("dummy_most_frequent", "linear_svc"):
+    required_models = (
+        ("logreg", "linear_svc_calibrated")
+        if report.get("report_type") == "classification_evidence"
+        else ("dummy_most_frequent", "linear_svc")
+    )
+    for model_name in required_models:
         model = models.get(model_name)
         if not isinstance(model, dict):
             errors.append(f"{prefix}.models.{model_name} is required")
@@ -75,7 +80,9 @@ def _validate_category_section(report: dict[str, Any], prefix: str) -> list[str]
         ["models", "class_counts", "n_total_labelled", "n_classes"],
         prefix,
     )
-    if report.get("report_type") == "classification_registry_snapshot":
+    if report.get("skipped"):
+        errors.extend(_require_keys(report, ["reason", "diagnostics"], prefix))
+    elif report.get("report_type") == "classification_registry_snapshot":
         lifecycle = report.get("model_lifecycle")
         if not isinstance(lifecycle, dict) or not lifecycle.get("active_model_id"):
             errors.append(f"{prefix}.model_lifecycle.active_model_id is required")
@@ -109,7 +116,10 @@ def _validate_transaction_type_section(report: dict[str, Any], prefix: str) -> l
         errors.append(
             f"{prefix}.runtime_policy must keep transaction-type ML evidence-only"
         )
-    errors.extend(_validate_model_metrics(report, prefix))
+    if report.get("skipped"):
+        errors.extend(_require_keys(report, ["reason", "diagnostics"], prefix))
+    else:
+        errors.extend(_validate_model_metrics(report, prefix))
     return errors
 
 
@@ -180,29 +190,10 @@ def _print_classification(report: dict[str, Any]) -> list[str]:
     print("  Classes:", report.get("n_classes", "n/a"), "| splits:", report.get("n_splits", "n/a"))
 
     models = report.get("models", {})
-    linear = models.get("linear_svc", {})
-    dummy = models.get("dummy_most_frequent", {})
-    linear_macro = linear.get("macro_f1")
-    dummy_macro = dummy.get("macro_f1")
-    print("  linear_svc macro-F1:", _fmt(linear_macro))
-    print("  linear_svc weighted-F1:", _fmt(linear.get("weighted_f1")))
-    print("  dummy macro-F1:", _fmt(dummy_macro))
-    if isinstance(linear_macro, float) and isinstance(dummy_macro, float):
-        lift = linear_macro - dummy_macro
-        print("  macro-F1 lift vs dummy:", _fmt(lift))
-        if lift <= 0:
-            warnings.append("linear_svc is not better than dummy_most_frequent")
-
-    curve = linear.get("confidence_curve") or []
-    tau_055 = next((row for row in curve if row.get("threshold") == 0.55), None)
-    if tau_055:
-        print(
-            "  tau=0.55:",
-            "coverage=" + _fmt(tau_055.get("coverage")),
-            "accuracy=" + _fmt(tau_055.get("accuracy_on_covered")),
-        )
-    else:
-        warnings.append("missing confidence curve row for tau=0.55")
+    for model_name, model in models.items():
+        if isinstance(model, dict):
+            print(f"  {model_name} macro-F1:", _fmt(model.get("macro_f1")))
+            print(f"  {model_name} weighted-F1:", _fmt(model.get("weighted_f1")))
 
     readiness = report.get("label_readiness") or {}
     if readiness:

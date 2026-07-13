@@ -29,12 +29,6 @@ class Settings(BaseSettings):
     auth_username: str = ""
     auth_password: str = ""
 
-    # Scheduler
-    scheduler_enabled: bool = False
-    retrain_cron_hour: int = 3   # daily 03:00
-    retrain_cron_minute: int = 0
-    retrain_estimator: str = "logreg"
-
     # CORS / rate limiting
     cors_allow_origins: str = "http://localhost:3000"
     rate_limit_per_minute: int = 120

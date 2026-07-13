@@ -5,46 +5,42 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from finance.ml.classification.confidence import (
-    max_prediction_confidence,
-    softmax_margin_confidence,
-)
+from finance.ml.classification.confidence import predict_with_probabilities
 
 
 class _ProbaModel:
+    classes_ = np.asarray(["food", "transport"])
+
+    def __init__(self) -> None:
+        self.calls = 0
+
     def predict_proba(self, _x: pd.DataFrame) -> np.ndarray:
+        self.calls += 1
         return np.asarray([[0.2, 0.8]])
 
 
-class _MarginModel:
-    def predict(self, _x: pd.DataFrame) -> np.ndarray:
-        return np.asarray(["food"])
-
-    def decision_function(self, _x: pd.DataFrame) -> np.ndarray:
-        return np.asarray([[0.0, 2.0, -1.0]])
-
-
 class _BrokenModel:
+    classes_ = np.asarray(["food", "transport"])
+
     def predict_proba(self, _x: pd.DataFrame) -> np.ndarray:
         raise RuntimeError("not available")
 
 
-def test_max_prediction_confidence_prefers_predict_proba() -> None:
-    confidence = max_prediction_confidence(_ProbaModel(), pd.DataFrame([{"text": "x"}]))
-    assert confidence == pytest.approx(0.8)
+def test_probability_prediction_uses_one_model_call_for_all_diagnostics() -> None:
+    model = _ProbaModel()
+
+    result = predict_with_probabilities(model, pd.DataFrame([{"text": "x"}]))
+
+    assert result == (
+        "transport",
+        pytest.approx(0.8),
+        [
+            {"category": "transport", "confidence": pytest.approx(0.8)},
+            {"category": "food", "confidence": pytest.approx(0.2)},
+        ],
+    )
+    assert model.calls == 1
 
 
-def test_max_prediction_confidence_uses_decision_margin_proxy() -> None:
-    confidence = max_prediction_confidence(_MarginModel(), pd.DataFrame([{"text": "x"}]))
-    assert confidence == pytest.approx(float(softmax_margin_confidence(np.asarray([[0.0, 2.0, -1.0]]))[0]))
-
-
-def test_max_prediction_confidence_returns_none_on_estimator_error() -> None:
-    assert max_prediction_confidence(_BrokenModel(), pd.DataFrame([{"text": "x"}])) is None
-
-
-def test_softmax_margin_confidence_handles_binary_margins() -> None:
-    confidence = softmax_margin_confidence(np.asarray([-2.0, 0.0, 2.0]))
-    assert confidence.shape == (3,)
-    assert confidence[1] == pytest.approx(0.5)
-    assert confidence[0] == pytest.approx(confidence[2])
+def test_probability_prediction_returns_none_on_estimator_error() -> None:
+    assert predict_with_probabilities(_BrokenModel(), pd.DataFrame([{"text": "x"}])) is None

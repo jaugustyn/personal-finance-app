@@ -14,6 +14,11 @@ from finance.transactions.type_decision import TYPE_GOLD_METHODS
 
 VALID_TRANSACTION_TYPES = TRANSACTION_TYPE_VALUES
 LABEL_SOURCE = "confirmed_transaction_type"
+TYPE_PROVENANCE_COLUMNS = {
+    "transaction_type",
+    "transaction_type_confirmation_method",
+    "transaction_type_confirmed_at",
+}
 
 
 def _clean_type(value: object) -> str | None:
@@ -26,10 +31,9 @@ def _clean_type(value: object) -> str | None:
 def prepare_training_frame(df: pd.DataFrame) -> pd.DataFrame:
     """Normalize transaction rows into features and confirmed labels.
 
-    Only the DB loader decides label eligibility. In-memory callers are expected
-    to pass the same confirmed-label subset.
+    In-memory and DB callers must provide explicit gold-label provenance.
     """
-    if df.empty or "transaction_type" not in df.columns:
+    if df.empty or not TYPE_PROVENANCE_COLUMNS.issubset(df.columns):
         return pd.DataFrame(
             columns=[
                 "text",
@@ -37,21 +41,27 @@ def prepare_training_frame(df: pd.DataFrame) -> pd.DataFrame:
                 "direction",
                 "source",
                 "transaction_type",
+                "transaction_type_confirmation_method",
+                "transaction_type_confirmed_at",
                 "label_source",
             ]
         )
 
-    out = df.copy()
+    out = df[
+        df["transaction_type_confirmation_method"].isin(TYPE_GOLD_METHODS)
+        & df["transaction_type_confirmed_at"].notna()
+    ].copy()
     out["transaction_type"] = out["transaction_type"].map(_clean_type)
     out = out[out["transaction_type"].notna()].copy()
     if out.empty:
         return out.assign(label_source=LABEL_SOURCE)
 
-    merchant = out.get("merchant", pd.Series("", index=out.index)).fillna("").astype(str)
-    title = out.get("title", pd.Series("", index=out.index)).fillna("").astype(str)
-    raw_type = out.get("raw_transaction_type", pd.Series("", index=out.index))
-    raw_type = raw_type.fillna("").astype(str)
-    out["text"] = (merchant + " " + title + " " + raw_type).str.strip()
+    if "text" not in out.columns:
+        merchant = out.get("merchant", pd.Series("", index=out.index)).fillna("").astype(str)
+        title = out.get("title", pd.Series("", index=out.index)).fillna("").astype(str)
+        raw_type = out.get("raw_transaction_type", pd.Series("", index=out.index))
+        raw_type = raw_type.fillna("").astype(str)
+        out["text"] = (merchant + " " + title + " " + raw_type).str.strip()
     out["text"] = out["text"].where(out["text"].str.len() > 0, "(missing)")
 
     if "abs_amount" in out.columns:
@@ -72,6 +82,8 @@ def prepare_training_frame(df: pd.DataFrame) -> pd.DataFrame:
         "direction",
         "source",
         "transaction_type",
+        "transaction_type_confirmation_method",
+        "transaction_type_confirmed_at",
         "label_source",
     ]
     columns.extend(
@@ -95,6 +107,8 @@ def load_training_set(session: Session) -> pd.DataFrame:
             Transaction.raw_transaction_type,
             Transaction.source,
             Transaction.transaction_type,
+            Transaction.transaction_type_confirmation_method,
+            Transaction.transaction_type_confirmed_at,
         )
         .where(Transaction.transaction_type_confirmation_method.in_(TYPE_GOLD_METHODS))
         .where(Transaction.transaction_type_confirmed_at.is_not(None))
@@ -111,6 +125,8 @@ def load_training_set(session: Session) -> pd.DataFrame:
             "raw_transaction_type",
             "source",
             "transaction_type",
+            "transaction_type_confirmation_method",
+            "transaction_type_confirmed_at",
         ],
     )
     return prepare_training_frame(df)

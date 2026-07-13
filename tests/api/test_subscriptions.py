@@ -5,6 +5,7 @@ from datetime import date
 from decimal import Decimal
 
 from finance.domain.models import MerchantAlias, Transaction
+from finance.ml.subscriptions import service as subscription_service
 from finance.ml.subscriptions.service import list_subscription_rows
 from finance.transactions.merchants import merchant_identity
 
@@ -514,7 +515,13 @@ def test_subscription_price_increase_status(client, db_session) -> None:
     assert row["price_change_pct"] is not None
 
 
-def test_subscription_overview_returns_kpis(client, db_session) -> None:
+def test_subscription_overview_returns_kpis(client, db_session, monkeypatch) -> None:
+    class _FixedDate(date):
+        @classmethod
+        def today(cls) -> date:
+            return cls(2026, 7, 1)
+
+    monkeypatch.setattr(subscription_service, "date", _FixedDate)
     for month in range(3, 7):
         db_session.add(_subscription_tx(month))
     db_session.commit()

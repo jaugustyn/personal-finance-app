@@ -25,12 +25,8 @@ from finance.domain.enums import (
 )
 from finance.domain.models import MlModelVersion, Transaction
 from finance.llm import client as llm_client
-from finance.ml.classification.artifacts import artifact_sha256, require_compatible_artifact
-from finance.ml.classification.confidence import (
-    max_prediction_confidence,
-    top_prediction_confidences,
-)
-from finance.ml.classification.pipeline import add_feature_v2_columns
+from finance.ml.classification.artifacts import artifact_sha256, require_runtime_artifact
+from finance.ml.classification.confidence import predict_with_probabilities
 from finance.ml.classification.policy import (
     DEFAULT_POLICY,
     ClassificationDecision,
@@ -50,8 +46,6 @@ from finance.transactions.category_provenance import (
 from finance.transactions.rules import rule_category_for_type
 from finance.transactions.type_decision import effective_transaction_type
 
-LATEST_MODEL_PATH = Path("data/models/classifier_latest.joblib")
-DEFAULT_THRESHOLD = 0.55
 SYSTEM_CATEGORIES = CATEGORY_VALUES
 
 
@@ -75,35 +69,11 @@ class PredictionResult:
 
 def _unwrap_artifact(artifact: Any):
     pipe = artifact.get("pipeline") if isinstance(artifact, dict) else None
-    if pipe is None or not hasattr(pipe, "predict"):
+    if pipe is None or not hasattr(pipe, "predict_proba"):
         raise ClassifierNotAvailable(
-            f"Invalid classifier artifact at {LATEST_MODEL_PATH}; expected metadata dict."
+            "model_retrain_required: registered artifact does not contain a calibrated pipeline."
         )
     return pipe
-
-
-@lru_cache(maxsize=1)
-def get_classifier_artifact() -> dict[str, Any]:
-    """Load the legacy fixed path used only by CLI and compatibility callers."""
-    if not LATEST_MODEL_PATH.exists():
-        raise ClassifierNotAvailable(
-            f"No model at {LATEST_MODEL_PATH}. "
-            "Run `python -m finance.ml.classification.train ... --persist linear_svc`."
-        )
-    try:
-        artifact = joblib.load(LATEST_MODEL_PATH)
-        require_compatible_artifact(artifact)
-    except Exception as exc:
-        raise ClassifierNotAvailable(
-            "model_retrain_required: active artifact is missing, damaged or incompatible. "
-            "Train and manually activate a new candidate."
-        ) from exc
-    return artifact
-
-
-@lru_cache(maxsize=1)
-def get_classifier():
-    return _unwrap_artifact(get_classifier_artifact())
 
 
 @lru_cache(maxsize=8)
@@ -120,7 +90,7 @@ def load_registered_artifact(
         )
     try:
         artifact = joblib.load(path)
-        require_compatible_artifact(artifact)
+        require_runtime_artifact(artifact)
     except ClassifierNotAvailable:
         raise
     except Exception as exc:
@@ -168,7 +138,7 @@ def active_classification_policy(
         if selected is None and session is not None:
             selected = require_registered_active_artifact(session)
         if selected is None:
-            selected = get_classifier_artifact()
+            return fallback
         embedded = selected.get("confidence_policy")
     except ClassifierNotAvailable:
         return fallback
@@ -201,7 +171,7 @@ def _row_to_features(
             }
         ]
     )
-    return add_feature_v2_columns(base)
+    return base
 
 
 def _extract_category_from_llm(content: str | None) -> str | None:
@@ -256,7 +226,6 @@ def predict_transaction(
     amount: Decimal,
     booking_date: date,
     *,
-    threshold: float = DEFAULT_THRESHOLD,
     use_llm_fallback: bool = False,
     source: str = "unknown",
     transaction_type: str = TransactionType.EXPENSE.value,
@@ -265,20 +234,20 @@ def predict_transaction(
     policy: ClassificationPolicy | None = None,
     artifact: dict[str, Any] | None = None,
 ) -> PredictionResult:
+    if artifact is None:
+        raise ClassifierNotAvailable(
+            "model_retrain_required: prediction requires the active registered artifact."
+        )
     if policy is None:
-        try:
-            selected = artifact or get_classifier_artifact()
-            embedded = selected.get("confidence_policy")
-        except ClassifierNotAvailable:
-            embedded = None
+        embedded = artifact.get("confidence_policy")
         active_policy = policy_from_report(
             embedded if isinstance(embedded, dict) else None,
-            fallback=ClassificationPolicy(default_threshold=threshold),
+            fallback=DEFAULT_POLICY,
         )
     else:
         active_policy = policy
     direction_value = direction or ("credit" if amount > 0 else "debit")
-    pipe = _unwrap_artifact(artifact) if artifact else get_classifier()
+    pipe = _unwrap_artifact(artifact)
     X = _row_to_features(  # noqa: N806
         merchant,
         title,
@@ -287,9 +256,12 @@ def predict_transaction(
         source=source,
         transaction_type=transaction_type,
     )
-    model_category = str(pipe.predict(X)[0])
-    confidence = max_prediction_confidence(pipe, X)
-    top_predictions = top_prediction_confidences(pipe, X, k=3)
+    prediction = predict_with_probabilities(pipe, X, k=3)
+    if prediction is None:
+        raise ClassifierNotAvailable(
+            "model_retrain_required: active artifact cannot return calibrated probabilities."
+        )
+    model_category, confidence, top_predictions = prediction
     decision = decide_classification(
         category=model_category,
         confidence=confidence,

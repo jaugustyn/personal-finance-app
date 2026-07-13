@@ -41,6 +41,44 @@ def test_retrain_creates_durable_job_without_automatic_activation(
     assert job.result == {}
 
 
+def test_default_retrain_queues_exactly_two_baseline_candidates(
+    client,
+    db_session,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(ml_router, "_retrain_job", lambda _job_id: None)
+    monkeypatch.setattr(
+        ml_router,
+        "readiness_summary",
+        lambda _session: {"training_ready": True},
+    )
+
+    response = client.post("/ml/retrain")
+
+    assert response.status_code == 202
+    job = db_session.get(MlTrainingJob, response.json()["job_id"])
+    assert job is not None
+    assert job.requested_variants == [
+        {"estimator": "logreg", "feature_set": "baseline", "promotable": True},
+        {
+            "estimator": "linear_svc_calibrated",
+            "feature_set": "baseline",
+            "promotable": True,
+        },
+    ]
+
+
+def test_retrain_rejects_feature_v2_as_runtime_candidate(
+    client,
+    db_session,
+) -> None:
+    response = client.post("/ml/retrain?feature_set=feature_v2")
+
+    assert response.status_code == 400
+    assert "benchmark-only" in response.json()["detail"]
+    assert db_session.query(MlTrainingJob).count() == 0
+
+
 def test_retrain_rejects_request_before_creating_job_without_gold_labels(
     client,
     db_session,
@@ -59,4 +97,3 @@ def test_transaction_type_cold_start_does_not_require_a_model(client) -> None:
 
     assert reclassify.status_code == 200
     assert reclassify.json() == {"updated": 0}
-
