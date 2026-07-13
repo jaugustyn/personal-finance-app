@@ -31,8 +31,7 @@ Backend:
 - SQLAlchemy 2 jako ORM,
 - Alembic dla migracji,
 - PostgreSQL jako baza runtime,
-- structlog dla logów strukturalnych,
-- APScheduler dla opcjonalnych zadań okresowych.
+- structlog dla logów strukturalnych.
 
 Frontend:
 
@@ -72,7 +71,7 @@ Uruchomienie:
 
 Główne granice odpowiedzialności:
 
-- `apps/api` - FastAPI, routery, middleware, security, scheduler.
+- `apps/api` - FastAPI, routery, middleware i security.
 - `apps/web` - dashboard Next.js.
 - `src/finance` - logika domenowa, importy, ML, LLM, statystyki, waluty,
   aktywa i profil użytkownika.
@@ -378,7 +377,7 @@ Pipeline:
 - one-hot dzień tygodnia,
 - estymator: Logistic Regression albo kalibrowany `LinearSVC`.
 
-Istnieje też eksperymentalny feature set v2:
+Istnieje też eksperymentalny, niepromowalny feature set v2:
 
 - `merchant_norm`,
 - bucket kwoty,
@@ -388,13 +387,17 @@ Istnieje też eksperymentalny feature set v2:
 
 Metodyka treningu:
 
-- potwierdzone dane z bazy,
-- tylko potwierdzone `Transaction.category` jako ground truth,
+- co najmniej 300 potwierdzonych etykiet łącznie,
+- tylko `manual` i `accepted_suggestion` z datą potwierdzenia jako ground truth,
+- klasy z co najmniej 10 etykietami; minimum dwie klasy w konkretnym modelu,
 - deterministyczne time holdout i merchant holdout,
 - StratifiedKFold wyłącznie pomocniczo i do predykcji OOF,
 - raport: macro-F1, weighted-F1, classification report, confusion matrix,
   confidence curve,
-- benchmark `DummyClassifier` uruchamiany tylko w jawnym eksperymencie,
+- domyślnie porównywane wyłącznie Logistic Regression baseline i kalibrowany
+  LinearSVC baseline,
+- feature-v2, Dummy, zwykły LinearSVC i Random Forest uruchamiane tylko w
+  jawnym eksperymencie i nigdy niepromowalne,
 - niezmienne artefakty kandydatów w `data/models/candidates`,
 - aktywna wersja wskazywana wyłącznie przez rejestr modeli w bazie,
 - zagregowane raporty evidence w `data/reports`.
@@ -402,6 +405,7 @@ Metodyka treningu:
 Polityka zaufania:
 
 - domyślny próg akceptacji: 0.55,
+- próg jest stały w runtime; progi OOF i per-category są wyłącznie diagnostyką,
 - floor review: 0.25,
 - `other` wymaga review, jeśli polityka nie pozwala go automatycznie
   akceptować,
@@ -701,8 +705,8 @@ Frontend:
 
 CI:
 
-- Python 3.11,
-- `pip install -e ".[dev]"`,
+- Python 3.12,
+- `uv sync --frozen --extra dev`,
 - Ruff,
 - mypy non-blocking,
 - pytest,
@@ -775,8 +779,8 @@ Ryzyka metodologiczne:
 
 - drift merchantów i formatów bankowych,
 - nierównowaga klas,
-- confidence LinearSVC jest proxy marginesu, nie skalibrowanym
-  prawdopodobieństwem,
+- confidence wymaga monitorowania kalibracji; runtime celowo nie dostraja progu
+  do prywatnych holdoutów,
 - detekcja subskrypcji może pomijać zmienne opłaty,
 - anomalie wymagają feedbacku użytkownika do oceny precision@k,
 - forecast na krótkich szeregach powinien być interpretowany jako orientacyjny,

@@ -38,7 +38,6 @@ dashboard and a natural-language assistant.
 | LLM | Ollama with a local instruct model |
 | Web frontend | Next.js App Router + React + TypeScript + Tailwind + TanStack Query + Recharts |
 | Observability | structlog JSON logs + `X-Request-ID` + health/readiness endpoints |
-| Scheduler | APScheduler in-process jobs |
 | Auth | HTTP Basic for single-user self-hosting |
 | Containers | Docker Compose: api, web, postgres |
 | CI | GitHub Actions for lint, tests, frontend checks and audits |
@@ -59,7 +58,7 @@ Optional:
 Main directories:
 
 ```text
-apps/api/         FastAPI backend: routers, middleware, scheduler, security
+apps/api/         FastAPI backend: routers, middleware and security
 apps/web/         Next.js dashboard
 src/finance/      Importable domain package used by API, scripts and tests
   ingestion/        CSV/XLSX parsers: Pekao, Revolut, generic
@@ -109,16 +108,17 @@ confidence. Money-flow semantics are handled separately by `transaction_type`,
 so salaries, refunds and transfers do not pollute the expense ontology.
 
 - **Pipeline:** `ColumnTransformer` with TF-IDF char/word features over text and
-  `StandardScaler` over numeric features, followed by `LinearSVC(C=1.0)`.
-- **Baseline:** `DummyClassifier(strategy="most_frequent")` in
-  `classification_*.json`.
-- **Training:** `python -m finance.ml.classification.train --from-files ... --persist linear_svc`.
+  `StandardScaler` over numeric features, followed by Logistic Regression or a
+  calibrated LinearSVC.
+- **Training:** explicit `POST /ml/retrain`; the default job compares both
+  baseline candidates and stores immutable registry versions.
 - **LLM augmentation:** `augment.py` generates synthetic merchant strings for
   rare classes using Ollama.
-- **Evaluation:** 5-fold StratifiedKFold with macro-F1, weighted-F1, per-class
-  report and confusion matrix.
-- **Runtime prediction:** `predict.py::predict_one` returns SVC output when
-  confidence is high enough; low-confidence cases may use the LLM fallback.
+- **Evaluation:** mandatory time and unseen-merchant holdouts; OOF predictions
+  provide calibration diagnostics.
+- **Runtime prediction:** only the active DB-registered artifact is loaded. A
+  fixed threshold of 0.55 controls review; low-confidence cases may optionally
+  use the local LLM fallback.
 
 Indicative results are documented in `docs/model-card.md`.
 
@@ -211,7 +211,7 @@ Observability:
 | Category classification, LLM augmentation | Done |
 | Forecasting, anomalies, subscriptions | Done |
 | Local LLM assistant with deterministic tools | Done |
-| BasicAuth, structured logs, scheduler, health checks | Done |
+| BasicAuth, structured logs and health checks | Done |
 | Next.js dashboard | Done |
 | ML evidence package and report inspector | Done |
 | Category review workflow and deterministic recommendations | Done |

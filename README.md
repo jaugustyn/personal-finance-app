@@ -82,7 +82,6 @@ DATABASE_URL=postgresql+psycopg://finance:finance@localhost:5432/finance
 OLLAMA_BASE_URL=http://localhost:11434
 LLM_ENABLED=true
 LLM_FALLBACK_ENABLED=false
-SCHEDULER_ENABLED=false
 ```
 
 Set `AUTH_USERNAME` and `AUTH_PASSWORD` to enable BasicAuth. Ollama runs outside
@@ -147,17 +146,23 @@ uv run python scripts\build_ml_evidence.py --from-db
 uv run python scripts\inspect_report.py --profile classification-strict
 ```
 
-Category training uses only explicitly confirmed 9-class expense labels.
+Category training uses only explicitly confirmed expense labels with complete
+provenance. Training requires 300 gold labels in total; classes with at least
+10 examples enter the current model, while rarer classes remain manual. At
+least two supported classes and feasible time/merchant holdouts are required.
 `POST /ml/retrain` creates versioned candidates; it never overwrites the active
 model. Review gates and activate or roll back a compatible version from the ML
 screen. Bank/system categories and model/LLM output remain suggestions until
 the user accepts them.
 
-Routine retraining evaluates Logistic Regression with the baseline feature
-set. The broader research matrix is added explicitly with
+Routine retraining evaluates exactly Logistic Regression and calibrated
+LinearSVC with the baseline feature set. Both use a fixed runtime confidence
+threshold of 0.55; OOF calibration and alternative thresholds are diagnostics
+only. The broader research matrix, including feature-v2, is added explicitly with
 `POST /ml/retrain?include_benchmarks=true`. The database model registry is the
 runtime source of truth; JSON reports are evidence outputs and never select the
-active artifact.
+active artifact. Training is always initiated explicitly; there is no automatic
+retraining scheduler.
 
 Reports are written to `data/reports/`. Private anomaly review files are written
 to `data/private/`. Both directories are ignored by Git.
@@ -180,7 +185,7 @@ all `.env` files; Git already ignores these paths.
 ## Repository Layout
 
 ```text
-apps/api/       FastAPI routers, middleware and scheduler
+apps/api/       FastAPI routers, middleware and security
 apps/web/       Next.js dashboard
 src/finance/    domain logic, imports, ML, LLM and statistics
 alembic/        database migrations

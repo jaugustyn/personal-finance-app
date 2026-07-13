@@ -8,13 +8,13 @@ files, model artifacts and private anomaly reviews remain local in `data/raw/`,
 ## What To Generate
 
 ```bash
-python scripts/build_ml_evidence.py --from-db
+uv run python scripts/build_ml_evidence.py --from-db
 ```
 
 If the local database uses credentials different from the app configuration:
 
 ```bash
-python scripts/build_ml_evidence.py \
+uv run python scripts/build_ml_evidence.py \
   --from-db \
   --database-url postgresql+psycopg://user:password@localhost:5432/finance
 ```
@@ -22,7 +22,7 @@ python scripts/build_ml_evidence.py \
 Optional augmentation:
 
 ```bash
-python scripts/build_ml_evidence.py \
+uv run python scripts/build_ml_evidence.py \
   --from-db \
   --augment data/synthetic/augmented.csv
 ```
@@ -30,26 +30,23 @@ python scripts/build_ml_evidence.py \
 Optional public Kaggle dataset as a comparison experiment:
 
 ```bash
-python scripts/build_ml_evidence.py \
+uv run python scripts/build_ml_evidence.py \
   --from-db \
   --external-kaggle data/external/kaggle_personal_finance_data/Personal_Finance_Dataset.csv
 ```
 
-Kaggle data is reported only as `external_only` and
-`real_plus_external_training_only`. It
-does not replace manually confirmed Polish labels and should not automatically
-switch the production model.
+Kaggle and synthetic data are reported as separate experiment counts. They do
+not replace manually confirmed Polish labels and are not mixed into runtime
+candidate fitting or validation.
 
 The script writes:
 
-- `data/reports/classification_*.json` - real-only and optionally augmented
-  category classification reports. They include `dummy_most_frequent`, `logreg`,
-  `linear_svc`, `random_forest`, macro-F1, weighted-F1, per-class metrics and
-  a confusion matrix. The report also contains the experimental `feature_v2`
-  comparison (`merchant_norm`, `transaction_type`, `source`, amount bucket,
-  month), `linear_svc_calibrated` as a confidence variant and `label_readiness`.
-  The production model remains on the base pipeline until the results are
-  reviewed.
+- `data/reports/classification_*.json` - aggregate metrics of the active
+  registered model when using `--from-db`, including time, merchant and OOF
+  results. Offline evidence uses the same evaluator as training jobs and
+  compares only `logreg` and `linear_svc_calibrated` on baseline features.
+  Feature-v2, Dummy, plain LinearSVC and Random Forest are available only in the
+  explicit benchmark job and cannot create an activatable model version.
 - `data/reports/transaction_type_classification_*.json` - a separate
   supervised multiclass experiment for `Transaction.transaction_type` on
   manually confirmed labels. It includes `dummy_most_frequent`, `logreg`,
@@ -81,7 +78,7 @@ After manually filling the `is_relevant` column (`yes/no`, `1/0`,
 `true/false`), recompute anomaly precision:
 
 ```bash
-python scripts/build_ml_evidence.py \
+uv run python scripts/build_ml_evidence.py \
   --from-db \
   --review-file data/private/latest_anomaly_review.csv
 ```
@@ -93,7 +90,7 @@ the denominator is never silently reduced to the labelled subset.
 After report generation, run the inspector:
 
 ```bash
-python scripts/inspect_report.py --profile classification-strict
+uv run python scripts/inspect_report.py --profile classification-strict
 ```
 
 `classification-strict` requires a complete category-classification section
@@ -113,8 +110,8 @@ before citing results in the thesis or presentation.
 
 1. Start the app on a clean database using `docs/demo-runbook.md`.
 2. Import a real bank export through the Next.js `/imports` page.
-3. Manually accept/reject suggestions and add seed labels until the classes are
-   reasonably balanced.
+3. Manually accept/reject suggestions until there are at least 300 gold labels,
+   two classes with at least 10 examples and feasible validation splits.
 4. Run retraining and `reclassify`.
 5. Generate reports with `build_ml_evidence.py --from-db`.
 6. Complete the private anomaly review and rerun the report with `--review-file`.
@@ -125,9 +122,9 @@ before citing results in the thesis or presentation.
 The priority is real Polish transactions with a manually confirmed `category`.
 `category_predicted` is a suggestion, not ground truth.
 
-- Technical activation: at least 300 confirmed transactions in total. Class
-  support is checked only for split/CV feasibility; there is no separate
-  20-per-class activation gate.
+- Technical activation: at least 300 confirmed transactions in total. Classes
+  with at least 10 examples enter the model; at least two such classes and both
+  feasible holdouts are required. Rarer classes remain manual.
 - Thesis data readiness: at least 800 labels, 50 per class, 12 represented
   calendar months and a span of at least 365 days.
 
@@ -145,8 +142,8 @@ classes and repeated merchants with errors.
   manual decisions and accepted suggestions. Its runtime output still requires
   explicit user confirmation.
 - Runtime confidence comes only from Logistic Regression or calibrated
-  LinearSVC. Thresholds are derived from real OOF probabilities with minimum
-  support and evaluated unchanged on both holdouts.
+  LinearSVC and always uses threshold 0.55. OOF-derived global/per-category
+  thresholds, ECE, Brier and log-loss are diagnostics only.
 - Rare-class augmentation is experimental. Report the result even when the
   improvement is small or neutral.
 - Forecasting selects the model with the lowest RMSE in walk-forward CV. ARIMA

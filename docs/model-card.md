@@ -8,7 +8,7 @@
 | Version | Registered model-version UUID |
 | Target | One of the 9 system expense categories |
 | Candidates | Logistic Regression or calibrated LinearSVC |
-| Features | TF-IDF baseline or feature-v2 |
+| Runtime features | TF-IDF baseline: text, amount and day of week |
 | Workflow | `POST /ml/retrain` → candidate report → manual activation |
 | Runtime artifact | Immutable candidate path selected by the active DB model version |
 | License | MIT for code; private training data is not licensed or published |
@@ -17,8 +17,8 @@ The active runtime model must expose calibrated `predict_proba`. Dummy,
 uncalibrated LinearSVC and Random Forest remain research benchmarks and cannot
 be promoted in iteration 1.
 
-Routine `POST /ml/retrain` evaluates Logistic Regression with baseline
-features. The complete ten-variant thesis experiment is explicit:
+Routine `POST /ml/retrain` evaluates both Logistic Regression and calibrated
+LinearSVC with baseline features. The complete ten-variant research experiment is explicit:
 `POST /ml/retrain?include_benchmarks=true`. Benchmark mode cannot be combined
 with candidate filters.
 
@@ -42,13 +42,13 @@ Gold labels are limited to transactions with all of the following:
 - a non-null confirmation timestamp.
 
 Bank categories, system rules, personal `auto_apply` rules and model/LLM output
-are excluded from gold labels until the user confirms the category.
-user accepts them. Custom categories remain available in the product but are
+are excluded from gold labels until the user confirms the category. Custom
+categories remain available in the product but are
 excluded from ML v1. No historical labels are automatically backfilled.
 
 Raw bank categories remain stored for future ontology work. Synthetic and
-external data are reported separately and may enter training folds only; they
-never enter evaluation folds or the active model in iteration 1.
+external data are reported separately; they do not enter runtime candidate
+training or validation.
 
 ## Evaluation and promotion
 
@@ -66,10 +66,11 @@ latency.
 Technical promotion requires:
 
 - at least 300 confirmed labels in total;
-- enough representation of every ontology class to construct valid 5-fold CV
-  and both holdouts (a technical feasibility condition, not a 20-per-class gate);
+- at least two classes with 10 confirmed examples each;
+- feasible time and merchant holdouts for every class included in the model;
 - macro-F1 ≥0.60 on both primary holdouts;
-- regression ≤0.02 relative to a comparable active model;
+- regression ≤0.02 only relative to an active model evaluated on the same
+  frozen evaluation set;
 - p99 ≤200 ms for 1000 warmed predictions without LLM.
 
 Thesis-ready additionally requires:
@@ -80,9 +81,9 @@ Thesis-ready additionally requires:
 - macro-F1 ≥0.75 on both frozen holdouts;
 - covered accuracy ≥0.90 with coverage ≥0.50 on both holdouts.
 
-Thresholds are derived only from real OOF probabilities. A category-specific
-threshold requires at least 20 predictions of that class and 10 covered rows;
-otherwise it inherits the global threshold. `other` always requires review.
+Runtime always uses the global threshold 0.55. OOF calibration, ECE, Brier,
+log-loss and candidate global/per-category thresholds are diagnostic only and
+cannot modify runtime behavior. `other` always requires review.
 
 ## LLM and augmentation
 
@@ -91,10 +92,9 @@ global flag and `use_llm_fallback=true` for the request. Its category has
 `confidence=null`, retains the base `model_confidence` separately and always
 requires explicit acceptance.
 
-Formal hybrid activation requires no holdout regression worse than 0.01,
-improvement of at least one holdout by 0.01, covered accuracy ≥0.90 and an LLM
-hit rate ≤10%. The report records exact model tag, digest, options, hardware and
-latency percentiles.
+LLM fallback remains optional and experimental; it is not an alternative active
+artifact. A formal comparison can record model tag, digest, hardware, hit rate
+and latency percentiles without changing the baseline runtime policy.
 
 ## Limitations and privacy
 
@@ -118,5 +118,5 @@ uv run python scripts/inspect_report.py --profile classification-strict
 
 Python 3.12 and all transitive dependencies are locked in `uv.lock`. Every
 artifact records exact Python, scikit-learn, numpy, pandas and joblib versions
-and is rejected on mismatch. Deterministic split operations use
+and schema version 3.0 is rejected on any mismatch. Deterministic split operations use
 `random_state=42`.

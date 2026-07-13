@@ -2,7 +2,7 @@
 
 - **Status:** ACCEPTED
 - **Date:** 2026-05-01
-- **Phase:** Phase 1 -> Phase 3 (confidence calibration)
+- **Phase:** simplified runtime with diagnostic calibration
 
 ## Context
 
@@ -24,15 +24,17 @@ Two extreme strategies were considered:
 
 Use a **hybrid approach**:
 
-1. Runtime candidates are Logistic Regression or calibrated LinearSVC with the
-   baseline or feature-v2 pipeline. Margin proxies cannot be promoted.
-2. Thresholds are derived from real OOF probabilities and evaluated unchanged
-   on time and unseen-merchant holdouts. `other` always requires review.
+1. Runtime candidates are Logistic Regression and calibrated LinearSVC with the
+   baseline pipeline only. Feature-v2 and other estimators are benchmark-only.
+2. Runtime uses the fixed confidence threshold 0.55. Thresholds derived from
+   real OOF probabilities remain diagnostics. `other` always requires review.
 3. **LLM fallback** uses a configurable local Ollama model and requires both a
    global flag and an explicit request flag. It has no fabricated confidence
    and always requires user acceptance.
-4. **LLM-driven augmentation** (`finance.ml.classification.augment`) generates
-   synthetic merchant strings for rare classes to improve macro-F1.
+4. **LLM-driven augmentation** (`finance.ml.classification.augment`) is a
+   separate research experiment and does not enter runtime candidate training.
+5. Training is an explicit user action. Candidates are stored in the DB-backed
+   registry and activated manually; no scheduler retrains or promotes models.
 
 ## Consequences
 
@@ -40,11 +42,13 @@ Use a **hybrid approach**:
 
 - Candidate quality is measured on both primary holdouts, not only stratified
   CV.
+- A model may cover only ontology classes with at least 10 confirmed labels;
+  unsupported classes remain manual instead of blocking useful training.
 - No cloud dependency. Ollama runs locally.
 
 **Negative:**
 
-- Two decision paths increase code and test complexity.
+- Optional LLM fallback still adds a second suggestion path.
 - LLM augmentation is non-deterministic, so generated CSV files must record the
   seed and model version.
 - Candidates are never activated automatically. Manual promotion and rollback
