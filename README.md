@@ -1,93 +1,84 @@
 # Personal Finance App
 
-Self-hosted personal finance analysis app. The project combines bank transaction
-imports, a production web dashboard, classical ML models and a local LLM
-assistant backed by deterministic domain tools.
+Self-hosted application for importing and analysing personal-finance data. It
+combines a FastAPI backend, a Next.js dashboard, classical ML and an optional
+local Ollama assistant. Financial calculations are performed by deterministic
+domain services; the LLM is not a source of numeric facts.
 
-## Key Features
+## Project status
 
-- CSV/XLSX imports from Pekao, Revolut or a generic file with manual column mapping.
-- Transaction table with filters, category/type editing, tags and notes.
-- Separate `transaction_type` semantics from budget expense categories.
-- Dashboard with KPIs, cash flow, categories, top merchants and net worth.
-- ML suggestions for expense categories using TF-IDF and linear models.
-- Rule-based `transaction_type` suggestions with explicit user confirmation.
-- Expense forecasting with simple time-series models: naive, mean, SES and ARIMA.
-- Anomaly detection with IsolationForest, deterministic rules and user feedback.
-- Subscription detection based on payment cadence and amount stability.
-- Local LLM assistant: answers are in Polish, but numeric facts come from backend tools.
+The project is actively developed. Import, transaction management, analytics,
+the dashboard and the category-model lifecycle are operational. Real bank
+exports, trained models and reports generated from private data are not
+included in the repository.
 
-## Stack
+On a clean database, the absence of an active category model is expected.
+Training becomes available after collecting enough explicitly confirmed labels;
+activation is always manual. Forecasting, anomaly detection, subscription
+detection and transaction-type ML are implemented but remain provisional from
+the validation perspective.
 
-- Backend: FastAPI, SQLAlchemy 2, Alembic, PostgreSQL.
-- Frontend: Next.js, React, TypeScript, Tailwind, TanStack Query, Recharts.
-- ML: pandas, scikit-learn, statsmodels.
-- LLM: local Ollama, optional.
-- Runtime: Docker Compose.
+## Main capabilities
 
-## Current Development Status
+- Pekao and Revolut imports, plus a generic CSV/XLSX mapping flow.
+- Deduplication, multi-currency conversion and daily exchange rates.
+- Transaction list with separate economic type and expense category workflows.
+- Dashboard, period summaries, merchant analysis and asset tracking.
+- Category suggestions using TF-IDF and linear classifiers.
+- Rule-based transaction-type suggestions with explicit user review.
+- Forecasting, anomaly and subscription detection.
+- Polish local assistant backed by deterministic finance tools.
 
-This repository is an in-progress thesis project prepared for preliminary
-review. Transaction import, editing, analytics, the dashboard and the
-classification lifecycle are operational. No private transactions or trained
-model are bundled with the project.
+## Architecture
 
-On a clean database the ML screen intentionally reports that no active model is
-available. Category training becomes available after collecting at least 300
-explicitly confirmed labels and enough class support to construct valid
-validation splits. Model activation is always manual. The private frozen thesis
-test remains implemented in the backend but is intentionally hidden from the UI
-until the final evaluation stage.
+```text
+Next.js web -> /api/proxy/* -> FastAPI -> src/finance -> PostgreSQL
+                                      -> Ollama (optional, local only)
+```
 
-Forecasting, anomaly detection, subscription detection and the
-`transaction_type` experiment are useful working modules, but their thesis
-evidence status remains explicitly provisional.
+| Layer | Technology |
+| --- | --- |
+| API and domain | FastAPI, Pydantic, SQLAlchemy, Alembic |
+| Web | Next.js, React, TypeScript, Tailwind, TanStack Query |
+| Data and ML | pandas, scikit-learn, statsmodels, joblib |
+| Runtime | PostgreSQL, Docker Compose, Python 3.12, `uv` |
 
-## Quick Start
+## Quick start
 
-Requirements:
-
-- Docker Desktop
-- Python 3.12 and uv for local backend development
-- Optional Ollama, if you want to use the LLM assistant
+Requirements: Docker Desktop and an optional local Ollama instance.
 
 ```powershell
 copy .env.example .env
 docker compose --env-file .env -p personal-finance-app -f docker/docker-compose.yml up -d --build
 ```
 
-URLs:
-
-- Web app: <http://localhost:3000>
-- Swagger API: <http://localhost:8000/docs>
+- Web: <http://localhost:3000>
+- API documentation: <http://localhost:8000/docs>
 - Health check: <http://localhost:8000/health>
 
-Stop without deleting the database:
+Stop the stack without deleting the database:
 
 ```powershell
 docker compose --env-file .env -p personal-finance-app -f docker/docker-compose.yml down
 ```
 
-Do not use `down -v` unless you intentionally want to delete the PostgreSQL
-volume.
+`down -v` removes the PostgreSQL volume and should only be used for an
+intentional clean start.
 
-## Configuration
-
-Main `.env` variables:
+Main optional settings:
 
 ```ini
 AUTH_USERNAME=
 AUTH_PASSWORD=
-DATABASE_URL=postgresql+psycopg://finance:finance@localhost:5432/finance
 OLLAMA_BASE_URL=http://localhost:11434
 LLM_ENABLED=true
 LLM_FALLBACK_ENABLED=false
 ```
 
-Set `AUTH_USERNAME` and `AUTH_PASSWORD` to enable BasicAuth. Ollama runs outside
-Compose on the host machine.
+Set both auth values to enable BasicAuth. Ollama endpoints other than loopback
+or `host.docker.internal` are rejected.
 
-## Development
+## Local development
 
 Backend:
 
@@ -99,10 +90,6 @@ uv run alembic upgrade head
 uv run uvicorn apps.api.main:app --reload --port 8000
 ```
 
-For a local (non-Compose) backend, create `.env` first and set `DATABASE_URL`
-to credentials accepted by your PostgreSQL instance. Verify
-`http://localhost:8000/health/ready` before starting the frontend.
-
 Frontend:
 
 ```powershell
@@ -111,99 +98,61 @@ npm ci
 npm run dev
 ```
 
-Checks:
+Quality checks:
 
 ```powershell
 uv run pytest
 uv run ruff check .
+uv run mypy src apps scripts
 cd apps/web
 npm run typecheck
 npm run lint
 npm run build
-cd ..\..
-docker compose -f docker/docker-compose.yml config
 ```
 
-## ML And Evidence
+## ML workflow
 
-The project has two classification layers:
+The application deliberately separates:
 
-- `category` - the budget expense category, for example food, transport, health.
-- `transaction_type` - the money-flow semantics, for example expense, salary,
-  refund or own transfer.
+- `transaction_type`: economic meaning of the flow, such as expense, salary,
+  refund or own transfer;
+- `category`: one of nine system budget categories for qualifying expenses.
 
-At runtime, bank/system rules create transaction-type suggestions only.
-The ordinary debit/credit fallback is used silently and does not enter the
-review queue. A user-created personal rule may still explicitly auto-apply a
-type. Only manual decisions and accepted suggestions are training labels; the
-transaction-type model remains an evidence-only experiment and is not used by
-runtime classification.
+Only manual categories and accepted suggestions with confirmation provenance
+are gold labels. Category training requires at least 300 such labels. Classes
+with at least 10 examples may enter a model; at least two supported classes and
+feasible time and unseen-merchant holdouts are required.
 
-Build evidence reports:
+A default retraining job compares Logistic Regression and calibrated LinearSVC
+on the same baseline features. Candidates are versioned, evaluated and manually
+activated or rolled back. Runtime uses a fixed confidence threshold of `0.55`;
+OOF calibration remains diagnostic. Feature-v2 and additional estimators are
+research-only benchmarks. There is no automatic retraining scheduler.
 
-```powershell
-uv run python scripts\build_ml_evidence.py --from-db
-uv run python scripts\inspect_report.py --profile classification-strict
-```
+Transaction-type ML is a separate evidence-only experiment. Runtime type
+decisions use deterministic suggestions, user rules and a safe debit/credit
+fallback.
 
-Category training uses only explicitly confirmed expense labels with complete
-provenance. Training requires 300 gold labels in total; classes with at least
-10 examples enter the current model, while rarer classes remain manual. At
-least two supported classes and feasible time/merchant holdouts are required.
-`POST /ml/retrain` creates versioned candidates; it never overwrites the active
-model. Review gates and activate or roll back a compatible version from the ML
-screen. Bank/system categories and model/LLM output remain suggestions until
-the user accepts them.
+Evidence commands and interpretation rules are documented in
+[`docs/ml-evidence.md`](docs/ml-evidence.md).
 
-Routine retraining evaluates exactly Logistic Regression and calibrated
-LinearSVC with the baseline feature set. Both use a fixed runtime confidence
-threshold of 0.55; OOF calibration and alternative thresholds are diagnostics
-only. The broader research matrix, including feature-v2, is added explicitly with
-`POST /ml/retrain?include_benchmarks=true`. The database model registry is the
-runtime source of truth; JSON reports are evidence outputs and never select the
-active artifact. Training is always initiated explicitly; there is no automatic
-retraining scheduler.
+## Privacy
 
-Reports are written to `data/reports/`. Private anomaly review files are written
-to `data/private/`. Both directories are ignored by Git.
-
-## Data Privacy
-
-Do not commit:
-
-- bank exports,
-- `.env` files,
-- reports generated from real data,
-- models trained on private data,
-- notebooks with outputs,
-- caches or build artifacts.
-
-Keep real data locally in `data/raw/`, `data/private/` or outside the repository.
-When sending the project as an archive, exclude the entire `data/` directory and
-all `.env` files; Git already ignores these paths.
-
-## Repository Layout
-
-```text
-apps/api/       FastAPI routers, middleware and security
-apps/web/       Next.js dashboard
-src/finance/    domain logic, imports, ML, LLM and statistics
-alembic/        database migrations
-tests/          backend, ML and domain tests
-scripts/        evidence and maintenance scripts
-docker/         Dockerfiles and docker-compose
-docs/           project documentation, model card and demo notes
-```
+Never publish bank exports, `.env` files, model artifacts or row-level reports.
+Keep them in ignored runtime locations such as `data/raw/`, `data/private/`,
+`data/models/` and `data/reports/`. The entire `data/` directory and local
+environment files are excluded from version control.
 
 ## Documentation
 
-- `docs/project-overview.md` - architecture, scope and main decisions.
-- `docs/presentation-notes.md` - demo and presentation talking points.
-- `docs/model-card.md` - model description, data, metrics and limitations.
-- `docs/ml-evidence.md` - evidence report generation rules.
-- `docs/demo-runbook.md` - clean-start demo workflow.
+| Document | Purpose |
+| --- | --- |
+| [`project-overview.md`](docs/project-overview.md) | Scope, architecture and current status |
+| [`current-methodologies-and-solutions.md`](docs/current-methodologies-and-solutions.md) | Technical methodology and implementation choices |
+| [`model-card.md`](docs/model-card.md) | Category-classifier use, evaluation and limitations |
+| [`ml-evidence.md`](docs/ml-evidence.md) | Reproducible evidence workflow |
+| [`validation-runbook.md`](docs/validation-runbook.md) | Clean-start and validation workflow |
+| [`docs/adr/`](docs/adr/) | Accepted architecture decisions |
 
-## License
-
-Code is licensed under the MIT License. Training data, bank exports and local
-model artifacts are private and are not part of the license grant.
+Code is available under the MIT License. Private data and locally trained
+artifacts are not part of the license grant.

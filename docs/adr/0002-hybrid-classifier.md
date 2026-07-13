@@ -1,68 +1,68 @@
-# ADR-0002: Hybrid Transaction Classification (LLM + LinearSVC)
+# ADR-0002: Classical Category Classifier With Optional Local LLM
 
-- **Status:** ACCEPTED
+- **Status:** accepted
 - **Date:** 2026-05-01
-- **Phase:** simplified runtime with diagnostic calibration
+- **Updated:** 2026-07-13
 
 ## Context
 
-Classifying bank transactions into 9 system categories (`food`, `transport`,
-`housing`, `health`, `savings`, `subscriptions`, `entertainment`, `shopping`,
-`other`) is a classic multiclass classification problem over short text
-(`merchant + title`). The dataset is imbalanced and contains a long tail of rare
-patterns, for example pharmacies or subscriptions with new merchants.
+Bank descriptions are short, noisy and repetitive, while the available labels
+come from one private user and are strongly imbalanced. The application needs
+useful category suggestions without sending financial data to a cloud service
+or introducing a model that is difficult to reproduce.
 
-Two extreme strategies were considered:
-
-- **A) Classic ML only** (TF-IDF + LinearSVC). Fast and deterministic, but
-  requires labelled data and struggles with out-of-vocabulary merchants.
-- **B) LLM only** (Llama 3.1 8B through Ollama). Good zero-shot understanding of
-  new merchants, but non-deterministic, slower and prone to hallucinating
-  categories outside the ontology.
+An LLM-only classifier would work without many labels but would be slower,
+non-deterministic and difficult to calibrate. A rule-only solution would be
+simple but expensive to maintain for changing merchant formats.
 
 ## Decision
 
-Use a **hybrid approach**:
-
-1. Runtime candidates are Logistic Regression and calibrated LinearSVC with the
-   baseline pipeline only. Feature-v2 and other estimators are benchmark-only.
-2. Runtime uses the fixed confidence threshold 0.55. Thresholds derived from
-   real OOF probabilities remain diagnostics. `other` always requires review.
-3. **LLM fallback** uses a configurable local Ollama model and requires both a
-   global flag and an explicit request flag. It has no fabricated confidence
-   and always requires user acceptance.
-4. **LLM-driven augmentation** (`finance.ml.classification.augment`) is a
-   separate research experiment and does not enter runtime candidate training.
-5. Training is an explicit user action. Candidates are stored in the DB-backed
-   registry and activated manually; no scheduler retrains or promotes models.
+1. Runtime category candidates are Logistic Regression and calibrated LinearSVC
+   on the same TF-IDF baseline.
+2. Only manual labels and accepted suggestions with complete confirmation
+   provenance may enter training.
+3. Time and unseen-merchant holdouts are mandatory. OOF calibration remains
+   diagnostic.
+4. Runtime uses the fixed threshold `0.55`; `other` always requires review.
+5. Candidates are versioned and activated manually after gates, checksum,
+   compatibility and smoke checks.
+6. Feature-v2 and additional estimators are benchmark-only.
+7. Local Ollama fallback is optional, requires double opt-in and always returns
+   an unconfirmed suggestion with no fabricated confidence.
+8. LLM augmentation remains a separate experiment and does not enter runtime
+   candidate training or evaluation.
+9. Retraining is an explicit user action; there is no scheduler.
 
 ## Consequences
 
-**Positive:**
+Positive:
 
-- Candidate quality is measured on both primary holdouts, not only stratified
-  CV.
-- A model may cover only ontology classes with at least 10 confirmed labels;
-  unsupported classes remain manual instead of blocking useful training.
-- No cloud dependency. Ollama runs locally.
+- the default experiment is small, understandable and reproducible;
+- both candidate models expose probabilities needed by the review policy;
+- new-time and new-merchant performance are visible separately;
+- no private transaction needs to leave the host;
+- an unsupported rare class remains manual instead of blocking all training.
 
-**Negative:**
+Negative:
 
-- Optional LLM fallback still adds a second suggestion path.
-- LLM augmentation is non-deterministic, so generated CSV files must record the
-  seed and model version.
-- Candidates are never activated automatically. Manual promotion and rollback
-  operate on versioned, checksummed artifacts with exact dependency checks.
+- the fixed threshold needs empirical monitoring;
+- exact artifact compatibility means dependency upgrades require retraining;
+- manual activation and retry add a small operational step;
+- an optional LLM fallback still creates a second suggestion path.
 
-## Rejected Alternatives
+## Rejected alternatives
 
-- **Fine-tuning multilingual DistilBERT.** Requires GPU, produces a much larger
-  artifact and gives limited value on a small dataset.
-- **Regex-only rules.** They do not scale well because merchant formatting
-  changes frequently. Rules remain useful as deterministic overrides.
+- **LLM-only classification:** too slow and non-deterministic for the main path.
+- **Transformer fine-tuning:** disproportionate cost for a small private
+  dataset and harder reproducibility.
+- **Rules only:** useful for deterministic exceptions, but brittle as the main
+  category classifier.
+- **Automatic promotion:** unacceptable without review of holdout metrics and
+  artifact integrity.
 
-## Success Metrics
+## Acceptance criteria
 
-- Macro-F1 >= 0.75 on both frozen thesis holdouts.
-- p99 latency of `/ml/classify` <= 200 ms without the LLM fallback.
-- LLM fallback hit rate <= 10%; if higher, retrain the SVC model.
+A runtime candidate needs at least 300 confirmed labels, two supported classes,
+both feasible holdouts, macro-F1 at least `0.60` on each and p99 at most
+`200 ms` without LLM. Stricter final targets are evidence goals, not claims
+made by this ADR.

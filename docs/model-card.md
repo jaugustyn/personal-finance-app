@@ -1,114 +1,130 @@
-# Model Card — Category Classifier v1
+# Model Card — Expense Category Classifier v1
 
-## Model details
+## Summary
 
 | Field | Value |
 | --- | --- |
-| Name | `category_classifier_v1` |
-| Version | Registered model-version UUID |
-| Target | One of the 9 system expense categories |
-| Candidates | Logistic Regression or calibrated LinearSVC |
-| Runtime features | TF-IDF baseline: text, amount and day of week |
-| Workflow | `POST /ml/retrain` → candidate report → manual activation |
-| Runtime artifact | Immutable candidate path selected by the active DB model version |
-| License | MIT for code; private training data is not licensed or published |
+| Target | A supported subset of nine system expense categories |
+| Candidates | Logistic Regression and calibrated LinearSVC |
+| Features | Transaction text, absolute amount and day of week |
+| Output | Category suggestion, confidence and top predictions |
+| Activation | Versioned candidate, technical gates and manual promotion |
+| Runtime policy | Fixed threshold `0.55`; `other` always reviewed |
 
-The active runtime model must expose calibrated `predict_proba`. Dummy,
-uncalibrated LinearSVC and Random Forest remain research benchmarks and cannot
-be promoted in iteration 1.
-
-Routine `POST /ml/retrain` evaluates both Logistic Regression and calibrated
-LinearSVC with baseline features. The complete ten-variant research experiment is explicit:
-`POST /ml/retrain?include_benchmarks=true`. Benchmark mode cannot be combined
-with candidate filters.
+No trained artifact or result from private data is distributed with the
+repository. A clean installation therefore reports no active model.
 
 ## Intended use
 
-- Suggest a budget expense category for a single user's transactions.
-- Prioritize uncertain transactions for manual review.
-- Optionally evaluate a local Ollama fallback as a separate experiment.
+The model supports a single user by:
 
-The model must not classify transfers, income or other non-expense flows as
-budget expenses. It is not suitable for credit decisions, scoring, fraud
-accusations or decisions affecting third parties.
+- suggesting an expense category;
+- prioritising uncertain transactions for review;
+- providing aggregate evidence for model evaluation.
 
-## Training labels
+It does not classify income, transfers or other non-expense flows. It must not
+be used for credit scoring, fraud accusations, decisions affecting third
+parties or regulated financial advice.
 
-Gold labels are limited to transactions with all of the following:
+## Labels and scope
 
-- a category from the fixed 9-class ontology;
-- expense-candidate semantics;
-- `category_confirmation_method` equal to `manual` or `accepted_suggestion`;
+The ontology contains `food`, `transport`, `subscriptions`, `health`,
+`entertainment`, `housing`, `savings`, `shopping` and `other`. A particular
+artifact may cover only the classes that have sufficient support.
+
+A training row must have:
+
+- one of the system categories;
+- expense semantics and debit direction;
+- `category_confirmation_method` equal to `manual` or
+  `accepted_suggestion`;
 - a non-null confirmation timestamp.
 
-Bank categories, system rules, personal `auto_apply` rules and model/LLM output
-are excluded from gold labels until the user confirms the category. Custom
-categories remain available in the product but are
-excluded from ML v1. No historical labels are automatically backfilled.
+Bank mappings, system rules, personal `auto_apply` rules, model/LLM suggestions
+and custom categories are excluded. Existing records are not automatically
+backfilled as gold labels. Synthetic and external data remain separate
+experiments and never enter runtime candidate training or evaluation.
 
-Raw bank categories remain stored for future ontology work. Synthetic and
-external data are reported separately; they do not enter runtime candidate
-training or validation.
+## Model and features
 
-## Evaluation and promotion
+The baseline combines:
 
-The source of truth for activation and runtime is the DB model registry. JSON
-reports are immutable research/evidence outputs and never select a runtime
-model. Reports include macro-F1, weighted-F1, per-class metrics, confusion matrices,
-coverage/covered accuracy, log-loss, multiclass Brier score, ECE, reliability
-bins and p99 runtime.
+- word TF-IDF n-grams 1-2 over `merchant + title`;
+- `char_wb` TF-IDF n-grams 3-5;
+- `log1p(abs_amount)` with scaling;
+- one-hot encoded day of week.
 
-Primary validation uses equal-status time and unseen-merchant holdouts.
-Stratified 5-fold CV is diagnostic only. Candidate ranking maximizes the worse
-of the two holdout macro-F1 values, followed by their mean, covered accuracy and
-latency.
+Routine retraining evaluates exactly Logistic Regression and calibrated
+LinearSVC. Dummy, uncalibrated LinearSVC, Random Forest and feature-v2 are
+benchmark-only and cannot be activated.
+
+## Evaluation
+
+Two primary holdouts have equal importance:
+
+- a time holdout representing later transactions;
+- a grouped holdout representing unseen merchants.
+
+OOF predictions from stratified CV provide calibration diagnostics only.
+Candidate ranking uses the lower holdout macro-F1 first, followed by mean
+macro-F1, covered accuracy and latency.
+
+Reports include macro-F1, weighted-F1, per-class metrics, confusion matrices,
+coverage, covered accuracy, log-loss, multiclass Brier score, ECE, reliability
+bins and p99 latency.
 
 Technical promotion requires:
 
 - at least 300 confirmed labels in total;
-- at least two classes with 10 confirmed examples each;
-- feasible time and merchant holdouts for every class included in the model;
-- macro-F1 ≥0.60 on both primary holdouts;
-- regression ≤0.02 only relative to an active model evaluated on the same
-  frozen evaluation set;
-- p99 ≤200 ms for 1000 warmed predictions without LLM.
+- at least two classes with 10 examples each;
+- feasible time and merchant holdouts for all included classes;
+- macro-F1 at least `0.60` on both holdouts;
+- p99 no greater than `200 ms` for 1000 warmed predictions without LLM;
+- regression no greater than `0.02` only against an active model evaluated on
+  the same frozen evaluation set.
 
-Thesis-ready additionally requires:
+The fixed runtime threshold `0.55` is an application policy, not a claim of
+90% accuracy. OOF-derived thresholds are reported but do not control runtime.
 
-- a manually frozen private test version;
-- at least 800 labels and 50 per class;
-- 12 represented calendar months and a date span ≥365 days;
-- macro-F1 ≥0.75 on both frozen holdouts;
-- covered accuracy ≥0.90 with coverage ≥0.50 on both holdouts.
+The optional strict-evaluation status additionally uses a manually frozen private
+test, broader class support and stricter metrics. It is deliberately separate
+from everyday activation and hidden from the normal UI.
 
-Runtime always uses the global threshold 0.55. OOF calibration, ECE, Brier,
-log-loss and candidate global/per-category thresholds are diagnostic only and
-cannot modify runtime behavior. `other` always requires review.
+## Artifact lifecycle
 
-## LLM and augmentation
+`POST /ml/retrain` creates candidates but never activates them. Each artifact
+stores its pipeline, classes, feature schema, confidence policy, metrics,
+dataset fingerprint, evaluation-set reference, environment versions and
+SHA-256 checksum.
 
-Ollama is restricted to loopback or `host.docker.internal`. Fallback requires a
-global flag and `use_llm_fallback=true` for the request. Its category has
-`confidence=null`, retains the base `model_confidence` separately and always
-requires explicit acceptance.
+Activation verifies technical gates, checksum, Python and exact core ML-library
+versions, then performs a smoke prediction. Previous compatible versions remain
+available for rollback. Runtime loads only the artifact referenced by the
+active database record.
 
-LLM fallback remains optional and experimental; it is not an alternative active
-artifact. A formal comparison can record model tag, digest, hardware, hit rate
-and latency percentiles without changing the baseline runtime policy.
+## Optional LLM path
 
-## Limitations and privacy
+Category fallback may call only a local Ollama endpoint and requires both the
+global switch and `use_llm_fallback=true`. An LLM result:
 
-- Evidence comes from one private user and does not establish population-level
-  generalization.
-- New merchant formats and class imbalance can reduce quality.
-- The TF-IDF vocabulary can reveal merchant names; trained artifacts are
-  private even though public reports contain aggregates only.
-- `transaction_type` is evaluated separately on confirmed user decisions; its
-  model is evidence-only and does not participate in runtime suggestions.
-- Forecasting, anomalies and subscription evidence remain provisional in this
-  iteration.
+- remains a suggestion;
+- has `confidence=null`;
+- retains the original `model_confidence`;
+- requires explicit user acceptance.
 
-## Reproducibility
+LLM augmentation is also a separate research experiment and is not part of the
+runtime training set.
+
+## Limitations
+
+- Evidence from one user does not establish population-level generalisation.
+- Rare classes and new merchant formats can produce unstable results.
+- Merchant vocabulary inside a TF-IDF artifact is private information.
+- The fixed confidence threshold requires empirical monitoring.
+- Transaction-type ML, forecasting, anomalies and subscriptions are outside
+  this model card and currently have provisional evidence status.
+
+## Reproduction
 
 ```bash
 uv sync --frozen --extra dev
@@ -116,7 +132,5 @@ uv run python scripts/build_ml_evidence.py --from-db
 uv run python scripts/inspect_report.py --profile classification-strict
 ```
 
-Python 3.12 and all transitive dependencies are locked in `uv.lock`. Every
-artifact records exact Python, scikit-learn, numpy, pandas and joblib versions
-and schema version 3.0 is rejected on any mismatch. Deterministic split operations use
-`random_state=42`.
+The supported runtime is Python 3.12. Split operations use `random_state=42`,
+and artifact schema `3.0` rejects incompatible environments.
