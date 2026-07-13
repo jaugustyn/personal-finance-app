@@ -37,7 +37,6 @@ This operation is destructive.
    categories.
 5. Accept only correct suggestions; use a manual value when a suggestion is
    wrong.
-6. Use `/review` to process repeated cases efficiently.
 
 Manual decisions and accepted suggestions become gold labels. Bank mappings,
 system rules and provisional personal-rule assignments do not.

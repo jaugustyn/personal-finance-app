@@ -5,12 +5,11 @@ import csv
 import io
 from collections import Counter, defaultdict
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from finance.currencies import MissingFxRate, convert_amount, resolve_base_currency
 from finance.domain.dto import TransactionDTO
-from finance.domain.enums import BankSource
 from finance.domain.models import Transaction
 from finance.ingestion.base import BankParser
 from finance.ingestion.csv_utils import (
@@ -33,7 +32,6 @@ from finance.transactions.normalization import normalize_text
 def assess_import_quality(
     session: Session,
     *,
-    source: BankSource,
     filename: str,
     raw: bytes,
     parser: BankParser,
@@ -68,7 +66,6 @@ def assess_import_quality(
         _dto_issues(
             session,
             dtos,
-            source=source,
             include_content_issues=generic_mapping is None,
             missing_fx_severity=missing_fx_severity,
         )
@@ -217,7 +214,6 @@ def _dto_issues(
     session: Session,
     dtos: list[TransactionDTO],
     *,
-    source: BankSource,
     include_content_issues: bool = True,
     missing_fx_severity: IssueSeverity = "error",
 ) -> list[ImportQualityIssue]:
@@ -281,24 +277,6 @@ def _dto_issues(
                 len(missing_fx),
                 [],
             )
-        )
-
-    date_from = min(dto.booking_date for dto in dtos)
-    date_to = max(dto.booking_date for dto in dtos)
-    overlap_count = int(
-        session.execute(
-            select(func.count())
-            .select_from(Transaction)
-            .where(
-                Transaction.source == source.value,
-                Transaction.booking_date >= date_from,
-                Transaction.booking_date <= date_to,
-            )
-        ).scalar_one()
-    )
-    if overlap_count:
-        issues.append(
-            ImportQualityIssue("date_range_overlap", "warning", overlap_count, [])
         )
 
     return issues

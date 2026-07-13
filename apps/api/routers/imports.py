@@ -153,12 +153,10 @@ def preview_import(
     quality_parser: BankParser
 
     if requested_source == "generic" or requested_mapping is not None:
-        quality_source = BankSource.UNKNOWN
         quality_mapping = requested_mapping or clean_column_map(prev.detected_mapping)
         quality_parser = GenericCsvParser(quality_mapping)
         quality_warnings = import_quality_warnings(quality_mapping)
     else:
-        quality_source = detected_source or BankSource.UNKNOWN
         quality_mapping = clean_column_map(prev.detected_mapping)
         quality_parser = (
             get_parser(detected_source)
@@ -169,7 +167,6 @@ def preview_import(
 
     quality_report = assess_import_quality(
         session,
-        source=quality_source,
         filename=file.filename or "uploaded.csv",
         raw=raw,
         parser=quality_parser,

@@ -36,12 +36,12 @@ Next.js web -> /api/proxy/* -> FastAPI -> src/finance -> PostgreSQL
                                       -> Ollama (optional, local only)
 ```
 
-| Layer | Technology |
-| --- | --- |
-| API and domain | FastAPI, Pydantic, SQLAlchemy, Alembic |
-| Web | Next.js, React, TypeScript, Tailwind, TanStack Query |
-| Data and ML | pandas, scikit-learn, statsmodels, joblib |
-| Runtime | PostgreSQL, Docker Compose, Python 3.12, `uv` |
+| Layer          | Technology                                           |
+| -------------- | ---------------------------------------------------- |
+| API and domain | FastAPI, Pydantic, SQLAlchemy, Alembic               |
+| Web            | Next.js, React, TypeScript, Tailwind, TanStack Query |
+| Data and ML    | pandas, scikit-learn, statsmodels, joblib            |
+| Runtime        | PostgreSQL, Docker Compose, Python 3.12, `uv`        |
 
 ## Quick start
 
@@ -56,7 +56,7 @@ docker compose --env-file .env -p personal-finance-app -f docker/docker-compose.
 - API documentation: <http://localhost:8000/docs>
 - Health check: <http://localhost:8000/health>
 
-Stop the stack without deleting the database:
+Stop the stack:
 
 ```powershell
 docker compose --env-file .env -p personal-finance-app -f docker/docker-compose.yml down
@@ -145,14 +145,14 @@ environment files are excluded from version control.
 
 ## Documentation
 
-| Document | Purpose |
-| --- | --- |
-| [`project-overview.md`](docs/project-overview.md) | Scope, architecture and current status |
-| [`current-methodologies-and-solutions.md`](docs/current-methodologies-and-solutions.md) | Technical methodology and implementation choices |
-| [`model-card.md`](docs/model-card.md) | Category-classifier use, evaluation and limitations |
-| [`ml-evidence.md`](docs/ml-evidence.md) | Reproducible evidence workflow |
-| [`validation-runbook.md`](docs/validation-runbook.md) | Clean-start and validation workflow |
-| [`docs/adr/`](docs/adr/) | Accepted architecture decisions |
+| Document                                                                                | Purpose                                             |
+| --------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| [`project-overview.md`](docs/project-overview.md)                                       | Scope, architecture and current status              |
+| [`current-methodologies-and-solutions.md`](docs/current-methodologies-and-solutions.md) | Technical methodology and implementation choices    |
+| [`model-card.md`](docs/model-card.md)                                                   | Category-classifier use, evaluation and limitations |
+| [`ml-evidence.md`](docs/ml-evidence.md)                                                 | Reproducible evidence workflow                      |
+| [`validation-runbook.md`](docs/validation-runbook.md)                                   | Clean-start and validation workflow                 |
+| [`docs/adr/`](docs/adr/)                                                                | Accepted architecture decisions                     |
 
 Code is available under the MIT License. Private data and locally trained
 artifacts are not part of the license grant.

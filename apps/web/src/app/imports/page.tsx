@@ -97,6 +97,7 @@ export default function ImportsPage() {
 
   const onCommit = () => {
     if (!file) return;
+    setPreviewOpen(false);
     if (preview?.detected_source) {
       uploadMut.mutate({
         file,

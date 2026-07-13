@@ -206,14 +206,6 @@ export default function DashboardPage() {
         onChartLimitChange={setChartLimit}
       />
 
-      {(overviewData?.provisional_transaction_count ?? 0) > 0 ? (
-        <div className="mt-3 rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-muted-foreground">
-          {t("dashboard.provisionalTypes", {
-            count: overviewData?.provisional_transaction_count ?? 0,
-          })}
-        </div>
-      ) : null}
-
       <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
         <main className="min-w-0 space-y-7">
           <DashboardSection

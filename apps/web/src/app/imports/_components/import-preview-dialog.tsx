@@ -164,8 +164,8 @@ export function ImportPreviewDialog({
           ) : null}
         </div>
 
-        <DialogFooter className="grid shrink-0 gap-3 border-t bg-muted/20 px-6 py-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
-          <label className="flex min-w-0 cursor-pointer select-none items-start gap-2.5 text-sm text-muted-foreground transition-colors hover:text-foreground">
+        <DialogFooter className="grid shrink-0 gap-4 border-t bg-muted/20 px-6 py-5 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+          <label className="flex min-w-0 cursor-pointer select-none items-start gap-3 py-1 text-sm text-muted-foreground transition-colors hover:text-foreground">
             <Checkbox
               id="skip-categories-checkbox"
               checked={skipCategories}
