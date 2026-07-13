@@ -42,14 +42,10 @@ export function statusVariant(data: MlDashboard) {
 
 export function recommendationReason(code: string, t: TFn): string {
   switch (code) {
-    case "best_calibrated_macro_f1":
-      return t("ml.recommendation.reason.best_calibrated_macro_f1");
-    case "prefer_calibrated_close":
-      return t("ml.recommendation.reason.prefer_calibrated_close");
-    case "best_macro_f1":
-      return t("ml.recommendation.reason.best_macro_f1");
-    case "no_report":
-      return t("ml.recommendation.reason.no_report");
+    case "best_holdout_result":
+      return t("ml.recommendation.reason.best_holdout_result");
+    case "no_promotable_candidate":
+      return t("ml.recommendation.reason.noPromotableCandidate");
     default:
       return code;
   }

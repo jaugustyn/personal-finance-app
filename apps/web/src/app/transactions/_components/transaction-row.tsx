@@ -31,6 +31,7 @@ import {
 } from "lucide-react";
 import { TRANSACTION_TYPE_OPTIONS, isCategoryCandidate } from "../_lib/constants";
 import { TransactionAnnotationEditor } from "./transaction-annotation-editor";
+import { AssignmentValue } from "./assignment-value";
 import { TransactionCategoryCell } from "./transaction-category-cell";
 
 interface TransactionRowProps {
@@ -114,7 +115,6 @@ export function TransactionRow({
   };
   const typeSourceLabel = typeSourceLabels[typeSource] ?? typeSource;
   const typeNeedsReview = tx.transaction_type_needs_review ?? false;
-  const typeStatusLabel = t("transactions.needsReview");
   const displayedType = typeNeedsReview
     ? tx.transaction_type_predicted
     : tx.transaction_type_effective;
@@ -194,41 +194,25 @@ export function TransactionRow({
             onCancel={onCancelEditType}
           />
         ) : (
-          <div className="space-y-1">
-            <Badge
-              variant="outline"
-              className={cn(
-                "max-w-full truncate",
-                typeNeedsReview && "border-dashed",
-              )}
-              title={`${typeSourceLabel}${typeNeedsReview ? ` · ${typeStatusLabel}` : ""}`}
-            >
-              {tx.is_transfer ? (
+          <AssignmentValue
+            label={displayedType ? tTransactionType(t, displayedType) : null}
+            suggested={typeNeedsReview}
+            icon={
+              tx.is_transfer ? (
                 <ArrowLeftRight className="mr-1 h-3 w-3 shrink-0" />
-              ) : null}
-              {tTransactionType(t, displayedType)}
-            </Badge>
-            {typeNeedsReview ? (
-              <div className="flex items-center gap-1">
-                <span className="text-[10px] text-muted-foreground">
-                  {typeStatusLabel}
-                </span>
-                {tx.transaction_type_predicted || tx.transaction_type ? (
-                  <Button
-                    type="button"
-                    size="icon"
-                    variant="ghost"
-                    className="h-6 w-6 text-positive hover:text-positive"
-                    disabled={typeAcceptPending}
-                    onClick={onAcceptTypeSuggestion}
-                    aria-label={t("transactions.acceptSuggestion")}
-                  >
-                    <Check className="h-3 w-3" />
-                  </Button>
-                ) : null}
-              </div>
-            ) : null}
-          </div>
+              ) : undefined
+            }
+            title={typeSourceLabel}
+            onEdit={onEditType}
+            onAccept={
+              typeNeedsReview &&
+              (tx.transaction_type_predicted || tx.transaction_type)
+                ? onAcceptTypeSuggestion
+                : undefined
+            }
+            acceptLabel={t("transactions.acceptSuggestion")}
+            acceptPending={typeAcceptPending}
+          />
         )}
       </TableCell>
       <TableCell

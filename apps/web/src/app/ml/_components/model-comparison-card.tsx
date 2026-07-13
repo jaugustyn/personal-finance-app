@@ -102,7 +102,7 @@ export function ModelComparisonCard({ rows }: { rows: MlModelComparison[] }) {
           <DataTable
             columns={columns}
             data={rows}
-            rowKey={(row) => `${row.feature_set}-${row.estimator}`}
+            rowKey={(row) => row.model_id}
             initialSort={{ id: "model", dir: "asc" }}
             tableClassName="min-w-[840px]"
             getRowClassName={(row) =>

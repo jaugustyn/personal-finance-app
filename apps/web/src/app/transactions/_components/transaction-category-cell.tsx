@@ -12,6 +12,7 @@ import {
   hasRejectedCategorySuggestion,
   isCategoryCandidate,
 } from "../_lib/constants";
+import { AssignmentValue } from "./assignment-value";
 
 interface TransactionCategoryCellProps {
   tx: Transaction;
@@ -63,40 +64,25 @@ export function TransactionCategoryCell({
 
   if (tx.category) {
     return (
-      <Badge variant="secondary" className="max-w-full truncate">
-        {tCategory(t, tx.category)}
-      </Badge>
+      <AssignmentValue
+        label={tCategory(t, tx.category)}
+        onEdit={onEdit}
+        title={t("transactions.editCategory")}
+      />
     );
   }
 
   if (!reviewMode && hasSuggestion) {
     return (
-      <div className="flex items-start gap-1.5">
-        <button
-          type="button"
-          onClick={onEdit}
-          className="flex min-w-0 flex-1 flex-col items-start gap-1 text-left"
-          title={t("transactions.suggestion")}
-        >
-          <Badge variant="outline" className="max-w-full truncate border-dashed">
-            {tCategory(t, tx.category_predicted)}
-          </Badge>
-          <span className="text-[10px] text-muted-foreground">
-            {t("transactions.needsReview")}
-          </span>
-        </button>
-        <Button
-          size="icon"
-          variant="ghost"
-          className="h-7 w-7 shrink-0 text-positive hover:text-positive"
-          disabled={acceptPending}
-          onClick={onAcceptSuggestion}
-          title={t("transactions.acceptOne")}
-          aria-label={t("transactions.acceptOne")}
-        >
-          <Check className="h-3.5 w-3.5" />
-        </Button>
-      </div>
+      <AssignmentValue
+        label={tCategory(t, tx.category_predicted)}
+        suggested
+        onEdit={onEdit}
+        title={t("transactions.suggestion")}
+        onAccept={onAcceptSuggestion}
+        acceptLabel={t("transactions.acceptOne")}
+        acceptPending={acceptPending}
+      />
     );
   }
 

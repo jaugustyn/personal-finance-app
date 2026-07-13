@@ -249,7 +249,9 @@ export default function MlPage() {
                       <span>{t("ml.comparison.nextTraining")}</span>
                     </div>
                     <div className="mt-1 font-medium">
-                      {recommendation.estimator} · {recommendation.feature_set}
+                      {recommendation.estimator && recommendation.feature_set
+                        ? `${recommendation.estimator} · ${recommendation.feature_set}`
+                        : t("ml.comparison.noPromotableCandidate")}
                     </div>
                     <p className="mt-2 text-xs text-muted-foreground">
                       {recommendationReason(recommendation.reason_code, t)}
@@ -301,6 +303,42 @@ export default function MlPage() {
                         })}
                       </p>
                     </div>
+                  ) : null}
+                  <div className="grid gap-2 text-xs sm:grid-cols-3">
+                    <div className="rounded-md border bg-muted/20 p-2.5">
+                      <div className="text-muted-foreground">
+                        {t("ml.readiness.labels")}
+                      </div>
+                      <div className="mt-1 font-medium text-foreground">
+                        {data.readiness.total_labelled} / {data.readiness.minimum_total}
+                      </div>
+                    </div>
+                    <div className="rounded-md border bg-muted/20 p-2.5">
+                      <div className="text-muted-foreground">
+                        {t("ml.readiness.supportedClasses")}
+                      </div>
+                      <div className="mt-1 font-medium text-foreground">
+                        {data.readiness.supported_classes.length}
+                      </div>
+                    </div>
+                    <div className="rounded-md border bg-muted/20 p-2.5">
+                      <div className="text-muted-foreground">
+                        {t("ml.readiness.splits")}
+                      </div>
+                      <div className="mt-1 font-medium text-foreground">
+                        {data.readiness.split_feasible
+                          ? t("ml.readiness.feasible")
+                          : t("ml.readiness.notFeasible")}
+                      </div>
+                    </div>
+                  </div>
+                  {Object.keys(data.readiness.unsupported_classes).length ? (
+                    <p className="text-xs text-muted-foreground">
+                      {t("ml.readiness.belowSupport", {
+                        n: Object.keys(data.readiness.unsupported_classes).length,
+                        minimum: data.readiness.model_min_class_support,
+                      })}
+                    </p>
                   ) : null}
                 </CardContent>
               </Card>

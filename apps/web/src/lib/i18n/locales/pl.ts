@@ -67,15 +67,15 @@ export const pl = {
     "assistant.ollama.available": "Ollama dostępna",
     "assistant.ollama.deterministic": "Tryb deterministyczny",
     "review.title": "Jakość danych",
-    "review.subtitle": "Stan potwierdzonych etykiet, sugestii i transakcji wymagających uwagi.",
+    "review.subtitle": "Najważniejsze miejsca, w których warto uzupełnić lub potwierdzić dane.",
     "review.counts.uncategorized": "Bez kategorii",
     "review.counts.no_suggestion": "Bez sugestii",
     "review.counts.low_confidence": "Niskie zaufanie",
     "review.counts.ready_to_accept": "Gotowe do akceptacji",
     "review.counts.rejected": "Odrzucone sugestie",
     "review.counts.categorized": "Potwierdzone etykiety",
-    "review.rareClasses.title": "Rozkład etykiet według kategorii",
-    "review.rareClasses.subtitle": "Kategorie z najmniejszą liczbą potwierdzonych przykładów — wskazówka do dalszego zbierania danych, nie warunek treningu.",
+    "review.rareClasses.title": "Pokrycie kategorii",
+    "review.rareClasses.subtitle": "Pomocniczy rozkład kategorii z mniejszą liczbą potwierdzonych etykiet.",
     "review.rareClasses.empty": "Każda kategoria osiągnęła zalecany poziom etykiet.",
     "review.recurring.title": "Powtarzalni sprzedawcy bez reguły",
     "review.recurring.subtitle": "Częste, nieoznaczone transakcje, dla których warto utworzyć regułę personalną.",
@@ -94,6 +94,8 @@ export const pl = {
     "review.types.suggestionSources": "Źródła sugestii typów",
     "review.types.corrections": "Najczęstsze korekty",
     "review.types.noCorrections": "Brak zarejestrowanych korekt.",
+    "review.technical.title": "Szczegóły i diagnostyka",
+    "review.technical.subtitle": "Rozkłady etykiet, źródła przypisań i informacje przydatne podczas analizy ML.",
     "review.timesSeen": "{count}× widziane",
     "review.queue.title": "Kolejka przeglądu",
     "review.queue.subtitle": "Transakcje posortowane według wpływu na jakość danych i modelu.",
@@ -171,17 +173,21 @@ export const pl = {
     "ml.comparison.recommended": "Rekomendowany",
     "ml.comparison.current": "Używany",
     "ml.comparison.skipped": "Pominięty",
-    "ml.comparison.nextTraining": "Wariant do następnego treningu",
+    "ml.comparison.nextTraining": "Rekomendowany kandydat",
     "ml.comparison.noReport":
       "Brak raportu porównawczego. Uruchom trening, żeby zobaczyć ranking modeli.",
-    "ml.recommendation.reason.best_calibrated_macro_f1":
-      "Najlepszy wynik ma model ze skalibrowanym confidence.",
-    "ml.recommendation.reason.prefer_calibrated_close":
-      "Wybrano skalibrowany model, bo jest blisko najlepszego Macro-F1 i daje bardziej użyteczne progi confidence.",
-    "ml.recommendation.reason.best_macro_f1":
-      "Wybrano model z najlepszym Macro-F1 w rekomendowanym zestawie cech.",
-    "ml.recommendation.reason.no_report":
-      "Brak raportu, więc rekomendacja używa domyślnego wariantu z kalibracją i bogatszymi cechami.",
+    "ml.comparison.noPromotableCandidate": "Brak kandydata spełniającego bramki",
+    "ml.recommendation.reason.best_holdout_result":
+      "Najlepszy wynik na przekrojach czasowym i sprzedawców.",
+    "ml.recommendation.reason.noPromotableCandidate":
+      "Uruchom trening lub zbierz więcej potwierdzonych etykiet. Model niespełniający bramek nie jest rekomendowany.",
+    "ml.readiness.labels": "Potwierdzone etykiety",
+    "ml.readiness.supportedClasses": "Klasy w modelu",
+    "ml.readiness.splits": "Walidacja",
+    "ml.readiness.feasible": "Możliwa",
+    "ml.readiness.notFeasible": "Jeszcze niemożliwa",
+    "ml.readiness.belowSupport":
+      "Klasy poniżej {minimum} etykiet: {n}. Są obsługiwane ręcznie i nie blokują modelu.",
     "ml.feedback.title": "Feedback loop",
     "ml.feedback.accepted": "Zaakceptowane",
     "ml.feedback.rejected": "Odrzucone",

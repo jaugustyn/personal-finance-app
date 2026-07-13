@@ -67,15 +67,15 @@ export const en = {
     "assistant.ollama.available": "Ollama available",
     "assistant.ollama.deterministic": "Deterministic mode",
     "review.title": "Data quality",
-    "review.subtitle": "Confirmed labels, suggestions, and transactions that still need attention.",
+    "review.subtitle": "The most important places where data should be completed or confirmed.",
     "review.counts.uncategorized": "Uncategorized",
     "review.counts.no_suggestion": "No suggestion",
     "review.counts.low_confidence": "Low confidence",
     "review.counts.ready_to_accept": "Ready to accept",
     "review.counts.rejected": "Rejected suggestions",
     "review.counts.categorized": "Confirmed labels",
-    "review.rareClasses.title": "Label distribution by category",
-    "review.rareClasses.subtitle": "Categories with the fewest confirmed examples—a collection guideline, not a training requirement.",
+    "review.rareClasses.title": "Category coverage",
+    "review.rareClasses.subtitle": "A supporting view of categories with fewer confirmed labels.",
     "review.rareClasses.empty": "Every category reached the recommended label level.",
     "review.recurring.title": "Recurring merchants without a rule",
     "review.recurring.subtitle": "Frequent uncategorized transactions worth a personal rule.",
@@ -94,6 +94,8 @@ export const en = {
     "review.types.suggestionSources": "Type suggestion sources",
     "review.types.corrections": "Most common corrections",
     "review.types.noCorrections": "No recorded corrections.",
+    "review.technical.title": "Details and diagnostics",
+    "review.technical.subtitle": "Label distributions, assignment sources, and information useful for ML analysis.",
     "review.timesSeen": "{count}× seen",
     "review.queue.title": "Review queue",
     "review.queue.subtitle": "Transactions sorted by expected impact on data and model quality.",
@@ -171,17 +173,21 @@ export const en = {
     "ml.comparison.recommended": "Recommended",
     "ml.comparison.current": "In use",
     "ml.comparison.skipped": "Skipped",
-    "ml.comparison.nextTraining": "Variant for the next training run",
+    "ml.comparison.nextTraining": "Recommended candidate",
     "ml.comparison.noReport":
       "No comparison report yet. Run training to see the model ranking.",
-    "ml.recommendation.reason.best_calibrated_macro_f1":
-      "The strongest result comes from a model with calibrated confidence.",
-    "ml.recommendation.reason.prefer_calibrated_close":
-      "A calibrated model was selected because it is close to the best Macro-F1 and gives more useful confidence thresholds.",
-    "ml.recommendation.reason.best_macro_f1":
-      "Selected the best Macro-F1 model in the recommended feature set.",
-    "ml.recommendation.reason.no_report":
-      "No report is available, so the recommendation uses the default calibrated richer-feature variant.",
+    "ml.comparison.noPromotableCandidate": "No candidate passed the gates",
+    "ml.recommendation.reason.best_holdout_result":
+      "Best result across the time and merchant holdouts.",
+    "ml.recommendation.reason.noPromotableCandidate":
+      "Run training or collect more confirmed labels. A model that fails the gates is not recommended.",
+    "ml.readiness.labels": "Confirmed labels",
+    "ml.readiness.supportedClasses": "Model classes",
+    "ml.readiness.splits": "Validation",
+    "ml.readiness.feasible": "Feasible",
+    "ml.readiness.notFeasible": "Not feasible yet",
+    "ml.readiness.belowSupport":
+      "Classes below {minimum} labels: {n}. They remain manual and do not block the model.",
     "ml.feedback.title": "Feedback loop",
     "ml.feedback.accepted": "Accepted",
     "ml.feedback.rejected": "Rejected",

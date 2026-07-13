@@ -636,6 +636,7 @@ export interface MlMetricSummary {
 }
 
 export interface MlModelComparison {
+  model_id: string;
   estimator: string;
   feature_set: string;
   rank: number | null;
@@ -654,8 +655,9 @@ export interface MlModelComparison {
 }
 
 export interface MlModelRecommendation {
-  estimator: string;
-  feature_set: string;
+  model_id: string | null;
+  estimator: string | null;
+  feature_set: string | null;
   reason_code: string;
   action_codes: string[];
   warning_codes: string[];
@@ -665,7 +667,6 @@ export interface MlModelRecommendation {
   accuracy_at_055: number | null;
   confidence_threshold: number;
   based_on_report: boolean;
-  feature_decision_reason: string | null;
 }
 
 export interface MlModelStatus {
@@ -722,6 +723,11 @@ export interface MlReadiness {
   thesis_data_ready: boolean;
   training_ready: boolean;
   training_preflight_reasons: string[];
+  model_min_class_support: number;
+  supported_classes: string[];
+  unsupported_classes: Record<string, number>;
+  split_feasible: boolean;
+  split_error: string | null;
   recommended_history_months: string;
   training_labels_source: string;
   category_predicted_is_ground_truth: boolean;
