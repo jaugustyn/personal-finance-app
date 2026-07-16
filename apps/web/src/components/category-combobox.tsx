@@ -8,6 +8,7 @@ import { useCategories, CATEGORIES_QUERY_KEY } from "@/hooks/use-categories";
 import { useT, tCategory } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { CategoryAccent } from "@/components/category-accent";
 import {
   Popover,
   PopoverContent,
@@ -43,7 +44,7 @@ export interface CategorySelection {
 
 const SHOW_SUBCATEGORIES = false;
 
-/** Small colored dot used to preview a category color. */
+/** Compact category accent kept as a compatibility wrapper for existing pickers. */
 export function CategoryColorDot({
   color,
   subtle = false,
@@ -51,15 +52,7 @@ export function CategoryColorDot({
   color?: string | null;
   subtle?: boolean;
 }) {
-  return (
-    <span
-      className={cn(
-        "shrink-0 rounded-full ring-1 ring-border",
-        subtle ? "h-2 w-2 opacity-50" : "h-2.5 w-2.5",
-      )}
-      style={{ backgroundColor: color ?? "hsl(var(--muted-foreground))" }}
-    />
-  );
+  return <CategoryAccent color={color} size={subtle ? "xs" : "sm"} subtle={subtle} />;
 }
 
 /**

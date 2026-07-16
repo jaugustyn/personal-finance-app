@@ -43,7 +43,6 @@ interface TransactionRowProps {
   acceptPending: boolean;
   rejectPending: boolean;
   restorePending: boolean;
-  typeAcceptPending: boolean;
   onToggle: () => void;
   onEdit: () => void;
   onCancelEdit: () => void;
@@ -57,7 +56,6 @@ interface TransactionRowProps {
   onAcceptSuggestion: () => void;
   onRejectSuggestion: () => void;
   onRestoreSuggestion: () => void;
-  onAcceptTypeSuggestion: () => void;
   onDelete: () => void;
   annotating: boolean;
   onAnnotate: () => void;
@@ -74,7 +72,6 @@ export function TransactionRow({
   acceptPending,
   rejectPending,
   restorePending,
-  typeAcceptPending,
   onToggle,
   onEdit,
   onCancelEdit,
@@ -85,7 +82,6 @@ export function TransactionRow({
   onAcceptSuggestion,
   onRejectSuggestion,
   onRestoreSuggestion,
-  onAcceptTypeSuggestion,
   onDelete,
   annotating,
   onAnnotate,
@@ -103,9 +99,7 @@ export function TransactionRow({
     !sameDisplayText(tx.title, merchantDisplay) &&
     !sameDisplayText(tx.title, rawMerchant);
   const typeSource =
-    tx.transaction_type_source ??
-    tx.transaction_type_predicted_source ??
-    "direction";
+    tx.transaction_type_source ?? "direction";
   const typeSourceLabels: Record<string, string> = {
     manual: t("transactions.typeSource.manual"),
     model: t("transactions.typeSource.model"),
@@ -114,10 +108,7 @@ export function TransactionRow({
     direction: t("transactions.typeSource.direction"),
   };
   const typeSourceLabel = typeSourceLabels[typeSource] ?? typeSource;
-  const typeNeedsReview = tx.transaction_type_needs_review ?? false;
-  const displayedType = typeNeedsReview
-    ? tx.transaction_type_predicted
-    : tx.transaction_type_effective;
+  const displayedType = tx.transaction_type_effective;
 
   return (
     <TableRow
@@ -196,7 +187,6 @@ export function TransactionRow({
         ) : (
           <AssignmentValue
             label={displayedType ? tTransactionType(t, displayedType) : null}
-            suggested={typeNeedsReview}
             icon={
               tx.is_transfer ? (
                 <ArrowLeftRight className="mr-1 h-3 w-3 shrink-0" />
@@ -204,14 +194,6 @@ export function TransactionRow({
             }
             title={typeSourceLabel}
             onEdit={onEditType}
-            onAccept={
-              typeNeedsReview &&
-              (tx.transaction_type_predicted || tx.transaction_type)
-                ? onAcceptTypeSuggestion
-                : undefined
-            }
-            acceptLabel={t("transactions.acceptSuggestion")}
-            acceptPending={typeAcceptPending}
           />
         )}
       </TableCell>

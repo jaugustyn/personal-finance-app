@@ -72,21 +72,7 @@ export function TransactionCategoryCell({
     );
   }
 
-  if (!reviewMode && hasSuggestion) {
-    return (
-      <AssignmentValue
-        label={tCategory(t, tx.category_predicted)}
-        suggested
-        onEdit={onEdit}
-        title={t("transactions.suggestion")}
-        onAccept={onAcceptSuggestion}
-        acceptLabel={t("transactions.acceptOne")}
-        acceptPending={acceptPending}
-      />
-    );
-  }
-
-  if (!reviewMode && (hasRejectedSuggestion || hasRejectedMarker)) {
+  if (!reviewMode) {
     return <span className="text-muted-foreground">-</span>;
   }
 

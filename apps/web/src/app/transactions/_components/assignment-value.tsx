@@ -9,6 +9,7 @@ interface AssignmentValueProps {
   label: string | null;
   suggested?: boolean;
   icon?: ReactNode;
+  description?: ReactNode;
   title?: string;
   onEdit?: () => void;
   onAccept?: () => void;
@@ -21,6 +22,7 @@ export function AssignmentValue({
   label,
   suggested = false,
   icon,
+  description,
   title,
   onEdit,
   onAccept,
@@ -46,21 +48,28 @@ export function AssignmentValue({
   );
 
   return (
-    <div className="flex min-w-0 items-center gap-1.5">
-      {onEdit ? (
-        <button
-          type="button"
-          onClick={onEdit}
-          className="min-w-0 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          title={title}
-        >
-          {value}
-        </button>
-      ) : (
-        <span className="min-w-0" title={title}>
-          {value}
-        </span>
-      )}
+    <div className="flex min-w-0 items-start gap-1.5">
+      <div className="flex min-w-0 flex-col items-start gap-1">
+        {onEdit ? (
+          <button
+            type="button"
+            onClick={onEdit}
+            className="min-w-0 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            title={title}
+          >
+            {value}
+          </button>
+        ) : (
+          <span className="min-w-0" title={title}>
+            {value}
+          </span>
+        )}
+        {description ? (
+          <span className="text-[10px] text-muted-foreground">
+            {description}
+          </span>
+        ) : null}
+      </div>
       {onAccept ? (
         <Button
           type="button"

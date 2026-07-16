@@ -1,104 +1,110 @@
 "use client";
 
-import { CheckCircle2, Loader2, Store } from "lucide-react";
+import { ChevronRight, Loader2 } from "lucide-react";
 
 import type { MerchantCandidate } from "@/lib/api";
 import { useT } from "@/lib/i18n";
 import { formatCurrency } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DataTable, type DataTableColumn } from "@/components/data-table";
 import { candidateVariants } from "../_lib/merchant-aliases";
 
+export type MerchantCandidateSort = {
+  id: "suggested_label" | "variants" | "count" | "total_debit";
+  dir: "asc" | "desc";
+};
+
 export function CandidateTable({
   candidates,
+  isLoading,
+  isUpdating,
+  sort,
   pendingKey,
   onOpen,
-  onAccept,
+  onSortChange,
 }: {
   candidates: MerchantCandidate[];
+  isLoading: boolean;
+  isUpdating: boolean;
+  sort: MerchantCandidateSort;
   pendingKey: string | null;
   onOpen: (candidate: MerchantCandidate) => void;
-  onAccept: (candidate: MerchantCandidate) => void;
+  onSortChange: (sort: MerchantCandidateSort) => void;
 }) {
   const { t } = useT();
   const columns: DataTableColumn<MerchantCandidate>[] = [
     {
       id: "suggested_label",
       header: t("merchants.candidate"),
-      sortValue: (row) => row.suggested_label,
+      sortable: true,
+      headerClassName: "w-64",
+      className: "w-64",
       cell: (row) => (
-        <div>
-          <div className="font-medium">{row.suggested_label}</div>
-          <div className="text-xs text-muted-foreground">{row.canonical_key}</div>
-        </div>
+        <div className="font-medium">{row.suggested_label}</div>
       ),
     },
     {
       id: "variants",
       header: t("merchants.variants"),
-      sortValue: (row) => candidateVariants(row).length,
-      cell: (row) => (
-        <div className="flex flex-wrap gap-1">
-          {candidateVariants(row)
-            .slice(0, 6)
-            .map((variant) => (
+      sortable: true,
+      headerClassName: "w-[26rem]",
+      className: "w-[26rem]",
+      cell: (row) => {
+        const variants = candidateVariants(row);
+        return (
+          <div className="flex flex-wrap gap-1">
+            {variants.slice(0, 6).map((variant) => (
               <Badge key={variant.alias_key} variant="muted">
                 {variant.alias_label}
               </Badge>
             ))}
-        </div>
-      ),
+            {variants.length > 6 ? (
+              <Badge variant="outline">+{variants.length - 6}</Badge>
+            ) : null}
+          </div>
+        );
+      },
     },
     {
       id: "count",
-      header: t("review.count"),
-      align: "right",
-      className: "tabular-nums",
-      sortValue: (row) => row.count,
+      header: t("merchants.transactionsCount"),
+      sortable: true,
+      headerClassName: "w-32 min-w-32 max-w-32",
+      className: "w-32 min-w-32 max-w-32 tabular-nums",
       cell: (row) => row.count,
     },
     {
       id: "total_debit",
-      header: t("transactions.column.amount"),
-      align: "right",
-      className: "tabular-nums",
-      sortValue: (row) => Number(row.total_debit),
-      cell: (row) => formatCurrency(Number(row.total_debit)),
+      header: t("merchants.totalExpenses"),
+      sortable: true,
+      headerClassName: "w-32 min-w-32 max-w-32",
+      className: "w-32 min-w-32 max-w-32 tabular-nums",
+      cell: (row) =>
+        formatCurrency(Number(row.total_debit), row.base_currency),
     },
     {
       id: "actions",
       header: "",
-      align: "right",
-      headerClassName: "w-52",
-      className: "w-52",
+      align: "center",
+      headerClassName: "w-28 min-w-28 max-w-28",
+      className: "w-28 min-w-28 max-w-28 px-2",
       cell: (row) => (
-        <div className="flex justify-end gap-2">
+        <div className="flex justify-center">
           <Button
             size="sm"
             variant="outline"
+            className="px-2.5"
             disabled={pendingKey === row.canonical_key}
             onClick={() => onOpen(row)}
           >
             {pendingKey === row.canonical_key ? (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            ) : (
-              <CheckCircle2 className="mr-2 h-4 w-4" />
-            )}
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : null}
             {t("merchants.reviewMerge")}
-          </Button>
-          <Button
-            size="sm"
-            disabled={pendingKey === row.canonical_key}
-            onClick={() => onAccept(row)}
-          >
-            {pendingKey === row.canonical_key ? (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            ) : (
-              <CheckCircle2 className="mr-2 h-4 w-4" />
-            )}
-            {t("merchants.acceptMerge")}
+            {pendingKey !== row.canonical_key ? (
+              <ChevronRight className="h-4 w-4" />
+            ) : null}
           </Button>
         </div>
       ),
@@ -106,22 +112,32 @@ export function CandidateTable({
   ];
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base">
-          <Store className="h-4 w-4 text-muted-foreground" />
+    <section className="space-y-3">
+      <div className="flex min-h-9 items-center gap-2">
+        <h2 className="text-base font-semibold">
           {t("merchants.candidatesTitle")}
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
-        <DataTable
-          columns={columns}
-          data={candidates}
-          rowKey={(row) => row.canonical_key}
-          emptyTitle={t("merchants.candidatesEmpty")}
-          initialSort={{ id: "count", dir: "desc" }}
-        />
-      </CardContent>
-    </Card>
+        </h2>
+        <Badge variant="secondary">{candidates.length}</Badge>
+        {isUpdating ? (
+          <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
+        ) : null}
+      </div>
+      <DataTable
+        columns={columns}
+        data={candidates}
+        isLoading={isLoading}
+        rowKey={(row) => row.canonical_key}
+        emptyTitle={t("merchants.candidatesEmpty")}
+        className="bg-card [&_tbody_tr]:divide-x [&_tbody_tr]:divide-border/40 [&_thead_tr]:divide-x [&_thead_tr]:divide-border/40 [&_thead_tr]:bg-muted/30 [&_thead_tr:hover]:bg-muted/30"
+        tableClassName="min-w-[1104px] table-fixed"
+        sort={sort}
+        onSortChange={(nextSort) =>
+          onSortChange({
+            id: nextSort.id as MerchantCandidateSort["id"],
+            dir: nextSort.dir,
+          })
+        }
+      />
+    </section>
   );
 }

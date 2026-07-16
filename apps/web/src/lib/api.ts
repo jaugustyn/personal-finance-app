@@ -14,8 +14,11 @@ import { transactionsApi } from "./api/transactions";
 
 export type * from "./api/types";
 export type {
+  MerchantGroupSortBy,
   TransactionFilterParams,
   TransactionListParams,
+  TransactionSortBy,
+  TransactionSortDirection,
 } from "./api/transactions";
 export { ApiError, apiErrorMessage, isApiError } from "./api/client";
 

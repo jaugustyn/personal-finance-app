@@ -11,7 +11,9 @@ import {
   YAxis,
 } from "recharts";
 import { useMemo } from "react";
+import { useTheme } from "next-themes";
 import { useCategories } from "@/hooks/use-categories";
+import { getCategoryChartStyle } from "@/lib/category-colors";
 import { formatCurrency } from "@/lib/utils";
 import {
   formatCompactAxisNumber,
@@ -31,14 +33,16 @@ export function TopMerchantsBar({
   }[];
   currency?: string;
 }) {
+  const { resolvedTheme } = useTheme();
+  const theme = resolvedTheme === "dark" ? "dark" : "light";
   const { data: categories = [] } = useCategories();
   const colorByCategory = useMemo(() => {
-    const map = new Map<string, string>();
+    const map = new Map<string, ReturnType<typeof getCategoryChartStyle>>();
     for (const c of categories) {
-      if (c.color) map.set(c.name, c.color);
+      if (c.color) map.set(c.name, getCategoryChartStyle(c.color, theme));
     }
     return map;
-  }, [categories]);
+  }, [categories, theme]);
 
   const rows = data.map((d) => ({
     merchant: d.merchant_display || d.merchant,
@@ -75,15 +79,20 @@ export function TopMerchantsBar({
           labelFormatter={(label) => String(label)}
         />
         <Bar dataKey="amount" name="Wydatki" radius={[0, 4, 4, 0]}>
-          {rows.map((row, i) => (
-            <Cell
-              key={i}
-              fill={
-                (row.category && colorByCategory.get(row.category)) ||
-                "hsl(var(--muted-foreground))"
-              }
-            />
-          ))}
+          {rows.map((row, i) => {
+            const visual = row.category
+              ? colorByCategory.get(row.category)
+              : undefined;
+            return (
+              <Cell
+                key={i}
+                fill={visual?.fill ?? "hsl(var(--muted-foreground))"}
+                stroke={visual?.needsStroke ? visual.stroke : undefined}
+                strokeWidth={visual?.needsStroke ? 1 : 0}
+                strokeOpacity={0.55}
+              />
+            );
+          })}
         </Bar>
       </BarChart>
     </ResponsiveContainer>

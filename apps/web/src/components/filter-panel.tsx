@@ -56,7 +56,7 @@ export function FilterField({
 }) {
   return (
     <div className={cn("space-y-1.5", className)}>
-      <Label className="text-xs font-medium text-muted-foreground">
+      <Label className="block text-xs font-medium text-muted-foreground">
         {label}
       </Label>
       {children}

@@ -20,6 +20,8 @@ export interface DataTableColumn<T> {
   cell: (row: T) => React.ReactNode;
   /** Value used for client-side sorting. Omit to make the column non-sortable. */
   sortValue?: (row: T) => string | number | null | undefined;
+  /** Marks a column as sortable when sorting is handled by the caller. */
+  sortable?: boolean;
   align?: "left" | "right" | "center";
   className?: string;
   headerClassName?: string;
@@ -31,6 +33,8 @@ interface DataTableProps<T> {
   rowKey: (row: T) => string | number;
   isLoading?: boolean;
   initialSort?: SortState;
+  sort?: SortState;
+  onSortChange?: (sort: Exclude<SortState, null>) => void;
   /** Rendered when data is loaded but empty. */
   emptyTitle?: string;
   emptyDescription?: string;
@@ -44,7 +48,12 @@ interface DataTableProps<T> {
   rowCountLabel?: string;
 }
 
-type SortState = { id: string; dir: "asc" | "desc" } | null;
+export type DataTableSortState = {
+  id: string;
+  dir: "asc" | "desc";
+} | null;
+
+type SortState = DataTableSortState;
 
 const alignClass = {
   left: "text-left",
@@ -58,6 +67,8 @@ export function DataTable<T>({
   rowKey,
   isLoading,
   initialSort = null,
+  sort: controlledSort,
+  onSortChange,
   emptyTitle,
   emptyDescription,
   onRowClick,
@@ -69,13 +80,14 @@ export function DataTable<T>({
   rowCountLabel,
 }: DataTableProps<T>) {
   const { t } = useT();
-  const [sort, setSort] = React.useState<SortState>(initialSort);
+  const [internalSort, setInternalSort] = React.useState<SortState>(initialSort);
+  const activeSort = onSortChange ? (controlledSort ?? null) : internalSort;
 
   const sorted = React.useMemo(() => {
-    if (!data || !sort) return data;
-    const col = columns.find((c) => c.id === sort.id);
+    if (!data || !activeSort || onSortChange) return data;
+    const col = columns.find((c) => c.id === activeSort.id);
     if (!col?.sortValue) return data;
-    const factor = sort.dir === "asc" ? 1 : -1;
+    const factor = activeSort.dir === "asc" ? 1 : -1;
     return [...data].sort((a, b) => {
       const av = col.sortValue!(a);
       const bv = col.sortValue!(b);
@@ -90,10 +102,18 @@ export function DataTable<T>({
         factor
       );
     });
-  }, [data, sort, columns]);
+  }, [data, activeSort, columns, onSortChange]);
 
   const toggleSort = (id: string) => {
-    setSort((prev) => {
+    if (onSortChange) {
+      onSortChange({
+        id,
+        dir:
+          activeSort?.id === id && activeSort.dir === "asc" ? "desc" : "asc",
+      });
+      return;
+    }
+    setInternalSort((prev) => {
       if (prev?.id !== id) return { id, dir: "asc" };
       if (prev.dir === "asc") return { id, dir: "desc" };
       return null;
@@ -131,14 +151,16 @@ export function DataTable<T>({
         >
           <TableRow className="hover:bg-transparent">
             {columns.map((col) => {
-              const sortable = Boolean(col.sortValue);
-              const active = sort?.id === col.id;
+              const sortable = Boolean(
+                col.sortValue || (onSortChange && col.sortable),
+              );
+              const active = activeSort?.id === col.id;
               return (
                 <TableHead
                   key={col.id}
                   aria-sort={
                     active
-                      ? sort!.dir === "asc"
+                      ? activeSort!.dir === "asc"
                         ? "ascending"
                         : "descending"
                       : sortable
@@ -163,7 +185,7 @@ export function DataTable<T>({
                     >
                       {col.header}
                       {active ? (
-                        sort?.dir === "asc" ? (
+                        activeSort?.dir === "asc" ? (
                           <ArrowUp className="h-3.5 w-3.5" />
                         ) : (
                           <ArrowDown className="h-3.5 w-3.5" />

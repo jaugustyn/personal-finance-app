@@ -131,7 +131,7 @@ export function DateRangePicker({
             type="button"
             variant="outline"
             className={cn(
-              "w-full justify-start px-3 font-normal",
+              "w-full justify-start bg-transparent px-3 font-normal",
               canClear && "pr-9",
             )}
             aria-label={ariaLabel}

@@ -216,7 +216,7 @@ export function SubscriptionDetailsSheet({
                 action={
                   <Link
                     href={transactionsHref({
-                      search: subscription.display_name,
+                      search: subscription.merchant,
                     })}
                     className="shrink-0 text-xs font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
                   >
@@ -234,10 +234,7 @@ export function SubscriptionDetailsSheet({
                       <Link
                         key={transaction.id}
                         href={transactionsHref({
-                          search:
-                            transaction.merchant_display ||
-                            transaction.merchant ||
-                            transaction.title,
+                          search: transaction.merchant || transaction.title,
                         })}
                         className="grid gap-1 border-b p-3 text-sm last:border-b-0 hover:bg-muted/50 sm:grid-cols-[6.5rem_minmax(0,1fr)_auto]"
                       >

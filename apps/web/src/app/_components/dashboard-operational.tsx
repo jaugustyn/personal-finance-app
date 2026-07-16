@@ -79,10 +79,7 @@ export function AttentionPanel({
               tone="info"
               href={transactionsHref({
                 view: "review",
-                merchant_canonical_key: row.merchant_canonical_key,
-                search: row.merchant_canonical_key
-                  ? undefined
-                  : row.merchant || row.title,
+                search: row.merchant || row.title,
               })}
             >
               <div className="flex items-center justify-between gap-3">
@@ -118,10 +115,7 @@ export function AttentionPanel({
               key={row.id}
               tone="negative"
               href={transactionsHref({
-                merchant_canonical_key: row.merchant_canonical_key,
-                search: row.merchant_canonical_key
-                  ? undefined
-                  : row.merchant || row.title,
+                search: row.merchant || row.title,
               })}
             >
               <div className="flex items-center justify-between gap-3">

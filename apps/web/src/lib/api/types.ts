@@ -581,6 +581,7 @@ export interface MerchantAlias {
   alias_label: string;
   canonical_key: string;
   canonical_label: string;
+  usage_count: number;
   created_at: string | null;
 }
 
@@ -602,6 +603,7 @@ export interface MerchantAliasSuggestion {
   canonical_label: string;
   count: number;
   total_amount: number | string;
+  base_currency: string;
 }
 
 export interface MerchantCandidateVariant {
@@ -609,6 +611,7 @@ export interface MerchantCandidateVariant {
   alias_label: string;
   count: number;
   total_debit: number | string;
+  base_currency: string;
 }
 
 export interface MerchantCandidate {
@@ -619,6 +622,7 @@ export interface MerchantCandidate {
   variants: MerchantCandidateVariant[];
   count: number;
   total_debit: number | string;
+  base_currency: string;
 }
 
 export interface MerchantAliasGroup {
@@ -740,10 +744,33 @@ export interface MlLatestReport {
   report: Record<string, unknown> | null;
 }
 
+export interface MlLatestTraining {
+  exists: boolean;
+  job_id: string | null;
+  started_at: string | null;
+  finished_at: string | null;
+  duration_seconds: number | null;
+  dataset_fingerprint: string | null;
+  evaluation_set_id: string | null;
+  report_available: boolean;
+  candidate_count: number;
+  recommended_model_id: string | null;
+  representative_model_id: string | null;
+  label_count: number | null;
+  supported_classes: string[];
+  unsupported_classes: Record<string, number>;
+  split_counts: Record<string, number | null>;
+  metrics: Record<string, unknown>;
+  gates: Record<string, unknown>;
+  confidence_policy: Record<string, unknown>;
+  failed_variants: Record<string, unknown>[];
+}
+
 export interface MlDashboard {
   status: MlModelStatus;
   readiness: MlReadiness;
   latest_report: MlLatestReport;
+  latest_training: MlLatestTraining;
   model_comparison: MlModelComparison[];
   recommendation: MlModelRecommendation;
   validation_slices: Record<string, unknown>;

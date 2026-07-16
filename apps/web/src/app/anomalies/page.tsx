@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DataTable, type DataTableColumn } from "@/components/data-table";
 import { FilterField, FilterPanel } from "@/components/filter-panel";
+import { DirectionFilterSelect } from "@/components/direction-filter-select";
 import { PageHeader } from "@/components/page-header";
 import { Money } from "@/components/money";
 import {
@@ -18,13 +19,6 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { formatDate } from "@/lib/utils";
 import { useT, tCategory } from "@/lib/i18n";
 import { showErrorToast } from "@/lib/toasts";
@@ -154,10 +148,7 @@ export default function AnomaliesPage() {
         <>
           <Link
             href={transactionsHref({
-              merchant_canonical_key: a.merchant_canonical_key,
-              search: a.merchant_canonical_key
-                ? undefined
-                : a.merchant || a.title,
+              search: a.merchant || a.title,
             })}
             className="text-primary underline-offset-4 hover:underline"
             title={t("anomalies.openTransaction")}
@@ -278,25 +269,11 @@ export default function AnomaliesPage() {
 
       <FilterPanel gridClassName="sm:grid-cols-[minmax(12rem,16rem)]">
         <FilterField label={t("transactions.filterDirection")}>
-          <Select
+          <DirectionFilterSelect
             value={direction}
-            onValueChange={(v) => setDirection(v as Direction)}
-          >
-            <SelectTrigger className="w-full">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="debit">
-                {t("transactions.filterDirection.debit")}
-              </SelectItem>
-              <SelectItem value="credit">
-                {t("transactions.filterDirection.credit")}
-              </SelectItem>
-              <SelectItem value="all">
-                {t("transactions.filterDirection.all")}
-              </SelectItem>
-            </SelectContent>
-          </Select>
+            onChange={setDirection}
+            ariaLabel={t("transactions.filterDirection")}
+          />
         </FilterField>
       </FilterPanel>
 

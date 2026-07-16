@@ -1,6 +1,11 @@
 "use client";
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  keepPreviousData,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { toast } from "sonner";
 
 import { api, type MerchantAlias, type MerchantCandidate } from "@/lib/api";
@@ -15,8 +20,15 @@ import type { MerchantAliasPayload } from "./merchant-aliases";
 
 export function useMerchantAliases({
   onCreateSuccess,
+  candidateSearch = "",
+  candidateSort = { id: "count", dir: "desc" },
 }: {
   onCreateSuccess?: () => void;
+  candidateSearch?: string;
+  candidateSort?: {
+    id: "suggested_label" | "variants" | "count" | "total_debit";
+    dir: "asc" | "desc";
+  };
 } = {}) {
   const { t } = useT();
   const queryClient = useQueryClient();
@@ -27,8 +39,18 @@ export function useMerchantAliases({
     queryFn: () => api.merchantAliases(),
   });
   const candidatesQuery = useQuery<MerchantCandidate[]>({
-    queryKey: MERCHANT_QUERY_KEYS.candidates,
-    queryFn: () => api.merchantAliasCandidates(),
+    queryKey: MERCHANT_QUERY_KEYS.candidates(
+      candidateSearch,
+      candidateSort.id,
+      candidateSort.dir,
+    ),
+    queryFn: () =>
+      api.merchantAliasCandidates({
+        q: candidateSearch,
+        sortBy: candidateSort.id,
+        sortDir: candidateSort.dir,
+      }),
+    placeholderData: keepPreviousData,
   });
 
   const createAliases = useMutation({
@@ -55,7 +77,7 @@ export function useMerchantAliases({
     mutationFn: (id: number) => api.deleteMerchantAlias(id),
     onSuccess: () => {
       invalidateMerchantQueries(queryClient);
-      toast.success(t("toast.deleted"));
+      toast.success(t("merchants.aliasDetached"));
     },
     onError: (error) => showErrorToast(error, t("toast.error")),
   });
@@ -66,7 +88,7 @@ export function useMerchantAliases({
       description: t("merchants.deleteAliasDescription", {
         alias: alias.alias_label,
       }),
-      confirmLabel: t("common.delete"),
+      confirmLabel: t("merchants.detachAlias"),
       destructive: true,
     });
     if (ok) deleteAlias.mutate(alias.id);

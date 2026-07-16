@@ -6,6 +6,8 @@ import { Check } from "lucide-react";
 import { ErrorState } from "@/components/error-state";
 import { Money } from "@/components/money";
 import { TransactionTypeCombobox } from "@/components/transaction-type-combobox";
+import { TransactionTypeFilterSelect } from "@/components/transaction-type-filter-select";
+import { FilterField } from "@/components/filter-panel";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ClearableInput } from "@/components/ui/clearable-input";
@@ -73,11 +75,11 @@ export function TypeReviewView() {
     });
   return (
     <div className="space-y-3">
-      <div className="flex flex-wrap items-end gap-3 rounded-lg border bg-card p-3">
-        <div className="w-full sm:w-80">
-          <div className="mb-1 text-xs text-muted-foreground">
-            {t("transactions.filterSearch")}
-          </div>
+      <div className="flex flex-wrap items-end gap-3 rounded-lg border bg-card p-3 shadow-sm">
+        <FilterField
+          label={t("transactions.filterSearch")}
+          className="w-full sm:w-[26rem]"
+        >
           <ClearableInput
             value={search}
             onValueChange={(value) => {
@@ -87,23 +89,21 @@ export function TypeReviewView() {
             placeholder={t("transactions.search")}
             clearLabel={t("common.clear")}
           />
-        </div>
-        <div className="w-52">
-          <div className="mb-1 text-xs text-muted-foreground">
-            {t("transactions.filterType")}
-          </div>
-          <TransactionTypeCombobox
-            value={type || "all"}
+        </FilterField>
+        <FilterField
+          label={t("transactions.typeReview.proposed")}
+          className="w-[14rem] shrink-0"
+        >
+          <TransactionTypeFilterSelect
+            value={type}
             onChange={(value) => {
-              setType(value === "all" ? "" : value);
+              setType(value);
               reset();
             }}
-            includeEmpty
-            emptyValue="all"
-            emptyLabel={t("transactions.filterType.all")}
-            size="md"
+            allLabel={t("transactions.filterType.all")}
+            ariaLabel={t("transactions.typeReview.proposed")}
           />
-        </div>
+        </FilterField>
       </div>
 
       {selected.size > 0 ? (
@@ -152,16 +152,18 @@ export function TypeReviewView() {
           onRetry={() => query.refetch()}
         />
       ) : query.isLoading ? (
-        <TableSkeleton rows={8} />
+        <div className="rounded-lg border bg-card p-3">
+          <TableSkeleton rows={8} />
+        </div>
       ) : rows.length === 0 ? (
-        <div className="rounded-lg border bg-card py-16 text-center text-sm text-muted-foreground">
+        <div className="flex h-40 items-center justify-center rounded-lg border bg-card text-sm text-muted-foreground">
           {t("transactions.typeReview.empty")}
         </div>
       ) : (
-        <div className="overflow-x-auto rounded-lg border bg-card">
+        <div className="overflow-hidden rounded-lg border bg-card">
           <Table className="min-w-[800px] table-fixed">
             <TableHeader>
-              <TableRow className="divide-x divide-border/40">
+              <TableRow className="divide-x divide-border/40 bg-muted/30 hover:bg-muted/30">
                 <TableHead className="w-10">
                   <Checkbox
                     checked={allSelected}
@@ -247,33 +249,32 @@ export function TypeReviewView() {
               })}
             </TableBody>
           </Table>
+          <div className="flex min-h-14 items-center justify-between border-t px-3 py-2 text-sm text-muted-foreground">
+            <span>
+              {t("pagination.page", { n: page + 1 })} · {rows.length} /{" "}
+              {summary.data?.count ?? rows.length}
+            </span>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={page === 0}
+                onClick={() => setPage((value) => Math.max(0, value - 1))}
+              >
+                {t("pagination.previous")}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={rows.length < PAGE_SIZE}
+                onClick={() => setPage((value) => value + 1)}
+              >
+                {t("pagination.next")}
+              </Button>
+            </div>
+          </div>
         </div>
       )}
-
-      <div className="flex items-center justify-between text-sm text-muted-foreground">
-        <span>
-          {t("pagination.page", { n: page + 1 })} · {rows.length} /{" "}
-          {summary.data?.count ?? rows.length}
-        </span>
-        <div className="flex gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={page === 0}
-            onClick={() => setPage((value) => Math.max(0, value - 1))}
-          >
-            {t("pagination.previous")}
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={rows.length < PAGE_SIZE}
-            onClick={() => setPage((value) => value + 1)}
-          >
-            {t("pagination.next")}
-          </Button>
-        </div>
-      </div>
     </div>
   );
 }

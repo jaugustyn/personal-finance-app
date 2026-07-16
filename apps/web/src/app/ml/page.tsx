@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
@@ -15,24 +15,21 @@ import { CardGridSkeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   AlertTriangle,
-  BrainCircuit,
   CheckCircle2,
   Download,
   ExternalLink,
   FileText,
-  Loader2,
-  RefreshCw,
-  RotateCcw,
 } from "lucide-react";
 import { FeedbackQualityCard } from "./_components/feedback-quality-card";
 import { MetricCard } from "./_components/metric-card";
 import { ModelLifecycleCard } from "./_components/model-lifecycle-card";
 import { ModelComparisonCard } from "./_components/model-comparison-card";
-import { RetrainSignalCard } from "./_components/retrain-signal-card";
+import { NextStepCard } from "./_components/next-step-card";
+import { TechnicalDetailsCard } from "./_components/technical-details-card";
+import { TrainingSummaryCard } from "./_components/training-summary-card";
 import {
   formatDateTime,
   percent,
-  recommendationReason,
   statusLabel,
   statusVariant,
 } from "./_lib/ml-format";
@@ -41,6 +38,7 @@ const RETRAIN_TOAST_ID = "ml-retrain-status";
 
 export default function MlPage() {
   const { t } = useT();
+  const [activeTab, setActiveTab] = useState("overview");
   const qc = useQueryClient();
   const lastRetrainStatusRef = useRef<string | null>(null);
   const query = useQuery({
@@ -120,6 +118,16 @@ export default function MlPage() {
     onError: (error) => showErrorToast(error, t("toast.error")),
   });
 
+  const activate = useMutation({
+    mutationFn: (modelId: string) => api.activateModelVersion(modelId),
+    onSuccess: () => {
+      toast.success(t("ml.next.activateDone"));
+      void qc.invalidateQueries({ queryKey: ["mlDashboard"] });
+      void qc.invalidateQueries({ queryKey: ["mlModelVersions"] });
+    },
+    onError: (error) => showErrorToast(error, t("ml.next.activateFailed")),
+  });
+
   const data = query.data;
   const status = data?.status;
   const best = status?.best_model;
@@ -127,8 +135,6 @@ export default function MlPage() {
   const isRetraining =
     retrain.isPending ||
     ["queued", "running"].includes(retrainStatus.data?.status ?? "");
-  const trainingReady = data?.readiness.training_ready ?? false;
-  const reclassificationAvailable = Boolean(status?.exists && !status.load_error);
   const showModelStatusBadge = Boolean(
     data &&
       status &&
@@ -146,7 +152,7 @@ export default function MlPage() {
       ) : query.isError || !data || !status || !recommendation ? (
         <ErrorState onRetry={() => query.refetch()} />
       ) : (
-        <Tabs defaultValue="overview" className="space-y-4">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
           <TabsList className="h-auto flex-wrap justify-start">
             <TabsTrigger value="overview">{t("ml.tab.overview")}</TabsTrigger>
             <TabsTrigger value="technical">{t("ml.tab.technical")}</TabsTrigger>
@@ -236,163 +242,35 @@ export default function MlPage() {
                 </CardContent>
               </Card>
 
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2 text-base text-foreground">
-                    <BrainCircuit className="h-4 w-4 text-primary" />
-                    {t("ml.operations.title")}
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="rounded-md border bg-muted/20 p-3">
-                    <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-                      <span>{t("ml.comparison.nextTraining")}</span>
-                    </div>
-                    <div className="mt-1 font-medium">
-                      {recommendation.estimator && recommendation.feature_set
-                        ? `${recommendation.estimator} · ${recommendation.feature_set}`
-                        : t("ml.comparison.noPromotableCandidate")}
-                    </div>
-                    <p className="mt-2 text-xs text-muted-foreground">
-                      {recommendationReason(recommendation.reason_code, t)}
-                    </p>
-                  </div>
-
-                  <div className="flex flex-wrap items-start gap-2">
-                    <Button
-                      onClick={() => retrain.mutate({})}
-                      disabled={isRetraining || !trainingReady}
-                    >
-                      {isRetraining ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <RefreshCw className="h-4 w-4" />
-                      )}
-                      {isRetraining ? t("ml.retrainRunningShort") : t("ml.retrain")}
-                    </Button>
-                    <Button
-                      variant="outline"
-                      onClick={() => reclassify.mutate()}
-                      disabled={
-                        reclassify.isPending || !reclassificationAvailable
-                      }
-                    >
-                      {reclassify.isPending ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <RotateCcw className="h-4 w-4" />
-                      )}
-                      {t("ml.reclassify")}
-                    </Button>
-                  </div>
-                  {isRetraining ? (
-                    <div className="flex items-start gap-2 rounded-md border border-primary/20 bg-primary/5 p-3 text-xs text-muted-foreground">
-                      <Loader2 className="mt-0.5 h-3.5 w-3.5 shrink-0 animate-spin text-primary" />
-                      <span>{t("ml.retrainRunningHint")}</span>
-                    </div>
-                  ) : null}
-                  {!trainingReady ? (
-                    <div className="rounded-md border border-warning/30 bg-warning/10 p-3 text-xs text-muted-foreground">
-                      <div className="font-medium text-warning">
-                        {t("ml.trainingDataNotReady")}
-                      </div>
-                      <p className="mt-1">
-                        {t("ml.trainingDataProgress", {
-                          current: data.readiness.total_labelled,
-                          minimum: data.readiness.minimum_total,
-                        })}
-                      </p>
-                    </div>
-                  ) : null}
-                  <div className="grid gap-2 text-xs sm:grid-cols-3">
-                    <div className="rounded-md border bg-muted/20 p-2.5">
-                      <div className="text-muted-foreground">
-                        {t("ml.readiness.labels")}
-                      </div>
-                      <div className="mt-1 font-medium text-foreground">
-                        {data.readiness.total_labelled} / {data.readiness.minimum_total}
-                      </div>
-                    </div>
-                    <div className="rounded-md border bg-muted/20 p-2.5">
-                      <div className="text-muted-foreground">
-                        {t("ml.readiness.supportedClasses")}
-                      </div>
-                      <div className="mt-1 font-medium text-foreground">
-                        {data.readiness.supported_classes.length}
-                      </div>
-                    </div>
-                    <div className="rounded-md border bg-muted/20 p-2.5">
-                      <div className="text-muted-foreground">
-                        {t("ml.readiness.splits")}
-                      </div>
-                      <div className="mt-1 font-medium text-foreground">
-                        {data.readiness.split_feasible
-                          ? t("ml.readiness.feasible")
-                          : t("ml.readiness.notFeasible")}
-                      </div>
-                    </div>
-                  </div>
-                  {Object.keys(data.readiness.unsupported_classes).length ? (
-                    <p className="text-xs text-muted-foreground">
-                      {t("ml.readiness.belowSupport", {
-                        n: Object.keys(data.readiness.unsupported_classes).length,
-                        minimum: data.readiness.model_min_class_support,
-                      })}
-                    </p>
-                  ) : null}
-                </CardContent>
-              </Card>
+              <NextStepCard
+                data={data}
+                isRetraining={isRetraining}
+                isReclassifying={reclassify.isPending}
+                isActivating={activate.isPending}
+                onRetrain={() => retrain.mutate({})}
+                onReclassify={() => reclassify.mutate()}
+                onActivate={(modelId) => activate.mutate(modelId)}
+              />
             </div>
 
-            <RetrainSignalCard signal={data.retrain_signal} />
             <ModelLifecycleCard />
           </TabsContent>
 
           <TabsContent value="technical" className="space-y-4">
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base text-foreground">
-                  {t("ml.report.title")}
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                {best ? (
-                  <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-                    <MetricCard
-                      label={t("ml.report.best")}
-                      value={best.model ?? "—"}
-                    />
-                    <MetricCard
-                      label={t("ml.kpi.macro")}
-                      value={percent(best.macro_f1)}
-                    />
-                    <MetricCard
-                      label={t("ml.comparison.weighted")}
-                      value={percent(best.weighted_f1)}
-                    />
-                    <MetricCard
-                      label={t("ml.report.coverage")}
-                      value={percent(best.coverage_at_055)}
-                    />
-                    <MetricCard
-                      label={t("ml.report.accuracy")}
-                      value={percent(best.accuracy_at_055)}
-                    />
-                  </div>
-                ) : (
-                  <p className="text-sm text-muted-foreground">
-                    {t("ml.report.none")}
-                  </p>
-                )}
-              </CardContent>
-            </Card>
+            <TrainingSummaryCard
+              data={data}
+              onOpenPanel={() => setActiveTab("overview")}
+            />
+
+            <ModelComparisonCard rows={data.model_comparison} />
 
             <FeedbackQualityCard
               quality={data.feedback_quality}
               hotspots={data.confusion_hotspots}
+              confirmedLabels={data.readiness.total_labelled}
             />
 
-            <ModelComparisonCard rows={data.model_comparison} />
+            <TechnicalDetailsCard data={data} />
           </TabsContent>
         </Tabs>
       )}

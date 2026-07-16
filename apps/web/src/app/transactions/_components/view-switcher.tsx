@@ -1,27 +1,53 @@
 "use client";
 
+import { useQuery } from "@tanstack/react-query";
+import { Badge } from "@/components/ui/badge";
+import { api } from "@/lib/api";
 import { useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
-import { Check, Layers, LayoutList, type LucideIcon } from "lucide-react";
-import type { TransactionsView } from "../_lib/constants";
+import type { TransactionsMode } from "../_lib/constants";
 
 interface ViewSwitcherProps {
-  value: TransactionsView;
-  onChange: (view: TransactionsView) => void;
+  value: TransactionsMode;
+  onChange: (view: TransactionsMode) => void;
 }
 
 export function ViewSwitcher({ value, onChange }: ViewSwitcherProps) {
   const { t } = useT();
-  const items: { value: TransactionsView; label: string; icon: LucideIcon }[] = [
-    { value: "list", label: t("transactions.viewList"), icon: LayoutList },
-    { value: "review", label: t("transactions.viewReview"), icon: Check },
-    { value: "groups", label: t("transactions.viewGroups"), icon: Layers },
+  const summary = useQuery({
+    queryKey: ["review-summary"],
+    queryFn: () => api.reviewSummary(),
+  });
+  const categoryReviewCount = summary.data
+    ? summary.data.counts.no_suggestion +
+      summary.data.counts.low_confidence +
+      summary.data.counts.ready_to_accept
+    : undefined;
+  const items: {
+    value: TransactionsMode;
+    label: string;
+    count?: number;
+  }[] = [
+    { value: "list", label: t("transactions.viewList") },
+    {
+      value: "transaction_type_review",
+      label: t("transactions.viewTypeReview"),
+      count: summary.data?.transaction_type_quality.needs_review,
+    },
+    {
+      value: "category_review",
+      label: t("transactions.viewCategoryReview"),
+      count: categoryReviewCount,
+    },
+    { value: "groups", label: t("transactions.viewGroups") },
   ];
 
   return (
-    <div className="inline-flex max-w-full flex-wrap gap-0.5">
+    <nav
+      className="flex max-w-full overflow-x-auto border-b"
+      aria-label={t("transactions.title")}
+    >
       {items.map((item) => {
-        const Icon = item.icon;
         const active = value === item.value;
         return (
           <button
@@ -29,17 +55,28 @@ export function ViewSwitcher({ value, onChange }: ViewSwitcherProps) {
             type="button"
             onClick={() => onChange(item.value)}
             className={cn(
-              "inline-flex h-9 items-center gap-2 rounded-[calc(var(--radius)-0.25rem)] px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background",
+              "inline-flex h-11 shrink-0 items-center gap-2 border-b-2 px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
               active
-                ? "bg-muted text-foreground shadow-sm"
-                : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
+                ? "border-primary text-foreground"
+                : "border-transparent text-muted-foreground hover:border-border hover:text-foreground",
             )}
           >
-            <Icon className="h-4 w-4" />
             {item.label}
+            {item.count !== undefined ? (
+              <Badge
+                variant="muted"
+                className={cn(
+                  "px-1.5 text-[10px] tabular-nums",
+                  active &&
+                    "bg-primary/10 text-primary ring-1 ring-primary/15",
+                )}
+              >
+                {item.count}
+              </Badge>
+            ) : null}
           </button>
         );
       })}
-    </div>
+    </nav>
   );
 }

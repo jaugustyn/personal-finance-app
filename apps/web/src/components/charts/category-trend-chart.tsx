@@ -11,7 +11,9 @@ import {
   YAxis,
 } from "recharts";
 import { useMemo } from "react";
+import { useTheme } from "next-themes";
 import type { CategoryTrendPoint } from "@/lib/api";
+import { getCategoryChartStyle } from "@/lib/category-colors";
 import { useT, tCategory } from "@/lib/i18n";
 import { formatCurrency, formatMonth } from "@/lib/utils";
 import { useCategories } from "@/hooks/use-categories";
@@ -30,15 +32,17 @@ export function CategoryTrendChart({
   currency?: string;
 }) {
   const { t } = useT();
+  const { resolvedTheme } = useTheme();
+  const theme = resolvedTheme === "dark" ? "dark" : "light";
   const { data: categories = [] } = useCategories();
 
   const colorByCategory = useMemo(() => {
-    const map = new Map<string, string>();
+    const map = new Map<string, ReturnType<typeof getCategoryChartStyle>>();
     for (const c of categories) {
-      if (c.color) map.set(c.name, c.color);
+      if (c.color) map.set(c.name, getCategoryChartStyle(c.color, theme));
     }
     return map;
-  }, [categories]);
+  }, [categories, theme]);
 
   const { rows, categories: cats } = useMemo(() => {
     const cats = Array.from(new Set(data.map((d) => d.category)));
@@ -90,7 +94,7 @@ export function CategoryTrendChart({
             type="monotone"
             dataKey={cat}
             stroke={
-              colorByCategory.get(cat) || PIE_COLORS[i % PIE_COLORS.length]
+              colorByCategory.get(cat)?.fill || PIE_COLORS[i % PIE_COLORS.length]
             }
             strokeWidth={2}
             dot={false}

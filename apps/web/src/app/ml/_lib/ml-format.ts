@@ -19,6 +19,17 @@ export function percent(value: number | null | undefined): string {
   return typeof value === "number" ? formatPercent(value) : "—";
 }
 
+export function estimatorName(value: string | null | undefined): string {
+  switch (value) {
+    case "logreg":
+      return "Logistic Regression";
+    case "linear_svc_calibrated":
+      return "Calibrated LinearSVC";
+    default:
+      return value ?? "—";
+  }
+}
+
 export function numberFromRecord(
   data: Record<string, unknown>,
   key: string,

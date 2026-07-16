@@ -127,8 +127,7 @@ export default function RecapPage() {
       cell: (row) => (
         <Link
           href={transactionsHref({
-            merchant_canonical_key: row.merchant_canonical_key,
-            search: row.merchant_canonical_key ? undefined : row.merchant,
+            search: row.merchant,
             direction: "debit",
             date_from: query.data?.current_from,
             date_to: query.data?.current_to,

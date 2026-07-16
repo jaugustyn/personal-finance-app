@@ -38,7 +38,7 @@ export function SubscriptionCard({
           <div className="flex items-start justify-between gap-2">
             <Link
               href={transactionsHref({
-                search: subscription.display_name,
+                search: subscription.merchant,
               })}
               className="min-w-0 truncate font-medium underline-offset-4 hover:underline"
               title={subscription.display_name}

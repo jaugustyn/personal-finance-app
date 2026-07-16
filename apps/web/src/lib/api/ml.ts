@@ -27,6 +27,8 @@ export const mlApi = {
     `/api/proxy${withQuery("/ml/report/latest/file", {
       download: download ? true : undefined,
     })}`,
+  mlLatestTrainingReportFileUrl: () =>
+    "/api/proxy/ml/report/latest-training/file",
   reviewQueue: (limit = 20) =>
     request<ReviewQueueItem[]>(withQuery("/ml/review-queue", { limit })),
   feedbackReport: () => request<FeedbackReport>("/ml/feedback-report"),

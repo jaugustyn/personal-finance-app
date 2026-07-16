@@ -8,10 +8,10 @@ import { PageHeader } from "@/components/page-header";
 import { useLocalStorageState } from "@/hooks/use-local-storage-state";
 import { GroupsView } from "./_components/groups-view";
 import { ListView, type TransactionInitialFilters } from "./_components/list-view";
-import { SubjectSwitcher } from "./_components/subject-switcher";
 import { TypeReviewView } from "./_components/type-review-view";
 import { ViewSwitcher } from "./_components/view-switcher";
 import type {
+  TransactionsMode,
   TransactionsSubject,
   TransactionsView,
 } from "./_lib/constants";
@@ -41,7 +41,8 @@ export default function TransactionsPage() {
       key: hasFilters ? window.location.search : "",
       search: valueOrUndefined(params.get("search")),
       category: valueOrUndefined(params.get("category")),
-      merchantCanonicalKey: valueOrUndefined(params.get("merchant_canonical_key")),
+      minAmount: valueOrUndefined(params.get("min_amount")),
+      maxAmount: valueOrUndefined(params.get("max_amount")),
       direction: parseDirection(params.get("direction")),
       transactionType: valueOrUndefined(params.get("transaction_type")),
       dateFrom: valueOrUndefined(params.get("date_from")),
@@ -54,23 +55,30 @@ export default function TransactionsPage() {
     });
   }, [setSubject, setView]);
 
-  const handleViewChange = (nextView: TransactionsView) => {
-    setView(nextView);
+  const activeMode: TransactionsMode =
+    view === "review"
+      ? subject === "transaction_type"
+        ? "transaction_type_review"
+        : "category_review"
+      : view;
+
+  const handleModeChange = (nextMode: TransactionsMode) => {
+    if (nextMode === "transaction_type_review") {
+      setSubject("transaction_type");
+      setView("review");
+    } else if (nextMode === "category_review") {
+      setSubject("category");
+      setView("review");
+    } else {
+      setView(nextMode);
+    }
     setInitialFilters({ key: "" });
   };
 
   return (
     <div className="space-y-6">
       <PageHeader title={t("transactions.title")} />
-      <div className="flex w-fit max-w-full flex-wrap items-center gap-1 rounded-lg border bg-card p-1 shadow-sm">
-        <ViewSwitcher value={view} onChange={handleViewChange} />
-        {view === "review" ? (
-          <>
-            <div className="mx-1 hidden h-6 w-px bg-border sm:block" />
-            <SubjectSwitcher value={subject} onChange={setSubject} />
-          </>
-        ) : null}
-      </div>
+      <ViewSwitcher value={activeMode} onChange={handleModeChange} />
 
       {view === "groups" ? (
         <GroupsView />
@@ -106,7 +114,8 @@ function hasTransactionFilterParams(params: URLSearchParams): boolean {
   return [
     "search",
     "category",
-    "merchant_canonical_key",
+    "min_amount",
+    "max_amount",
     "direction",
     "transaction_type",
     "date_from",

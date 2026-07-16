@@ -5,11 +5,13 @@ import { useT } from "@/lib/i18n";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DataTable, type DataTableColumn } from "@/components/data-table";
-import { percent } from "../_lib/ml-format";
+import { estimatorName, percent } from "../_lib/ml-format";
 
 export function ModelComparisonCard({ rows }: { rows: MlModelComparison[] }) {
   const { t } = useT();
-  const hasRows = rows.length > 0;
+  const recommended = rows.find((row) => row.is_recommended);
+  if (rows.length === 0) return null;
+
   const columns: DataTableColumn<MlModelComparison>[] = [
     {
       id: "model",
@@ -19,40 +21,25 @@ export function ModelComparisonCard({ rows }: { rows: MlModelComparison[] }) {
       cell: (row) => (
         <>
           <span className="mr-2 text-xs text-muted-foreground">#{row.rank}</span>
-          {row.estimator}
+          {estimatorName(row.estimator)}
         </>
       ),
     },
     {
-      id: "features",
-      header: t("ml.comparison.features"),
-      sortValue: (row) => row.feature_set,
-      className: "text-muted-foreground",
-      cell: (row) => row.feature_set,
-    },
-    {
-      id: "macro",
-      header: t("ml.comparison.macro"),
-      align: "right",
-      className: "tabular-nums",
-      sortValue: (row) => row.macro_f1,
-      cell: (row) => percent(row.macro_f1),
-    },
-    {
-      id: "weighted",
-      header: t("ml.comparison.weighted"),
-      align: "right",
-      className: "tabular-nums",
-      sortValue: (row) => row.weighted_f1,
-      cell: (row) => percent(row.weighted_f1),
-    },
-    {
       id: "stability",
-      header: t("ml.comparison.stability"),
+      header: t("ml.comparison.weakestMacro"),
       align: "right",
       className: "tabular-nums",
       sortValue: (row) => row.stability_score,
       cell: (row) => percent(row.stability_score),
+    },
+    {
+      id: "macro",
+      header: t("ml.comparison.meanMacro"),
+      align: "right",
+      className: "tabular-nums",
+      sortValue: (row) => row.macro_f1,
+      cell: (row) => percent(row.macro_f1),
     },
     {
       id: "coverage",
@@ -82,7 +69,9 @@ export function ModelComparisonCard({ rows }: { rows: MlModelComparison[] }) {
             <Badge variant="secondary">{t("ml.comparison.current")}</Badge>
           ) : null}
           {row.skipped ? (
-            <Badge variant="warning">{t("ml.comparison.skipped")}</Badge>
+            <Badge variant="warning">
+              {t("ml.comparison.requirementsFailed")}
+            </Badge>
           ) : null}
         </div>
       ),
@@ -94,26 +83,25 @@ export function ModelComparisonCard({ rows }: { rows: MlModelComparison[] }) {
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base text-foreground">
           <Sparkles className="h-4 w-4 text-primary" />
-          {t("ml.comparison.title")}
+          {t("ml.comparison.rankingTitle")}
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
-        {hasRows ? (
-          <DataTable
-            columns={columns}
-            data={rows}
-            rowKey={(row) => row.model_id}
-            initialSort={{ id: "model", dir: "asc" }}
-            tableClassName="min-w-[840px]"
-            getRowClassName={(row) =>
-              row.is_recommended ? "bg-primary/5" : undefined
-            }
-          />
-        ) : (
-          <p className="text-sm text-muted-foreground">
-            {t("ml.comparison.noReport")}
-          </p>
-        )}
+        <DataTable
+          columns={columns}
+          data={rows}
+          rowKey={(row) => row.model_id}
+          initialSort={{ id: "model", dir: "asc" }}
+          tableClassName="min-w-[720px]"
+          getRowClassName={(row) =>
+            row.is_recommended ? "bg-primary/5" : undefined
+          }
+        />
+        <p className="text-xs text-muted-foreground">
+          {recommended
+            ? t("ml.comparison.recommendationExplanation")
+            : t("ml.comparison.noRecommendationExplanation")}
+        </p>
       </CardContent>
     </Card>
   );

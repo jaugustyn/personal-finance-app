@@ -1,12 +1,16 @@
-import type { TransactionFilterParams } from "@/lib/api";
+import type { TransactionFilterParams, TransactionListParams } from "@/lib/api";
 
 export const transactionQueryKeys = {
   all: ["transactions"] as const,
-  list: (page: number, filters: TransactionFilterParams) =>
-    ["transactions", "list", { page, ...filters }] as const,
+  list: (page: number, params: TransactionListParams) =>
+    ["transactions", "list", { page, ...params }] as const,
   filterSummary: (filters: TransactionFilterParams) =>
     ["transactions", "filter-summary", filters] as const,
-  groups: (params: { onlyUncategorized: boolean }) =>
+  groups: (params: {
+    onlyUncategorized: boolean;
+    sortBy: string;
+    sortDirection: string;
+  }) =>
     ["transactions", "groups", params] as const,
 };
 

@@ -15,8 +15,9 @@ export type TransactionFilterParams = {
   include_transfers?: boolean;
   import_id?: number;
   merchant?: string;
-  merchant_canonical_key?: string;
   search?: string;
+  min_amount?: number;
+  max_amount?: number;
   direction?: "debit" | "credit";
   category?: string;
   category_state?: CategoryState;
@@ -29,9 +30,15 @@ export type TransactionFilterParams = {
   review_priority?: boolean;
 };
 
+export type TransactionSortBy = "date" | "merchant" | "amount";
+export type TransactionSortDirection = "asc" | "desc";
+export type MerchantGroupSortBy = "merchant" | "amount" | "count";
+
 export type TransactionListParams = TransactionFilterParams & {
   limit?: number;
   offset?: number;
+  sort_by?: TransactionSortBy;
+  sort_direction?: TransactionSortDirection;
 };
 
 function transactionFilterQueryValues(
@@ -40,11 +47,12 @@ function transactionFilterQueryValues(
   return {
     date_from: params.date_from,
     date_to: params.date_to,
-    include_transfers: params.include_transfers === false ? false : undefined,
+    include_transfers: params.include_transfers,
     import_id: params.import_id,
     merchant: params.merchant,
-    merchant_canonical_key: params.merchant_canonical_key,
     search: params.search,
+    min_amount: params.min_amount,
+    max_amount: params.max_amount,
     direction: params.direction,
     category: params.category,
     category_state:
@@ -74,6 +82,8 @@ export const transactionsApi = {
       withQuery("/transactions", {
         limit: params.limit || undefined,
         offset: params.offset || undefined,
+        sort_by: params.sort_by,
+        sort_direction: params.sort_direction,
         ...transactionFilterQueryValues(params),
       }),
     ),
@@ -160,13 +170,21 @@ export const transactionsApi = {
       body: JSON.stringify({ ids }),
     }),
   merchantGroups: (
-    params: { only_uncategorized?: boolean; min_count?: number; limit?: number } = {},
+    params: {
+      only_uncategorized?: boolean;
+      min_count?: number;
+      limit?: number;
+      sort_by?: MerchantGroupSortBy;
+      sort_direction?: TransactionSortDirection;
+    } = {},
   ) => {
     return request<MerchantGroup[]>(
       withQuery("/transactions/groups", {
         only_uncategorized: params.only_uncategorized,
         min_count: params.min_count,
         limit: params.limit,
+        sort_by: params.sort_by,
+        sort_direction: params.sort_direction,
       }),
     );
   },

@@ -100,7 +100,7 @@ export function tCategory(
   if (!category) return t("common.unknown");
   const key = `category.${category}` as TranslationKey;
   if (key in DICT.pl) return t(key);
-  return category;
+  return category.charAt(0).toLocaleUpperCase() + category.slice(1);
 }
 
 export function tTransactionType(

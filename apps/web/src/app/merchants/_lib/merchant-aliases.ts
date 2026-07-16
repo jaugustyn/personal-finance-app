@@ -50,5 +50,6 @@ export function candidateVariants(
     alias_label: alias,
     count: 0,
     total_debit: 0,
+    base_currency: candidate.base_currency,
   }));
 }

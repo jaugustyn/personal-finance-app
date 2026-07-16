@@ -62,8 +62,7 @@ export function MerchantRankingCard({
                 <Link
                   key={row.merchant_canonical_key ?? row.merchant}
                   href={transactionsHref({
-                    merchant_canonical_key: row.merchant_canonical_key,
-                    search: row.merchant_canonical_key ? undefined : row.merchant,
+                    search: row.merchant,
                   })}
                   className="grid grid-cols-[2rem_minmax(0,1fr)_auto] items-center gap-3 py-3 transition-colors hover:bg-muted/50"
                 >

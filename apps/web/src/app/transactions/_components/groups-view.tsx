@@ -1,13 +1,28 @@
 "use client";
 
 import { useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  keepPreviousData,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { CategoryCombobox } from "@/components/category-combobox";
-import { DataTable, type DataTableColumn } from "@/components/data-table";
+import { FilterField } from "@/components/filter-panel";
+import { FilterSelect } from "@/components/filter-select";
+import {
+  DataTable,
+  type DataTableColumn,
+  type DataTableSortState,
+} from "@/components/data-table";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { TableSkeleton } from "@/components/ui/skeleton";
-import { api, type MerchantGroup } from "@/lib/api";
+import {
+  api,
+  type MerchantGroup,
+  type MerchantGroupSortBy,
+  type TransactionSortDirection,
+} from "@/lib/api";
 import { useT } from "@/lib/i18n";
 import { formatCurrency } from "@/lib/utils";
 import { transactionQueryKeys } from "../_lib/query-keys";
@@ -16,12 +31,26 @@ export function GroupsView() {
   const { t } = useT();
   const qc = useQueryClient();
   const [onlyUncat, setOnlyUncat] = useState(true);
+  const [sort, setSort] = useState<Exclude<DataTableSortState, null>>({
+    id: "count",
+    dir: "desc",
+  });
   const [pickers, setPickers] = useState<Record<string, string | null>>({});
 
   const query = useQuery<MerchantGroup[]>({
-    queryKey: transactionQueryKeys.groups({ onlyUncategorized: onlyUncat }),
+    queryKey: transactionQueryKeys.groups({
+      onlyUncategorized: onlyUncat,
+      sortBy: sort.id,
+      sortDirection: sort.dir,
+    }),
     queryFn: () =>
-      api.merchantGroups({ only_uncategorized: onlyUncat, min_count: 2 }),
+      api.merchantGroups({
+        only_uncategorized: onlyUncat,
+        min_count: 2,
+        sort_by: sort.id as MerchantGroupSortBy,
+        sort_direction: sort.dir as TransactionSortDirection,
+      }),
+    placeholderData: keepPreviousData,
   });
 
   const apply = useMutation({
@@ -51,7 +80,7 @@ export function GroupsView() {
     {
       id: "merchant",
       header: t("transactions.column.merchant"),
-      sortValue: (g) => g.merchant,
+      sortable: true,
       className: "font-medium",
       cell: (g) => {
         const merchantDisplay = g.merchant_display || g.merchant;
@@ -82,10 +111,10 @@ export function GroupsView() {
     {
       id: "amount",
       header: t("transactions.column.amount"),
+      sortable: true,
       align: "right",
       headerClassName: "w-36",
       className: "w-36 tabular-nums",
-      sortValue: groupNet,
       cell: (g) => {
         const net = groupNet(g);
         return (
@@ -104,10 +133,10 @@ export function GroupsView() {
     {
       id: "count",
       header: "#",
+      sortable: true,
       align: "center",
       headerClassName: "w-16",
       className: "w-16 text-muted-foreground",
-      sortValue: (g) => g.count,
       cell: (g) => g.count,
     },
     {
@@ -115,7 +144,6 @@ export function GroupsView() {
       header: t("transactions.column.category"),
       headerClassName: "w-64",
       className: "w-64",
-      sortValue: (g) => g.common_category ?? "",
       cell: (g) => {
         const picked =
           g.merchant_canonical_key in pickers
@@ -166,43 +194,57 @@ export function GroupsView() {
   ];
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-base">
-          {t("transactions.groups.title")}
-        </CardTitle>
-        <p className="text-xs text-muted-foreground">
-          {t("transactions.groups.help")}
-        </p>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        <label className="flex items-center gap-2 text-sm text-muted-foreground">
-          <input
-            type="checkbox"
-            checked={onlyUncat}
-            onChange={(e) => setOnlyUncat(e.target.checked)}
-            className="h-4 w-4"
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-end gap-3 rounded-lg border bg-card p-3 shadow-sm">
+        <FilterField
+          label={t("transactions.groups.scopeLabel")}
+          className="w-[14rem] shrink-0"
+        >
+          <FilterSelect
+            value={onlyUncat ? "unassigned" : "all"}
+            onValueChange={(value) => setOnlyUncat(value === "unassigned")}
+            ariaLabel={t("transactions.groups.scopeLabel")}
+            options={[
+              {
+                value: "all",
+                label: t("transactions.groups.scopeAll"),
+                muted: true,
+              },
+              {
+                value: "unassigned",
+                label: t("transactions.groups.scopeUnassigned"),
+              },
+            ]}
           />
-          {t("transactions.groups.onlyUncategorized")}
-        </label>
+        </FilterField>
+      </div>
 
-        {query.isLoading ? (
+      {query.isLoading ? (
+        <div className="rounded-lg border bg-card p-3">
           <TableSkeleton rows={6} />
-        ) : (query.data ?? []).length === 0 ? (
-          <p className="py-8 text-center text-sm text-muted-foreground">
-            {t("transactions.groups.empty")}
+        </div>
+      ) : (query.data ?? []).length === 0 ? (
+        <div className="flex h-40 items-center justify-center rounded-lg border bg-card text-sm text-muted-foreground">
+          <p>
+            {t(
+              onlyUncat
+                ? "transactions.groups.empty"
+                : "transactions.groups.emptyAll",
+            )}
           </p>
-        ) : (
-          <DataTable
-            columns={columns}
-            data={query.data ?? []}
-            rowKey={(g) => g.merchant_canonical_key}
-            initialSort={{ id: "count", dir: "desc" }}
-            tableClassName="min-w-[760px] table-fixed"
-          />
-        )}
-      </CardContent>
-    </Card>
+        </div>
+      ) : (
+        <DataTable
+          columns={columns}
+          data={query.data ?? []}
+          rowKey={(g) => g.merchant_canonical_key}
+          className="bg-card [&_tbody_tr]:divide-x [&_tbody_tr]:divide-border/40 [&_thead_tr]:divide-x [&_thead_tr]:divide-border/40 [&_thead_tr]:bg-muted/30 [&_thead_tr:hover]:bg-muted/30"
+          tableClassName="min-w-[760px] table-fixed"
+          sort={sort}
+          onSortChange={setSort}
+        />
+      )}
+    </div>
   );
 }
 

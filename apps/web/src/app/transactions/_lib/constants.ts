@@ -5,6 +5,11 @@ export const PAGE_SIZE = 100;
 
 export type TransactionsView = "list" | "review" | "groups";
 export type TransactionsSubject = "category" | "transaction_type";
+export type TransactionsMode =
+  | "list"
+  | "transaction_type_review"
+  | "category_review"
+  | "groups";
 
 export function isCategoryCandidate(tx: Transaction): boolean {
   const effectiveType = tx.transaction_type_effective ??
@@ -24,17 +29,6 @@ export function hasCategorySuggestion(tx: Transaction): boolean {
       !tx.category_suggestion_rejected &&
       isCategoryCandidate(tx),
   );
-}
-
-export function classificationDecisionAction(tx: Transaction) {
-  return tx.classification_decision?.action;
-}
-
-export function isSuggestionReadyToAccept(tx: Transaction): boolean {
-  if (!hasCategorySuggestion(tx)) return false;
-  const action = classificationDecisionAction(tx);
-  if (action) return action === "accept";
-  return (tx.category_confidence ?? 0) >= 0.75;
 }
 
 export function hasRejectedCategorySuggestion(tx: Transaction): boolean {

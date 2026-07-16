@@ -1,20 +1,29 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Search } from "lucide-react";
 import type { MerchantCandidate } from "@/lib/api";
 import { useT } from "@/lib/i18n";
 import { ErrorState } from "@/components/error-state";
+import { FilterField, FilterPanel } from "@/components/filter-panel";
 import { ClearableInput } from "@/components/ui/clearable-input";
 import { PageHeader } from "@/components/page-header";
-import { CardGridSkeleton } from "@/components/ui/skeleton";
 import { AliasGroupsPanel } from "./_components/alias-groups-panel";
-import { CandidateTable } from "./_components/candidate-table";
-import { ManualAliasCard } from "./_components/manual-alias-card";
+import {
+  CandidateTable,
+  type MerchantCandidateSort,
+} from "./_components/candidate-table";
+import { ManualAliasDialog } from "./_components/manual-alias-dialog";
 import { MergeCandidateDialog } from "./_components/merge-candidate-dialog";
-import { MetricCard } from "./_components/metric-card";
-import { candidateVariants, groupAliases } from "./_lib/merchant-aliases";
+import { groupAliases } from "./_lib/merchant-aliases";
 import { useMerchantAliases } from "./_lib/use-merchant-aliases";
+
+function updateSearchUrl(value: string) {
+  const url = new URL(window.location.href);
+  if (value.trim()) url.searchParams.set("search", value.trim());
+  else url.searchParams.delete("search");
+  window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+}
 
 export default function MerchantsPage() {
   const { t } = useT();
@@ -22,9 +31,24 @@ export default function MerchantsPage() {
     if (typeof window === "undefined") return "";
     return new URLSearchParams(window.location.search).get("search") ?? "";
   });
+  const [candidateSearch, setCandidateSearch] = useState(search.trim());
+  const [candidateSort, setCandidateSort] = useState<MerchantCandidateSort>({
+    id: "count",
+    dir: "desc",
+  });
   const [mergeCandidate, setMergeCandidate] = useState<MerchantCandidate | null>(
     null,
   );
+  const [manualAliasOpen, setManualAliasOpen] = useState(false);
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(
+      () => setCandidateSearch(search.trim()),
+      250,
+    );
+    return () => window.clearTimeout(timeoutId);
+  }, [search]);
+
   const {
     aliasesQuery,
     candidatesQuery,
@@ -33,7 +57,12 @@ export default function MerchantsPage() {
     deleteAlias,
     handleDeleteAlias,
   } = useMerchantAliases({
-    onCreateSuccess: () => setMergeCandidate(null),
+    candidateSearch,
+    candidateSort,
+    onCreateSuccess: () => {
+      setMergeCandidate(null);
+      setManualAliasOpen(false);
+    },
   });
 
   const groups = useMemo(
@@ -54,32 +83,6 @@ export default function MerchantsPage() {
       return haystack.includes(normalizedSearch);
     });
   }, [groups, normalizedSearch]);
-  const filteredCandidates = useMemo(() => {
-    const candidates = candidatesQuery.data ?? [];
-    if (!normalizedSearch) return candidates;
-    return candidates.filter((candidate) => {
-      const haystack = [
-        candidate.canonical_key,
-        candidate.suggested_label,
-        ...candidateVariants(candidate).flatMap((variant) => [
-          variant.alias_key,
-          variant.alias_label,
-        ]),
-      ]
-        .join(" ")
-        .toLowerCase();
-      return haystack.includes(normalizedSearch);
-    });
-  }, [candidatesQuery.data, normalizedSearch]);
-  const aliasCount = filteredGroups.reduce(
-    (sum, group) => sum + group.aliases.length,
-    0,
-  );
-  const candidateCount = filteredCandidates.length;
-
-  const isLoading = aliasesQuery.isLoading || candidatesQuery.isLoading;
-  const isError = aliasesQuery.isError || candidatesQuery.isError;
-
   return (
     <div className="space-y-6">
       <PageHeader
@@ -87,95 +90,93 @@ export default function MerchantsPage() {
         description={t("merchants.subtitle")}
       />
 
-      {isLoading ? (
-        <CardGridSkeleton />
-      ) : isError ? (
-        <ErrorState
-          onRetry={() => {
-            aliasesQuery.refetch();
-            candidatesQuery.refetch();
-          }}
-        />
+      <FilterPanel gridClassName="md:grid-cols-[minmax(18rem,30rem)] xl:grid-cols-[minmax(18rem,30rem)]">
+        <FilterField label={t("common.search")}>
+          <ClearableInput
+            value={search}
+            onValueChange={(value) => {
+              setSearch(value);
+              updateSearchUrl(value);
+            }}
+            placeholder={t("merchants.searchPlaceholder")}
+            clearLabel={t("common.clear")}
+            leftIcon={<Search className="h-4 w-4" />}
+          />
+        </FilterField>
+      </FilterPanel>
+
+      {candidatesQuery.isError ? (
+        <ErrorState onRetry={() => candidatesQuery.refetch()} />
       ) : (
-        <>
-          <div className="grid items-stretch gap-3 sm:grid-cols-3 lg:grid-cols-[minmax(18rem,2fr)_repeat(3,minmax(7rem,1fr))]">
-            <ClearableInput
-              value={search}
-              onValueChange={setSearch}
-              placeholder={t("common.search")}
-              clearLabel={t("common.clear")}
-              className="h-14 sm:col-span-3 lg:col-span-1"
-              inputClassName="h-full"
-              leftIcon={<Search className="h-4 w-4" />}
-            />
-            <MetricCard
-              label={t("merchants.metricCandidates")}
-              value={candidateCount}
-            />
-            <MetricCard label={t("merchants.metricGroups")} value={filteredGroups.length} />
-            <MetricCard label={t("merchants.metricAliases")} value={aliasCount} />
-          </div>
-
-          <ManualAliasCard
-            groups={groups}
-            isPending={createAliases.isPending}
-            onCreate={(payload) => createAliases.mutate(payload)}
-          />
-
-          <CandidateTable
-            candidates={filteredCandidates}
-            pendingKey={
-              createAliases.isPending
-                ? createAliases.variables?.canonical_key ?? mergeCandidate?.canonical_key ?? null
-                : null
-            }
-            onOpen={setMergeCandidate}
-            onAccept={(candidate) =>
-              createAliases.mutate({
-                canonical_key: candidate.canonical_key,
-                canonical_label: candidate.canonical_label,
-                aliases: candidateVariants(candidate).map((variant) => variant.alias_label),
-              })
-            }
-          />
-
-          <AliasGroupsPanel
-            groups={filteredGroups}
-            labelPendingKey={
-              updateLabel.isPending
-                ? updateLabel.variables?.canonical_key ?? null
-                : null
-            }
-            deletePendingId={
-              deleteAlias.isPending ? deleteAlias.variables ?? null : null
-            }
-            addPendingKey={
-              createAliases.isPending
-                ? createAliases.variables?.canonical_key ?? null
-                : null
-            }
-            onUpdateLabel={(canonical_key, canonical_label) =>
-              updateLabel.mutate({ canonical_key, canonical_label })
-            }
-            onAddAlias={(canonical_key, canonical_label, alias) =>
-              createAliases.mutate({
-                canonical_key,
-                canonical_label,
-                aliases: [alias],
-              })
-            }
-            onDeleteAlias={handleDeleteAlias}
-          />
-
-          <MergeCandidateDialog
-            candidate={mergeCandidate}
-            open={mergeCandidate !== null}
-            isPending={createAliases.isPending}
-            onOpenChange={(open) => !open && setMergeCandidate(null)}
-            onSave={(payload) => createAliases.mutate(payload)}
-          />
-        </>
+        <CandidateTable
+          candidates={candidatesQuery.data ?? []}
+          isLoading={candidatesQuery.isLoading}
+          isUpdating={candidatesQuery.isFetching && !candidatesQuery.isLoading}
+          sort={candidateSort}
+          pendingKey={
+            createAliases.isPending
+              ? createAliases.variables?.canonical_key ??
+                mergeCandidate?.canonical_key ??
+                null
+              : null
+          }
+          onOpen={setMergeCandidate}
+          onSortChange={setCandidateSort}
+        />
       )}
+
+      {aliasesQuery.isError ? (
+        <ErrorState onRetry={() => aliasesQuery.refetch()} />
+      ) : (
+        <AliasGroupsPanel
+          groups={filteredGroups}
+          isLoading={aliasesQuery.isLoading}
+          isFiltered={Boolean(normalizedSearch)}
+          onAddManual={() => setManualAliasOpen(true)}
+          labelPendingKey={
+            updateLabel.isPending
+              ? updateLabel.variables?.canonical_key ?? null
+              : null
+          }
+          deletePendingId={
+            deleteAlias.isPending ? deleteAlias.variables ?? null : null
+          }
+          addPendingKey={
+            createAliases.isPending
+              ? createAliases.variables?.canonical_key ?? null
+              : null
+          }
+          onUpdateLabel={(canonical_key, canonical_label) =>
+            updateLabel.mutate({ canonical_key, canonical_label })
+          }
+          onAddAlias={(canonical_key, canonical_label, alias) =>
+            createAliases.mutate({
+              canonical_key,
+              canonical_label,
+              aliases: [alias],
+            })
+          }
+          onDeleteAlias={handleDeleteAlias}
+        />
+      )}
+
+      {manualAliasOpen ? (
+        <ManualAliasDialog
+          open
+          groups={groups}
+          isPending={createAliases.isPending}
+          onOpenChange={setManualAliasOpen}
+          onCreate={(payload) => createAliases.mutate(payload)}
+        />
+      ) : null}
+
+      <MergeCandidateDialog
+        candidate={mergeCandidate}
+        open={mergeCandidate !== null}
+        isPending={createAliases.isPending}
+        onOpenChange={(open) => !open && setMergeCandidate(null)}
+        onSave={(payload) => createAliases.mutate(payload)}
+      />
     </div>
   );
 }

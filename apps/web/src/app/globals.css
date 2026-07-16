@@ -242,6 +242,20 @@
   :focus-visible {
     outline: none;
   }
+  .select-scrollbar {
+    scrollbar-color: hsl(var(--muted-foreground) / 0.35) transparent;
+    scrollbar-width: thin;
+  }
+  .select-scrollbar::-webkit-scrollbar {
+    width: 6px;
+  }
+  .select-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .select-scrollbar::-webkit-scrollbar-thumb {
+    border-radius: 999px;
+    background: hsl(var(--muted-foreground) / 0.35);
+  }
   :root.theme-transitioning,
   :root.theme-transitioning *,
   :root.theme-transitioning *::before,

@@ -9,8 +9,23 @@ import type {
 
 export const merchantsApi = {
   merchantAliases: () => request<MerchantAlias[]>("/merchants/aliases"),
-  merchantAliasCandidates: () =>
-    request<MerchantCandidate[]>("/merchants/candidates"),
+  merchantAliasCandidates: ({
+    q = "",
+    sortBy = "count",
+    sortDir = "desc",
+  }: {
+    q?: string;
+    sortBy?: "suggested_label" | "variants" | "count" | "total_debit";
+    sortDir?: "asc" | "desc";
+  } = {}) => {
+    const query = new URLSearchParams({
+      limit: "100",
+      sort_by: sortBy,
+      sort_dir: sortDir,
+    });
+    if (q.trim()) query.set("q", q.trim());
+    return request<MerchantCandidate[]>(`/merchants/candidates?${query}`);
+  },
   merchantAliasSuggestions: (q: string) =>
     request<MerchantAliasSuggestion[]>(
       `/merchants/suggestions?q=${encodeURIComponent(q)}`,

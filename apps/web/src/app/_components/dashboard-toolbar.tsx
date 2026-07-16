@@ -2,6 +2,7 @@
 
 import type { ReactNode } from "react";
 
+import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import { useT } from "@/lib/i18n";
 import {
@@ -36,7 +37,7 @@ export function DashboardToolbar({
   };
 
   return (
-    <section className="sticky -top-4 z-40 -mx-4 border-b border-border/70 bg-background/95 px-4 py-3 backdrop-blur sm:-top-6 sm:-mx-6 sm:px-6">
+    <section className="sticky -top-4 z-40 -mx-4 border-b border-border/70 bg-background/95 px-4 py-4 backdrop-blur sm:-top-6 sm:-mx-6 sm:px-6">
       <div className="flex flex-wrap items-end gap-x-4 gap-y-2">
         <ToolbarGroup label={t("dashboard.toolbar.period")}>
           {RANGE_OPTIONS.map((value) => (
@@ -49,21 +50,7 @@ export function DashboardToolbar({
             </ToolbarButton>
           ))}
         </ToolbarGroup>
-        <ToolbarGroup label={t("dashboard.toolbar.transfers")}>
-          <ToolbarButton
-            active={!includeTransfers}
-            onClick={() => onIncludeTransfersChange(false)}
-          >
-            {t("dashboard.transfers.omitted")}
-          </ToolbarButton>
-          <ToolbarButton
-            active={includeTransfers}
-            onClick={() => onIncludeTransfersChange(true)}
-          >
-            {t("dashboard.transfers.included")}
-          </ToolbarButton>
-        </ToolbarGroup>
-        <ToolbarGroup label={t("dashboard.toolbar.top")}>
+        <ToolbarGroup label={t("dashboard.toolbar.limit")}>
           {LIMIT_OPTIONS.map((value) => (
             <ToolbarButton
               key={value}
@@ -74,6 +61,18 @@ export function DashboardToolbar({
             </ToolbarButton>
           ))}
         </ToolbarGroup>
+        <div className="min-w-0">
+          <div className="mb-1 flex h-4 items-center px-0.5 text-xs font-medium text-muted-foreground">
+            {t("dashboard.transfers.include")}
+          </div>
+          <div className="flex h-9 items-center px-1">
+            <Switch
+              checked={includeTransfers}
+              onCheckedChange={onIncludeTransfersChange}
+              aria-label={t("dashboard.transfers.include")}
+            />
+          </div>
+        </div>
       </div>
     </section>
   );

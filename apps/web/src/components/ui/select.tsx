@@ -47,7 +47,7 @@ export const SelectContent = React.forwardRef<
     >
       <SelectPrimitive.Viewport
         className={cn(
-          "max-h-[min(var(--radix-select-content-available-height),20rem)] overflow-y-auto p-1",
+          "select-scrollbar max-h-[min(var(--radix-select-content-available-height),20rem)] overflow-y-auto p-1",
           position === "popper" &&
             "w-full min-w-[var(--radix-select-trigger-width)]",
         )}
@@ -76,17 +76,25 @@ SelectLabel.displayName = SelectPrimitive.Label.displayName;
 
 export const SelectItem = React.forwardRef<
   React.ComponentRef<typeof SelectPrimitive.Item>,
-  React.ComponentPropsWithoutRef<typeof SelectPrimitive.Item>
->(({ className, children, ...props }, ref) => (
+  React.ComponentPropsWithoutRef<typeof SelectPrimitive.Item> & {
+    indicatorPosition?: "left" | "right";
+  }
+>(({ className, children, indicatorPosition = "left", ...props }, ref) => (
   <SelectPrimitive.Item
     ref={ref}
     className={cn(
-      "relative flex w-full cursor-pointer select-none items-center rounded-md py-1.5 pl-8 pr-2 text-sm outline-none transition-colors focus:bg-accent focus:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
+      "relative flex w-full cursor-pointer select-none items-center rounded-md py-1.5 text-sm outline-none transition-colors focus:bg-accent focus:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
+      indicatorPosition === "left" ? "pl-8 pr-2" : "pl-2 pr-8",
       className,
     )}
     {...props}
   >
-    <span className="absolute left-2 flex h-3.5 w-3.5 items-center justify-center">
+    <span
+      className={cn(
+        "absolute flex h-3.5 w-3.5 items-center justify-center",
+        indicatorPosition === "left" ? "left-2" : "right-2",
+      )}
+    >
       <SelectPrimitive.ItemIndicator>
         <Check className="h-4 w-4" />
       </SelectPrimitive.ItemIndicator>

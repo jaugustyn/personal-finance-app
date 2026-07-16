@@ -2,19 +2,8 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  ArrowDownCircle,
-  ArrowLeftRight,
-  Banknote,
   Check,
   ChevronsUpDown,
-  CircleDollarSign,
-  CreditCard,
-  HelpCircle,
-  Receipt,
-  RotateCcw,
-  WalletCards,
-  X,
-  type LucideIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -32,22 +21,10 @@ import {
 } from "@/components/ui/popover";
 import { tTransactionType, useT } from "@/lib/i18n";
 import {
+  TRANSACTION_TYPE_ICONS,
   TRANSACTION_TYPE_OPTIONS,
-  type TransactionTypeOption,
 } from "@/lib/transaction-types";
 import { cn } from "@/lib/utils";
-
-const TYPE_ICONS: Record<TransactionTypeOption, LucideIcon> = {
-  expense: CreditCard,
-  salary: Banknote,
-  income: CircleDollarSign,
-  refund: RotateCcw,
-  own_transfer: ArrowLeftRight,
-  cash_withdrawal: ArrowDownCircle,
-  debt_payment: Receipt,
-  asset_allocation: WalletCards,
-  other: HelpCircle,
-};
 
 interface TransactionTypeComboboxProps {
   value: string;
@@ -99,7 +76,7 @@ export function TransactionTypeCombobox({
       TRANSACTION_TYPE_OPTIONS.map((type) => ({
         value: type,
         label: tTransactionType(t, type),
-        Icon: TYPE_ICONS[type],
+        Icon: TRANSACTION_TYPE_ICONS[type],
       })),
     [t],
   );
@@ -118,7 +95,9 @@ export function TransactionTypeCombobox({
     setOpen(false);
   };
 
-  const SelectedIcon = selectedType ? TYPE_ICONS[selectedType] : X;
+  const SelectedIcon = selectedType
+    ? TRANSACTION_TYPE_ICONS[selectedType]
+    : null;
 
   return (
     <Popover open={open} onOpenChange={handleOpenChange}>
@@ -137,7 +116,9 @@ export function TransactionTypeCombobox({
           )}
         >
           <span className="flex min-w-0 items-center gap-2">
-            <SelectedIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+            {SelectedIcon ? (
+              <SelectedIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+            ) : null}
             <span className="truncate">{selectedLabel}</span>
           </span>
           <ChevronsUpDown className="h-3.5 w-3.5 shrink-0 opacity-50" />
@@ -161,7 +142,7 @@ export function TransactionTypeCombobox({
                   value={emptyLabel ?? t("transactions.filterType.all")}
                   onSelect={() => selectValue(emptyValue)}
                 >
-                  <X className="h-3.5 w-3.5 text-muted-foreground" />
+                  <span className="h-3.5 w-3.5" aria-hidden="true" />
                   <span className="text-muted-foreground">
                     {emptyLabel ?? t("transactions.filterType.all")}
                   </span>
