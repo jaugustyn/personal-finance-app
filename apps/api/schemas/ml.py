@@ -220,6 +220,28 @@ class MlLatestReportResponse(BaseModel):
     report: dict[str, Any] | None = None
 
 
+class MlLatestTrainingResponse(BaseModel):
+    exists: bool
+    job_id: str | None = None
+    started_at: str | None = None
+    finished_at: str | None = None
+    duration_seconds: float | None = None
+    dataset_fingerprint: str | None = None
+    evaluation_set_id: str | None = None
+    report_available: bool = False
+    candidate_count: int = 0
+    recommended_model_id: str | None = None
+    representative_model_id: str | None = None
+    label_count: int | None = None
+    supported_classes: list[str] = Field(default_factory=list)
+    unsupported_classes: dict[str, int] = Field(default_factory=dict)
+    split_counts: dict[str, int | None] = Field(default_factory=dict)
+    metrics: dict[str, Any] = Field(default_factory=dict)
+    gates: dict[str, Any] = Field(default_factory=dict)
+    confidence_policy: dict[str, Any] = Field(default_factory=dict)
+    failed_variants: list[dict[str, Any]] = Field(default_factory=list)
+
+
 class MlComparisonResponse(BaseModel):
     models: list[MlModelComparison] = Field(default_factory=list)
     recommendation: MlModelRecommendation
@@ -229,6 +251,7 @@ class MlDashboardResponse(BaseModel):
     status: MlModelStatus
     readiness: MlReadinessResponse
     latest_report: MlLatestReportResponse
+    latest_training: MlLatestTrainingResponse
     model_comparison: list[MlModelComparison] = Field(default_factory=list)
     recommendation: MlModelRecommendation
     validation_slices: dict[str, Any] = Field(default_factory=dict)

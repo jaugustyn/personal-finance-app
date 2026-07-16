@@ -63,6 +63,23 @@ def _mapping(value: object) -> dict[str, Any]:
     return cast(dict[str, Any], value) if isinstance(value, dict) else {}
 
 
+def _latest_completed_training_job(session: Session) -> MlTrainingJob | None:
+    return session.execute(
+        select(MlTrainingJob)
+        .where(MlTrainingJob.status == "completed")
+        .order_by(MlTrainingJob.finished_at.desc(), MlTrainingJob.created_at.desc())
+    ).scalars().first()
+
+
+def latest_training_report_path(session: Session) -> Path | None:
+    """Return the report belonging to the latest completed job, when available."""
+    job = _latest_completed_training_job(session)
+    if job is None or not job.report_path:
+        return None
+    path = Path(job.report_path)
+    return path if path.exists() else None
+
+
 def runtime_model_status(
     session: Session,
 ) -> dict[str, Any]:
@@ -121,11 +138,7 @@ def runtime_model_status(
 
 def registered_model_comparison(session: Session) -> list[dict[str, Any]]:
     """Compare only candidates produced by the latest completed comparable job."""
-    latest_job = session.execute(
-        select(MlTrainingJob)
-        .where(MlTrainingJob.status == "completed")
-        .order_by(MlTrainingJob.finished_at.desc(), MlTrainingJob.created_at.desc())
-    ).scalars().first()
+    latest_job = _latest_completed_training_job(session)
     if latest_job is None:
         return []
     versions = list(
@@ -189,6 +202,81 @@ def registered_model_comparison(session: Session) -> list[dict[str, Any]]:
     for rank, row in enumerate(rows, start=1):
         row["rank"] = rank
     return rows
+
+
+def latest_training_summary(
+    session: Session,
+    *,
+    job: MlTrainingJob | None,
+    comparison: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Build one coherent summary from the latest completed training job."""
+    if job is None:
+        return {"exists": False}
+
+    representative = next(
+        (row for row in comparison if row.get("is_recommended")),
+        comparison[0] if comparison else None,
+    )
+    version = (
+        session.get(MlModelVersion, str(representative["model_id"]))
+        if representative is not None
+        else None
+    )
+    metrics = _mapping(version.metrics if version is not None else None)
+    class_counts = _mapping(metrics.get("class_counts"))
+    label_count = sum(
+        int(value)
+        for value in class_counts.values()
+        if isinstance(value, (int, float))
+    )
+    time_metrics = _mapping(metrics.get("time"))
+    merchant_metrics = _mapping(metrics.get("merchant"))
+    oof_metrics = _mapping(metrics.get("oof"))
+    result = _mapping(job.result)
+    raw_labels = metrics.get("labels")
+    supported_classes = (
+        [str(value) for value in raw_labels]
+        if isinstance(raw_labels, list)
+        else []
+    )
+    raw_failures = result.get("failed_variants")
+    failed_variants = raw_failures if isinstance(raw_failures, list) else []
+    report_path = Path(job.report_path) if job.report_path else None
+    duration_seconds = None
+    if job.started_at is not None and job.finished_at is not None:
+        duration_seconds = max(
+            (job.finished_at - job.started_at).total_seconds(),
+            0.0,
+        )
+
+    return {
+        "exists": True,
+        "job_id": job.id,
+        "started_at": job.started_at.isoformat() if job.started_at else None,
+        "finished_at": job.finished_at.isoformat() if job.finished_at else None,
+        "duration_seconds": duration_seconds,
+        "dataset_fingerprint": job.dataset_fingerprint,
+        "evaluation_set_id": job.evaluation_set_id,
+        "report_available": bool(report_path and report_path.exists()),
+        "candidate_count": len(comparison),
+        "recommended_model_id": result.get("recommended_model_id"),
+        "representative_model_id": version.id if version is not None else None,
+        "label_count": label_count or None,
+        "supported_classes": supported_classes,
+        "unsupported_classes": _mapping(metrics.get("unsupported_classes")),
+        "split_counts": {
+            "train": oof_metrics.get("n"),
+            "time": time_metrics.get("n"),
+            "merchant": merchant_metrics.get("n"),
+        },
+        "metrics": metrics,
+        "gates": _mapping(version.gates if version is not None else None),
+        "confidence_policy": _mapping(
+            version.confidence_policy if version is not None else None
+        ),
+        "failed_variants": failed_variants,
+    }
 
 
 def retrain_signal(
@@ -261,22 +349,38 @@ def dashboard_summary(
     signal = retrain_signal(session, status, readiness)
     status["retrain_signal"] = signal
     latest = active_training_report(session)
+    latest_job = _latest_completed_training_job(session)
     comparison = registered_model_comparison(session)
+    recommendation = recommend_model(comparison, status, readiness)
+    latest_training = latest_training_summary(
+        session,
+        job=latest_job,
+        comparison=comparison,
+    )
+    feedback_since = latest_job.finished_at if latest_job is not None else None
+    scoped_feedback = feedback_quality(session, since=feedback_since)
+    scoped_feedback["scope"] = (
+        "since_last_training" if feedback_since is not None else "all_time"
+    )
+    scoped_feedback["period_start"] = (
+        feedback_since.isoformat() if feedback_since is not None else None
+    )
     active = active_model_version(session)
     active_metrics = cast(dict[str, Any], active.metrics or {}) if active else {}
     return {
         "status": status,
         "readiness": readiness,
         "latest_report": latest,
+        "latest_training": latest_training,
         "model_comparison": comparison,
-        "recommendation": recommend_model(comparison, status, readiness),
+        "recommendation": recommendation,
         "validation_slices": {
             key: active_metrics[key]
             for key in ("time", "merchant")
             if key in active_metrics
         },
         "confidence_policy": dict(active.confidence_policy or {}) if active else {},
-        "feedback_quality": feedback_quality(session),
+        "feedback_quality": scoped_feedback,
         "feedback_report": feedback_report(
             session,
             model_updated_at=parse_iso_datetime(status.get("updated_at")),
@@ -284,5 +388,5 @@ def dashboard_summary(
             current_label_count=readiness.get("total_labelled"),
         ),
         "retrain_signal": signal,
-        "confusion_hotspots": confusion_hotspots(session),
+        "confusion_hotspots": confusion_hotspots(session, since=feedback_since),
     }

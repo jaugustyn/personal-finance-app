@@ -108,18 +108,24 @@ def record_transaction_feedback(
     )
 
 
-def feedback_quality(session: Session) -> dict[str, Any]:
-    rows = session.execute(
-        select(MlFeedbackEvent.event_type, func.count().label("cnt"))
-        .group_by(MlFeedbackEvent.event_type)
-    ).all()
+def feedback_quality(
+    session: Session,
+    *,
+    since: datetime | None = None,
+) -> dict[str, Any]:
+    event_counts = select(
+        MlFeedbackEvent.event_type, func.count().label("cnt")
+    ).group_by(MlFeedbackEvent.event_type)
+    if since is not None:
+        event_counts = event_counts.where(MlFeedbackEvent.created_at > since)
+    rows = session.execute(event_counts).all()
     by_type = {str(event_type): int(count) for event_type, count in rows}
     accepted = by_type.get(EVENT_ACCEPT_SUGGESTION, 0)
     rejected = by_type.get(EVENT_REJECT_SUGGESTION, 0)
     manual = by_type.get(EVENT_MANUAL_CATEGORY, 0)
     suggestion_total = accepted + rejected
 
-    category_rows = session.execute(
+    category_counts = (
         select(
             MlFeedbackEvent.predicted_category,
             MlFeedbackEvent.event_type,
@@ -127,7 +133,10 @@ def feedback_quality(session: Session) -> dict[str, Any]:
         )
         .where(MlFeedbackEvent.predicted_category.is_not(None))
         .group_by(MlFeedbackEvent.predicted_category, MlFeedbackEvent.event_type)
-    ).all()
+    )
+    if since is not None:
+        category_counts = category_counts.where(MlFeedbackEvent.created_at > since)
+    category_rows = session.execute(category_counts).all()
     by_category: dict[str, dict[str, int]] = {}
     for category, event_type, count in category_rows:
         key = str(category)
@@ -307,8 +316,13 @@ def feedback_report(
     }
 
 
-def confusion_hotspots(session: Session, *, limit: int = 10) -> list[dict[str, Any]]:
-    rows = session.execute(
+def confusion_hotspots(
+    session: Session,
+    *,
+    limit: int = 10,
+    since: datetime | None = None,
+) -> list[dict[str, Any]]:
+    statement = (
         select(
             MlFeedbackEvent.predicted_category,
             MlFeedbackEvent.final_category,
@@ -334,7 +348,10 @@ def confusion_hotspots(session: Session, *, limit: int = 10) -> list[dict[str, A
             Transaction.title,
         )
         .order_by(func.count().desc())
-    ).all()
+    )
+    if since is not None:
+        statement = statement.where(MlFeedbackEvent.created_at > since)
+    rows = session.execute(statement).all()
     alias_map, label_map = load_merchant_alias_maps(session)
     grouped: dict[tuple[Any, Any, Any, str], dict[str, Any]] = {}
     for predicted, final, event_type, merchant, title, count in rows:

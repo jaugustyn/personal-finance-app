@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import json
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from types import SimpleNamespace
 
@@ -590,10 +590,106 @@ def test_ml_dashboard_ignores_stale_reports_without_registered_models(
     assert body["status"]["exists"] is False
     assert body["status"]["report_path"] is None
     assert body["latest_report"]["path"] is None
+    assert body["latest_training"]["exists"] is False
+    assert body["feedback_quality"]["scope"] == "all_time"
     assert body["validation_slices"] == {}
     assert body["confidence_policy"] == {}
     assert body["feedback_quality"]["total_events"] == 0
     assert body["model_comparison"] == []
+
+
+def test_dashboard_scopes_technical_report_to_latest_completed_training(
+    client,
+    db_session,
+    tmp_path,
+) -> None:
+    finished_at = datetime.now(UTC) - timedelta(minutes=10)
+    report_path = tmp_path / "latest-training.json"
+    report_path.write_text(json.dumps({"candidates": []}), encoding="utf-8")
+    job = MlTrainingJob(
+        id="latest-training-job",
+        status="completed",
+        execution_slot=None,
+        requested_variants=[],
+        dataset_fingerprint="dataset-123",
+        report_path=str(report_path),
+        result={"recommended_model_id": "latest-candidate", "failed_variants": []},
+        started_at=finished_at - timedelta(seconds=15),
+        finished_at=finished_at,
+    )
+    candidate = MlModelVersion(
+        id="latest-candidate",
+        job_id=job.id,
+        estimator="logreg",
+        feature_set="baseline",
+        status="candidate",
+        artifact_path=str(tmp_path / "candidate.joblib"),
+        artifact_sha256="a" * 64,
+        dataset_fingerprint="dataset-123",
+        metrics={
+            "labels": ["food", "transport"],
+            "class_counts": {"food": 180, "transport": 140},
+            "unsupported_classes": {"health": 4},
+            "time": {
+                "n": 64,
+                "macro_f1": 0.72,
+                "weighted_f1": 0.75,
+                "coverage": 0.61,
+                "accuracy_on_covered": 0.92,
+            },
+            "merchant": {
+                "n": 60,
+                "macro_f1": 0.68,
+                "weighted_f1": 0.71,
+                "coverage": 0.58,
+                "accuracy_on_covered": 0.91,
+            },
+            "oof": {"n": 240},
+            "p99_ms": 8.5,
+            "ranking": {"worst_macro_f1": 0.68, "mean_macro_f1": 0.70},
+        },
+        gates={"technical": {"passed": True}, "promotable": True},
+        confidence_policy={"default_threshold": 0.55},
+        promotable=True,
+    )
+    db_session.add_all(
+        [
+            job,
+            candidate,
+            MlFeedbackEvent(
+                event_type="reject_suggestion",
+                predicted_category="food",
+                created_at=finished_at - timedelta(minutes=5),
+            ),
+            MlFeedbackEvent(
+                event_type="accept_suggestion",
+                predicted_category="transport",
+                final_category="transport",
+                created_at=finished_at + timedelta(minutes=5),
+            ),
+        ]
+    )
+    db_session.commit()
+
+    response = client.get("/ml/dashboard")
+
+    assert response.status_code == 200
+    body = response.json()
+    training = body["latest_training"]
+    assert training["job_id"] == job.id
+    assert training["label_count"] == 320
+    assert training["supported_classes"] == ["food", "transport"]
+    assert training["split_counts"] == {"train": 240, "time": 64, "merchant": 60}
+    assert training["report_available"] is True
+    assert body["recommendation"]["model_id"] == candidate.id
+    assert body["model_comparison"][0]["is_recommended"] is True
+    assert body["feedback_quality"]["scope"] == "since_last_training"
+    assert body["feedback_quality"]["accepted_suggestions"] == 1
+    assert body["feedback_quality"]["rejected_suggestions"] == 0
+
+    report_response = client.get("/ml/report/latest-training/file")
+    assert report_response.status_code == 200
+    assert "attachment" in report_response.headers["content-disposition"]
 
 
 def test_ml_feedback_endpoint_records_event(client, db_session) -> None:

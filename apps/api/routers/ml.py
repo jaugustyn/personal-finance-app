@@ -59,6 +59,7 @@ from finance.ml.classification.predict import (
 from finance.ml.classification.status import (
     comparison_summary,
     dashboard_summary,
+    latest_training_report_path,
     readiness_summary,
     retrain_signal,
     runtime_model_status,
@@ -124,6 +125,21 @@ def latest_report_file(
         media_type="application/json",
         filename=path.name,
         content_disposition_type="attachment" if download else "inline",
+    )
+
+
+@router.get("/report/latest-training/file")
+def latest_training_report_file(
+    session: Session = Depends(get_session),
+) -> FileResponse:
+    path = latest_training_report_path(session)
+    if path is None:
+        raise not_found("No report belongs to the latest completed training job.")
+    return FileResponse(
+        path,
+        media_type="application/json",
+        filename=path.name,
+        content_disposition_type="attachment",
     )
 
 
