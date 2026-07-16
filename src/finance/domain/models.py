@@ -65,10 +65,9 @@ class CategoryDef(Base):
     """User-manageable category catalog.
 
     System categories from :class:`Category` are seeded on first use and cannot
-    be deleted. Users may add their own.
-    The ``Transaction.category`` column stores the category *name* (string),
-    so removing a custom category simply leaves transactions with an unknown
-    label until they are re-categorised.
+    be deleted. Users may add their own. Because transaction and rule records
+    store the category name, custom categories referenced by those records must
+    not be deleted before the references are reassigned.
     """
 
     __tablename__ = "categories"

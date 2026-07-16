@@ -43,6 +43,41 @@ def test_delete_user_category(client) -> None:
     assert all(c["name"] != "travel" for c in listing)
 
 
+def test_delete_used_user_category_is_blocked(client, db_session) -> None:
+    from datetime import date
+    from decimal import Decimal
+
+    from finance.domain.models import Transaction
+
+    created = client.post("/categories", json={"name": "Education"}).json()
+    db_session.add(
+        Transaction(
+            booking_date=date(2026, 4, 1),
+            amount=Decimal("-10"),
+            currency="PLN",
+            direction="debit",
+            merchant="A",
+            title="x",
+            category="education",
+            source="pekao",
+            dedup_hash="used-custom-category",
+        )
+    )
+    db_session.commit()
+
+    response = client.delete(f"/categories/{created['id']}")
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == {
+        "code": "category_in_use",
+        "message": "Category is in use and cannot be deleted.",
+        "transaction_count": 1,
+        "rule_count": 0,
+        "subcategory_count": 0,
+    }
+    assert db_session.get(CategoryDef, created["id"]) is not None
+
+
 def test_delete_system_category_is_forbidden(client) -> None:
     listing = client.get("/categories").json()
     food = next(c for c in listing if c["name"] == "food")

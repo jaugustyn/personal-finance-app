@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from apps.api.errors import conflict, not_found, validation_error
@@ -12,7 +12,7 @@ from finance.domain.category_mapping import (
     SYSTEM_CATEGORY_COLORS,
     SYSTEM_SUBCATEGORIES,
 )
-from finance.domain.models import CategoryDef, Transaction
+from finance.domain.models import CategoryDef, PersonalRule, Transaction
 
 router = APIRouter(prefix="/categories", tags=["categories"])
 
@@ -82,8 +82,6 @@ def list_categories(session: Session = Depends(get_session)) -> list[CategoryRow
     ).scalars().all()
     # Build usage counts in single grouped queries: group-level usage comes
     # from ``Transaction.category``; subcategory usage from ``subcategory``.
-    from sqlalchemy import func
-
     usage: dict[str, int] = {}
     for cat_name, count in session.execute(
         select(Transaction.category, func.count(Transaction.id)).group_by(
@@ -175,5 +173,42 @@ def delete_category(
         raise not_found("Category not found.")
     if cat.is_system:
         raise conflict("System categories cannot be deleted.")
+
+    transaction_count = int(
+        session.scalar(
+            select(func.count(Transaction.id)).where(
+                or_(
+                    Transaction.category == cat.name,
+                    Transaction.subcategory == cat.name,
+                    Transaction.category_predicted == cat.name,
+                )
+            )
+        )
+        or 0
+    )
+    rule_count = int(
+        session.scalar(
+            select(func.count(PersonalRule.id)).where(
+                PersonalRule.category == cat.name
+            )
+        )
+        or 0
+    )
+    child_count = int(
+        session.scalar(
+            select(func.count(CategoryDef.id)).where(CategoryDef.parent == cat.name)
+        )
+        or 0
+    )
+    if transaction_count or rule_count or child_count:
+        raise conflict(
+            {
+                "code": "category_in_use",
+                "message": "Category is in use and cannot be deleted.",
+                "transaction_count": transaction_count,
+                "rule_count": rule_count,
+                "subcategory_count": child_count,
+            }
+        )
     session.delete(cat)
     session.commit()
