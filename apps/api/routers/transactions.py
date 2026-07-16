@@ -99,6 +99,8 @@ def list_transactions(
     filters: TransactionFilterParams = Depends(),
     limit: int = Query(default=100, le=1000),
     offset: int = 0,
+    sort_by: tx_service.TransactionSortBy = Query(default="date"),
+    sort_direction: tx_service.TransactionSortDirection = Query(default="desc"),
 ) -> list[TransactionRow]:
     policy = _classification_policy(session)
     rows = tx_service.list_transactions(
@@ -107,6 +109,8 @@ def list_transactions(
         limit=limit,
         offset=offset,
         policy=policy,
+        sort_by=sort_by,
+        sort_direction=sort_direction,
     )
     alias_map, label_map = load_merchant_alias_maps(session)
     return [
@@ -168,17 +172,20 @@ def merchant_groups(
     only_uncategorized: bool = Query(default=True),
     min_count: int = Query(default=2, ge=1, le=100),
     limit: int = Query(default=50, le=500),
+    sort_by: tx_service.MerchantGroupSortBy = Query(default="count"),
+    sort_direction: tx_service.TransactionSortDirection = Query(default="desc"),
 ) -> list[MerchantGroup]:
     """Group transactions by merchant for bulk categorisation.
 
-    Returned groups are sorted by ``count`` descending so the user sees the
-    biggest savings first when bulk-assigning categories.
+    Sorting is applied to the complete matching set before the response limit.
     """
     rows = tx_service.merchant_groups(
         session,
         only_uncategorized=only_uncategorized,
         min_count=min_count,
         limit=limit,
+        sort_by=sort_by,
+        sort_direction=sort_direction,
     )
     return [MerchantGroup(**r.__dict__) for r in rows]
 

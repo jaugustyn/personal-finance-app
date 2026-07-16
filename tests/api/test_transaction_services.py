@@ -257,6 +257,34 @@ def test_merchant_groups_only_uncategorized_returns_expense_candidates(db_sessio
     assert groups[0].sample_merchants == ["Allegro"]
 
 
+def test_merchant_groups_sort_before_limit(db_session) -> None:
+    for index in range(3):
+        _tx(
+            db_session,
+            dedup_hash=f"group-frequent-{index}",
+            merchant="Częsty sklep",
+            amount=Decimal("-10"),
+        )
+    for index in range(2):
+        _tx(
+            db_session,
+            dedup_hash=f"group-expensive-{index}",
+            merchant="Duży wydatek",
+            amount=Decimal("-1000"),
+        )
+
+    groups = service.merchant_groups(
+        db_session,
+        only_uncategorized=True,
+        min_count=2,
+        limit=1,
+        sort_by="amount",
+        sort_direction="asc",
+    )
+
+    assert [group.merchant for group in groups] == ["Duży wydatek"]
+
+
 def test_transaction_filters_review_priority_orders_uncertain_rows_first(
     db_session,
 ) -> None:

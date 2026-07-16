@@ -24,6 +24,10 @@ TransactionTypeState = Literal[
     "suggested",
 ]
 
+TransactionSortBy = Literal["date", "merchant", "amount"]
+TransactionSortDirection = Literal["asc", "desc"]
+MerchantGroupSortBy = Literal["merchant", "amount", "count"]
+
 
 @dataclass(frozen=True)
 class TransactionFilters:
@@ -34,6 +38,8 @@ class TransactionFilters:
     merchant: str | None = None
     merchant_canonical_key: str | None = None
     search: str | None = None
+    min_amount: Decimal | None = None
+    max_amount: Decimal | None = None
     direction: str | None = None
     category: str | None = None
     category_state: CategoryState = "all"

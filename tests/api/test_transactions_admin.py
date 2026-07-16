@@ -157,6 +157,12 @@ def test_groups_min_count_filter(client, db_session) -> None:
     assert "OneOff" not in merchants
 
 
+def test_groups_rejects_unknown_sort(client) -> None:
+    response = client.get("/transactions/groups?sort_by=unknown")
+
+    assert response.status_code == 422
+
+
 def test_list_filter_include_transfers(client, db_session) -> None:
     _tx(db_session, dedup_hash="nt1", is_transfer=False)
     _tx(db_session, dedup_hash="t1", is_transfer=True, merchant="Self")

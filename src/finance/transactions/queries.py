@@ -37,8 +37,11 @@ from finance.transactions.type_decision import (
 from finance.transactions.types import (
     CategorySummary,
     FilterSummaryResult,
+    MerchantGroupSortBy,
     MerchantGroupSummary,
     TransactionFilters,
+    TransactionSortBy,
+    TransactionSortDirection,
 )
 
 
@@ -51,10 +54,14 @@ def _filter_rows_by_merchant_canonical_key(
     session: Session,
     rows: list[Transaction],
     canonical_key: str | None,
+    *,
+    alias_map: dict[str, str] | None = None,
+    label_map: dict[str, str] | None = None,
 ) -> list[Transaction]:
     if not canonical_key:
         return rows
-    alias_map, label_map = load_merchant_alias_maps(session)
+    if alias_map is None or label_map is None:
+        alias_map, label_map = load_merchant_alias_maps(session)
     return [
         tx
         for tx in rows
@@ -88,7 +95,30 @@ def _review_priority(tx: Transaction, policy: ClassificationPolicy) -> int:
     return review_priority_for_decision(decision)
 
 
-def filtered_transactions_stmt(filters: TransactionFilters):
+def _transaction_order_by(
+    sort_by: TransactionSortBy,
+    sort_direction: TransactionSortDirection,
+) -> tuple[Any, ...]:
+    direction = "asc" if sort_direction == "asc" else "desc"
+    if sort_by == "amount":
+        amount = amount_base_expr()
+        return (
+            getattr(amount, direction)(),
+            Transaction.booking_date.desc(),
+            Transaction.id.desc(),
+        )
+    return (
+        getattr(Transaction.booking_date, direction)(),
+        getattr(Transaction.id, direction)(),
+    )
+
+
+def filtered_transactions_stmt(
+    filters: TransactionFilters,
+    *,
+    sort_by: TransactionSortBy = "date",
+    sort_direction: TransactionSortDirection = "desc",
+):
     stmt = select(Transaction)
     if filters.date_from is not None:
         stmt = stmt.where(Transaction.booking_date >= filters.date_from)
@@ -126,6 +156,11 @@ def filtered_transactions_stmt(filters: TransactionFilters):
         stmt = stmt.where(
             or_(*search_conditions)
         )
+    absolute_amount = func.abs(amount_base_expr())
+    if filters.min_amount is not None:
+        stmt = stmt.where(absolute_amount >= filters.min_amount)
+    if filters.max_amount is not None:
+        stmt = stmt.where(absolute_amount <= filters.max_amount)
     if filters.direction in TRANSACTION_DIRECTION_VALUES:
         stmt = stmt.where(Transaction.direction == filters.direction)
     if filters.category:
@@ -207,7 +242,7 @@ def filtered_transactions_stmt(filters: TransactionFilters):
         stmt = stmt.where(Transaction.category_confidence >= filters.min_confidence)
     if filters.max_confidence is not None:
         stmt = stmt.where(Transaction.category_confidence <= filters.max_confidence)
-    stmt = stmt.order_by(Transaction.booking_date.desc(), Transaction.id.desc())
+    stmt = stmt.order_by(*_transaction_order_by(sort_by, sort_direction))
     return stmt
 
 
@@ -289,6 +324,8 @@ def list_transactions(
     limit: int,
     offset: int,
     policy: ClassificationPolicy = DEFAULT_POLICY,
+    sort_by: TransactionSortBy = "date",
+    sort_direction: TransactionSortDirection = "desc",
 ) -> list[Transaction]:
     canonical_key = _merchant_canonical_key_filter(filters)
     if filters.review_priority:
@@ -302,6 +339,31 @@ def list_transactions(
             )
         )
         return rows[offset : offset + limit]
+    if sort_by == "merchant":
+        rows = list(session.execute(filtered_transactions_stmt(filters)).scalars().all())
+        alias_map, label_map = load_merchant_alias_maps(session)
+        rows = _filter_rows_by_merchant_canonical_key(
+            session,
+            rows,
+            canonical_key,
+            alias_map=alias_map,
+            label_map=label_map,
+        )
+
+        def merchant_sort_key(row: Transaction) -> tuple[str, str]:
+            display_label = merchant_identity(
+                row.merchant,
+                row.title,
+                alias_map=alias_map,
+                label_map=label_map,
+            ).display_label
+            return normalize_text(display_label), display_label.casefold()
+
+        rows.sort(
+            key=merchant_sort_key,
+            reverse=sort_direction == "desc",
+        )
+        return rows[offset : offset + limit]
     if canonical_key:
         rows = _filter_rows_by_merchant_canonical_key(
             session,
@@ -309,7 +371,15 @@ def list_transactions(
             canonical_key,
         )
         return rows[offset : offset + limit]
-    stmt = filtered_transactions_stmt(filters).offset(offset).limit(limit)
+    stmt = (
+        filtered_transactions_stmt(
+            filters,
+            sort_by=sort_by,
+            sort_direction=sort_direction,
+        )
+        .offset(offset)
+        .limit(limit)
+    )
     return list(session.execute(stmt).scalars().all())
 
 
@@ -375,6 +445,8 @@ def merchant_groups(
     only_uncategorized: bool,
     min_count: int,
     limit: int,
+    sort_by: MerchantGroupSortBy = "count",
+    sort_direction: TransactionSortDirection = "desc",
 ) -> list[MerchantGroupSummary]:
     stmt = select(Transaction).where(Transaction.merchant != "")
     if only_uncategorized:
@@ -421,15 +493,36 @@ def merchant_groups(
         if tx.category:
             group["categories"].append(tx.category)
 
-    sorted_groups = sorted(
-        (
-            group
-            for group in grouped.values()
-            if int(group["count"]) >= min_count
-        ),
-        key=lambda group: int(group["count"]),
-        reverse=True,
-    )[:limit]
+    eligible_groups = [
+        group for group in grouped.values() if int(group["count"]) >= min_count
+    ]
+    for group in eligible_groups:
+        categories = [
+            str(category) for category in group["categories"] if category
+        ]
+        group["common_category"] = (
+            max(set(categories), key=lambda value: (categories.count(value), value))
+            if categories
+            else None
+        )
+
+    def sort_value(group: dict[str, Any]) -> str | int | Decimal:
+        if sort_by == "merchant":
+            return str(group["merchant_display"]).casefold()
+        if sort_by == "amount":
+            return abs(Decimal(group["total_credit"])) - abs(
+                Decimal(group["total_debit"])
+            )
+        return int(group["count"])
+
+    # A stable first pass keeps ties deterministic without reversing the
+    # canonical-key order when the primary direction changes.
+    eligible_groups.sort(key=lambda group: str(group["merchant_canonical_key"]))
+    eligible_groups.sort(
+        key=sort_value,
+        reverse=sort_direction == "desc",
+    )
+    sorted_groups = eligible_groups[:limit]
     out: list[MerchantGroupSummary] = []
     for group in sorted_groups:
         merchants = list(
@@ -438,8 +531,6 @@ def merchant_groups(
             )
         )[:3]
         titles = list(dict.fromkeys(str(title) for title in group["titles"] if title))[:3]
-        cats = [str(category) for category in group["categories"] if category]
-        common_cat = max(set(cats), key=cats.count) if cats else None
         out.append(
             MerchantGroupSummary(
                 merchant=str(group["merchant"]),
@@ -448,7 +539,11 @@ def merchant_groups(
                 count=int(group["count"]),
                 total_debit=Decimal(group["total_debit"]),
                 total_credit=Decimal(group["total_credit"]),
-                common_category=common_cat,
+                common_category=(
+                    str(group["common_category"])
+                    if group["common_category"] is not None
+                    else None
+                ),
                 sample_merchants=merchants,
                 sample_titles=titles,
             )

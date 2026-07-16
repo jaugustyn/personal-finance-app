@@ -1,6 +1,7 @@
 """Shared transaction API dependencies."""
 
 from datetime import date
+from decimal import Decimal
 
 from fastapi import Query
 
@@ -28,6 +29,8 @@ class TransactionFilterParams:
         merchant: str | None = None,
         merchant_canonical_key: str | None = None,
         search: str | None = None,
+        min_amount: Decimal | None = Query(default=None, ge=0),
+        max_amount: Decimal | None = Query(default=None, ge=0),
         direction: TransactionDirection | None = None,
         category: str | None = None,
         category_state: CategoryState = Query(default="all"),
@@ -46,6 +49,8 @@ class TransactionFilterParams:
         self.merchant = merchant
         self.merchant_canonical_key = merchant_canonical_key
         self.search = search
+        self.min_amount = min_amount
+        self.max_amount = max_amount
         self.direction = direction
         self.category = category
         self.category_state = category_state
@@ -66,6 +71,8 @@ class TransactionFilterParams:
             merchant=self.merchant,
             merchant_canonical_key=self.merchant_canonical_key,
             search=self.search,
+            min_amount=self.min_amount,
+            max_amount=self.max_amount,
             direction=enum_value(self.direction),
             category=self.category,
             category_state=self.category_state,

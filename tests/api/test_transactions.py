@@ -5,7 +5,7 @@ from decimal import Decimal
 import pytest
 
 from apps.api.routers import transactions as transactions_router
-from finance.domain.models import Transaction
+from finance.domain.models import MerchantAlias, Transaction
 from finance.ml.classification.policy import DEFAULT_POLICY
 
 
@@ -98,6 +98,120 @@ def test_list_order_is_stable_for_equal_dates_after_mutation_and_filter(
     assert [row["id"] for row in filtered] == expected
 
 
+def test_list_date_sort_is_global_and_stable(client, db_session) -> None:
+    first = _seed(
+        db_session,
+        booking_date=date(2026, 4, 15),
+        dedup_hash="h-date-sort-first",
+    )
+    second = _seed(
+        db_session,
+        booking_date=date(2026, 4, 15),
+        dedup_hash="h-date-sort-second",
+    )
+    older = _seed(
+        db_session,
+        booking_date=date(2026, 4, 1),
+        dedup_hash="h-date-sort-older",
+    )
+
+    first_page = client.get(
+        "/transactions?sort_by=date&sort_direction=asc&limit=2"
+    ).json()
+    second_page = client.get(
+        "/transactions?sort_by=date&sort_direction=asc&limit=2&offset=2"
+    ).json()
+
+    assert [row["id"] for row in first_page] == [older.id, first.id]
+    assert [row["id"] for row in second_page] == [second.id]
+
+
+def test_list_amount_sort_is_global_and_uses_base_currency(client, db_session) -> None:
+    income = _seed(
+        db_session,
+        amount=Decimal("50"),
+        amount_base=Decimal("50"),
+        direction="credit",
+        dedup_hash="h-amount-sort-income",
+    )
+    foreign_expense = _seed(
+        db_session,
+        amount=Decimal("-100"),
+        amount_base=Decimal("-400"),
+        currency="USD",
+        dedup_hash="h-amount-sort-foreign",
+    )
+    local_expense = _seed(
+        db_session,
+        amount=Decimal("-200"),
+        amount_base=Decimal("-200"),
+        dedup_hash="h-amount-sort-local",
+    )
+
+    first_page = client.get(
+        "/transactions?sort_by=amount&sort_direction=desc&limit=2"
+    ).json()
+    second_page = client.get(
+        "/transactions?sort_by=amount&sort_direction=desc&limit=2&offset=2"
+    ).json()
+
+    assert [row["id"] for row in first_page] == [income.id, local_expense.id]
+    assert [row["id"] for row in second_page] == [foreign_expense.id]
+
+
+def test_list_merchant_sort_is_global(client, db_session) -> None:
+    db_session.add_all(
+        [
+            MerchantAlias(
+                alias_key="aaa raw",
+                alias_label="AAA RAW",
+                canonical_key="zulu",
+                canonical_label="Zulu",
+            ),
+            MerchantAlias(
+                alias_key="zzz raw",
+                alias_label="ZZZ RAW",
+                canonical_key="alfa",
+                canonical_label="Alfa",
+            ),
+        ]
+    )
+    db_session.commit()
+    zulu = _seed(
+        db_session,
+        merchant="AAA RAW",
+        dedup_hash="h-merchant-sort-zulu",
+    )
+    alfa = _seed(
+        db_session,
+        merchant="ZZZ RAW",
+        dedup_hash="h-merchant-sort-alfa",
+    )
+    market = _seed(
+        db_session,
+        merchant="Market",
+        dedup_hash="h-merchant-sort-market",
+    )
+
+    first_page = client.get(
+        "/transactions?sort_by=merchant&sort_direction=asc&limit=2"
+    ).json()
+    second_page = client.get(
+        "/transactions?sort_by=merchant&sort_direction=asc&limit=2&offset=2"
+    ).json()
+
+    assert [row["merchant_display"] for row in first_page] == ["Alfa", "Market"]
+    assert [row["id"] for row in first_page] == [alfa.id, market.id]
+    assert [row["merchant_display"] for row in second_page] == ["Zulu"]
+    assert [row["id"] for row in second_page] == [zulu.id]
+
+
+def test_list_rejects_unknown_sort_field(client) -> None:
+    response = client.get("/transactions?sort_by=category")
+
+    assert response.status_code == 422
+
+
 def test_list_transactions_date_filter(client, db_session) -> None:
     _seed(db_session, booking_date=date(2026, 4, 1), dedup_hash="h-april")
     _seed(db_session, booking_date=date(2026, 1, 1), dedup_hash="h-jan")
@@ -106,6 +220,48 @@ def test_list_transactions_date_filter(client, db_session) -> None:
     body = r.json()
     assert len(body) == 1
     assert body[0]["booking_date"] == "2026-04-01"
+
+
+def test_amount_range_uses_absolute_amount_in_base_currency(
+    client, db_session
+) -> None:
+    _seed(
+        db_session,
+        amount=Decimal("-100"),
+        amount_base=Decimal("-100"),
+        merchant="Small local payment",
+        dedup_hash="h-amount-range-small",
+    )
+    matched = _seed(
+        db_session,
+        amount=Decimal("-40"),
+        amount_base=Decimal("-160"),
+        currency="USD",
+        merchant="Foreign payment",
+        dedup_hash="h-amount-range-match",
+    )
+    _seed(
+        db_session,
+        amount=Decimal("250"),
+        amount_base=Decimal("250"),
+        direction="credit",
+        merchant="Large income",
+        dedup_hash="h-amount-range-large",
+    )
+
+    rows = client.get("/transactions?min_amount=120&max_amount=200").json()
+    summary = client.get(
+        "/transactions/filter-summary?min_amount=120&max_amount=200"
+    ).json()
+    exported = client.get(
+        "/transactions/export.csv?min_amount=120&max_amount=200"
+    ).text
+
+    assert [row["id"] for row in rows] == [matched.id]
+    assert summary["count"] == 1
+    assert "Foreign payment" in exported
+    assert "Small local payment" not in exported
+    assert "Large income" not in exported
 
 
 def test_list_transactions_filters_suggestions_and_type(client, db_session) -> None:
@@ -347,6 +503,12 @@ def test_list_transactions_search_direction_and_category_filters(
     predicted_category = client.get("/transactions?category=shopping")
     assert predicted_category.status_code == 200
     assert [row["id"] for row in predicted_category.json()] == [allegro.id]
+
+    confirmed_shopping = client.get(
+        "/transactions?category=shopping&category_state=categorized"
+    )
+    assert confirmed_shopping.status_code == 200
+    assert confirmed_shopping.json() == []
 
     assigned_category = client.get("/transactions?category=transport")
     assert assigned_category.status_code == 200
