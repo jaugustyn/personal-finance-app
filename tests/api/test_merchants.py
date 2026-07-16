@@ -50,6 +50,8 @@ def test_merchant_candidates_group_variants(client, db_session) -> None:
         "biedronka 1234 warszawa",
         "biedronka payu",
     }
+    assert biedronka["base_currency"] == "PLN"
+    assert {row["base_currency"] for row in biedronka["variants"]} == {"PLN"}
     assert sum(row["count"] for row in biedronka["variants"]) == 2
     assert Decimal(str(sum(Decimal(row["total_debit"]) for row in biedronka["variants"]))) == Decimal("30")
 
@@ -110,20 +112,60 @@ def test_merchant_alias_suggestions_search_existing_transaction_variants(
     first = next(row for row in rows if row["alias_key"] == "card payment netflix com")
     assert first["count"] == 1
     assert first["canonical_key"] == "netflix"
+    assert first["base_currency"] == "PLN"
+
+
+def test_merchant_candidate_search_runs_before_limit(client, db_session) -> None:
+    for index, merchant in enumerate(
+        ["ALPHA 1111 WARSZAWA", "ALPHA PAYU", "ALPHA ONLINE"],
+        start=1,
+    ):
+        _tx(
+            db_session,
+            merchant=merchant,
+            amount=Decimal(f"-{index}0"),
+            dedup_hash=f"candidate-alpha-{index}",
+        )
+    for index, merchant in enumerate(["ZETA 1111 WARSZAWA", "ZETA PAYU"], start=1):
+        _tx(
+            db_session,
+            merchant=merchant,
+            amount=Decimal(f"-{index}"),
+            dedup_hash=f"candidate-zeta-{index}",
+        )
+
+    sorted_response = client.get(
+        "/merchants/candidates",
+        params={"sort_by": "count", "sort_dir": "asc", "limit": 1},
+    )
+    response = client.get(
+        "/merchants/candidates",
+        params={"q": "zeta", "limit": 1},
+    )
+
+    assert sorted_response.status_code == 200
+    assert [row["canonical_key"] for row in sorted_response.json()] == ["zeta"]
+    assert response.status_code == 200
+    assert [row["canonical_key"] for row in response.json()] == ["zeta"]
 
 
 def test_merchant_alias_suggestions_skip_saved_aliases(client, db_session) -> None:
     _tx(
         db_session,
-        merchant="NETFLIX.COM AMSTERDAM",
+        merchant="NETFLIX.COM    AMSTERDAM",
         amount=Decimal("-59.99"),
         dedup_hash="suggest-saved-netflix",
     )
     created = client.post(
         "/merchants/aliases",
-        json={"canonical_label": "Netflix", "aliases": ["NETFLIX.COM AMSTERDAM"]},
+        json={
+            "canonical_label": "Netflix",
+            "aliases": ["NETFLIX.COM    AMSTERDAM"],
+        },
     )
     assert created.status_code == 201
+    assert created.json()[0]["usage_count"] == 1
+    assert created.json()[0]["alias_label"] == "NETFLIX.COM AMSTERDAM"
 
     response = client.get("/merchants/suggestions", params={"q": "netflix"})
 
@@ -143,6 +185,7 @@ def test_merchant_alias_crud(client) -> None:
     rows = created.json()
     assert len(rows) == 2
     assert {row["canonical_key"] for row in rows} == {"biedronka"}
+    assert {row["usage_count"] for row in rows} == {0}
 
     listed = client.get("/merchants/aliases")
     assert listed.status_code == 200
@@ -303,6 +346,7 @@ def test_alias_changes_top_merchants_without_updating_transactions(
         },
     )
     assert response.status_code == 201
+    assert {row["usage_count"] for row in response.json()} == {1}
 
     after = client.get("/stats/top-merchants?months=120&limit=5")
     rows = after.json()

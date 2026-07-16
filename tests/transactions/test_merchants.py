@@ -8,6 +8,7 @@ from finance.domain.models import MerchantAlias, Transaction
 from finance.transactions.merchants import (
     alias_candidates,
     merchant_canonical_key,
+    merchant_display_label,
     merchant_key,
 )
 
@@ -32,6 +33,13 @@ def test_merchant_canonical_key_groups_legal_suffixes() -> None:
 def test_merchant_key_uses_title_fallback() -> None:
     assert merchant_key("", "LIDL zakupy karta") == "lidl zakupy karta"
     assert merchant_canonical_key("", "LIDL zakupy karta") == "lidl"
+
+
+def test_merchant_display_label_collapses_whitespace() -> None:
+    assert (
+        merchant_display_label("  ZABKA Z1139 K.1    TRZEBINIA  ")
+        == "ZABKA Z1139 K.1 TRZEBINIA"
+    )
 
 
 def test_merchant_key_prefers_title_for_generic_bank_label() -> None:

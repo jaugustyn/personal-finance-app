@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from collections import Counter, defaultdict
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from decimal import Decimal
 
@@ -98,10 +98,15 @@ class _MerchantCandidateAccumulator:
     total: Decimal = Decimal(0)
 
 
+def compact_merchant_label(value: str | None) -> str:
+    """Trim display text and collapse whitespace without changing punctuation."""
+    return " ".join((value or "").split())
+
+
 def merchant_display_label(merchant: str | None, title: str | None = None) -> str:
     """Return the best raw label for UI display."""
-    merchant_label = (merchant or "").strip()
-    title_label = (title or "").strip()
+    merchant_label = compact_merchant_label(merchant)
+    title_label = compact_merchant_label(title)
     if (
         merchant_label
         and title_label
@@ -172,13 +177,33 @@ def merchant_identity(
 def load_merchant_alias_maps(session: Session) -> tuple[dict[str, str], dict[str, str]]:
     rows = session.execute(select(MerchantAlias)).scalars().all()
     alias_map = {row.alias_key: row.canonical_key for row in rows}
-    label_map = {row.canonical_key: row.canonical_label for row in rows}
+    label_map = {
+        row.canonical_key: compact_merchant_label(row.canonical_label)
+        for row in rows
+    }
     return alias_map, label_map
 
 
 def list_aliases(session: Session) -> list[MerchantAlias]:
     rows = session.execute(select(MerchantAlias).order_by(MerchantAlias.alias_label))
     return list(rows.scalars())
+
+
+def alias_usage_counts(
+    session: Session,
+    alias_keys: Iterable[str],
+) -> dict[str, int]:
+    keys = {key for key in alias_keys if key}
+    counts = dict.fromkeys(keys, 0)
+    if not keys:
+        return counts
+
+    rows = session.execute(select(Transaction.merchant, Transaction.title))
+    for merchant, title in rows:
+        alias_key = merchant_key(merchant, title)
+        if alias_key in counts:
+            counts[alias_key] += 1
+    return counts
 
 
 def create_aliases(
@@ -188,7 +213,7 @@ def create_aliases(
     aliases: Iterable[str],
     canonical_key: str | None = None,
 ) -> list[MerchantAlias]:
-    canonical_label = canonical_label.strip()
+    canonical_label = compact_merchant_label(canonical_label)
     canonical_key = (
         normalize_merchant(canonical_key)
         if canonical_key
@@ -212,7 +237,7 @@ def create_aliases(
         canonical_label = existing_group_label
     out: list[MerchantAlias] = []
     for alias_label in aliases:
-        label = alias_label.strip()
+        label = compact_merchant_label(alias_label)
         alias_key = merchant_key(label)
         if not label or not alias_key:
             continue
@@ -246,7 +271,7 @@ def update_alias_group_label(
     canonical_label: str,
 ) -> list[MerchantAlias]:
     canonical_key = normalize_merchant(canonical_key)
-    canonical_label = canonical_label.strip()
+    canonical_label = compact_merchant_label(canonical_label)
     if not canonical_key or not canonical_label:
         raise ValueError("canonical_key and canonical_label are required")
 
@@ -329,6 +354,9 @@ def alias_candidates(
     *,
     min_variants: int = 2,
     limit: int = 20,
+    q: str | None = None,
+    sort_by: str = "count",
+    sort_dir: str = "desc",
 ) -> list[MerchantCandidate]:
     alias_map, label_map = load_merchant_alias_maps(session)
     rows = session.execute(
@@ -415,7 +443,41 @@ def alias_candidates(
                 total_debit=unresolved_total,
             )
         )
-    candidates.sort(key=lambda item: (item.count, item.total_debit), reverse=True)
+    query = normalize_merchant(q or "")
+    if query:
+        candidates = [
+            candidate
+            for candidate in candidates
+            if query
+            in normalize_merchant(
+                " ".join(
+                    [
+                        candidate.canonical_key,
+                        candidate.canonical_label,
+                        candidate.suggested_label,
+                        *candidate.aliases,
+                        *(variant.alias_label for variant in candidate.variants),
+                    ]
+                )
+            )
+        ]
+
+    sort_values: dict[
+        str,
+        Callable[[MerchantCandidate], str | int | Decimal],
+    ] = {
+        "suggested_label": lambda item: normalize_merchant(item.suggested_label),
+        "variants": lambda item: len(item.variants),
+        "count": lambda item: item.count,
+        "total_debit": lambda item: item.total_debit,
+    }
+    if sort_by not in sort_values:
+        raise ValueError(f"Unsupported merchant candidate sort: {sort_by}")
+    if sort_dir not in {"asc", "desc"}:
+        raise ValueError(f"Unsupported merchant candidate sort direction: {sort_dir}")
+
+    candidates.sort(key=lambda item: item.canonical_key)
+    candidates.sort(key=sort_values[sort_by], reverse=sort_dir == "desc")
     return candidates[:limit]
 
 

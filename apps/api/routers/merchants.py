@@ -1,6 +1,9 @@
 """Merchant canonicalization and alias endpoints."""
 from __future__ import annotations
 
+from collections.abc import Iterable
+from typing import Literal
+
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
@@ -14,17 +17,37 @@ from apps.api.schemas.merchants import (
     MerchantCandidateVariantRow,
 )
 from finance.db import get_session
+from finance.profile import service as profile_service
 from finance.transactions import merchants as merchant_service
 
 router = APIRouter(prefix="/merchants", tags=["merchants"])
 
 
+def _alias_rows(session: Session, rows: Iterable[object]) -> list[MerchantAliasRow]:
+    serialized = [MerchantAliasRow.model_validate(row) for row in rows]
+    counts = merchant_service.alias_usage_counts(
+        session,
+        (row.alias_key for row in serialized),
+    )
+    return [
+        row.model_copy(
+            update={
+                "alias_label": merchant_service.compact_merchant_label(
+                    row.alias_label
+                ),
+                "canonical_label": merchant_service.compact_merchant_label(
+                    row.canonical_label
+                ),
+                "usage_count": counts.get(row.alias_key, 0),
+            }
+        )
+        for row in serialized
+    ]
+
+
 @router.get("/aliases", response_model=list[MerchantAliasRow])
 def list_aliases(session: Session = Depends(get_session)) -> list[MerchantAliasRow]:
-    return [
-        MerchantAliasRow.model_validate(row)
-        for row in merchant_service.list_aliases(session)
-    ]
+    return _alias_rows(session, merchant_service.list_aliases(session))
 
 
 @router.post("/aliases", response_model=list[MerchantAliasRow], status_code=201)
@@ -41,7 +64,7 @@ def create_aliases(
         )
     except ValueError as exc:
         raise validation_error(str(exc)) from exc
-    return [MerchantAliasRow.model_validate(row) for row in rows]
+    return _alias_rows(session, rows)
 
 
 @router.patch("/aliases/group-label", response_model=list[MerchantAliasRow])
@@ -59,7 +82,7 @@ def update_alias_group_label(
         raise validation_error(str(exc)) from exc
     if not rows:
         raise not_found("Merchant alias group not found.")
-    return [MerchantAliasRow.model_validate(row) for row in rows]
+    return _alias_rows(session, rows)
 
 
 @router.delete("/aliases/{alias_id}", status_code=204, response_model=None)
@@ -74,6 +97,7 @@ def alias_suggestions(
     limit: int = Query(default=10, ge=1, le=30),
     session: Session = Depends(get_session),
 ) -> list[MerchantAliasSuggestionRow]:
+    base_currency = profile_service.get_or_create_profile(session).base_currency
     return [
         MerchantAliasSuggestionRow(
             alias_key=row.alias_key,
@@ -82,6 +106,7 @@ def alias_suggestions(
             canonical_label=row.canonical_label,
             count=row.count,
             total_amount=row.total_amount,
+            base_currency=base_currency,
         )
         for row in merchant_service.alias_suggestions(session, q=q, limit=limit)
     ]
@@ -91,8 +116,17 @@ def alias_suggestions(
 def alias_candidates(
     session: Session = Depends(get_session),
     min_variants: int = Query(default=2, ge=2, le=20),
-    limit: int = Query(default=20, ge=1, le=100),
+    limit: int = Query(default=100, ge=1, le=100),
+    q: str | None = Query(default=None, min_length=1, max_length=128),
+    sort_by: Literal[
+        "suggested_label",
+        "variants",
+        "count",
+        "total_debit",
+    ] = "count",
+    sort_dir: Literal["asc", "desc"] = "desc",
 ) -> list[MerchantCandidateRow]:
+    base_currency = profile_service.get_or_create_profile(session).base_currency
     return [
         MerchantCandidateRow(
             canonical_key=row.canonical_key,
@@ -105,15 +139,20 @@ def alias_candidates(
                     alias_label=variant.alias_label,
                     count=variant.count,
                     total_debit=variant.total_debit,
+                    base_currency=base_currency,
                 )
                 for variant in row.variants
             ],
             count=row.count,
             total_debit=row.total_debit,
+            base_currency=base_currency,
         )
         for row in merchant_service.alias_candidates(
             session,
             min_variants=min_variants,
             limit=limit,
+            q=q,
+            sort_by=sort_by,
+            sort_dir=sort_dir,
         )
     ]

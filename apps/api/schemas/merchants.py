@@ -13,6 +13,7 @@ class MerchantAliasRow(BaseModel):
     alias_label: str
     canonical_key: str
     canonical_label: str
+    usage_count: int = 0
     created_at: datetime | None = None
 
     model_config = {"from_attributes": True}
@@ -34,6 +35,7 @@ class MerchantCandidateVariantRow(BaseModel):
     alias_label: str
     count: int
     total_debit: Decimal
+    base_currency: str
 
 
 class MerchantCandidateRow(BaseModel):
@@ -44,6 +46,7 @@ class MerchantCandidateRow(BaseModel):
     variants: list[MerchantCandidateVariantRow]
     count: int
     total_debit: Decimal
+    base_currency: str
 
 
 class MerchantAliasSuggestionRow(BaseModel):
@@ -53,3 +56,4 @@ class MerchantAliasSuggestionRow(BaseModel):
     canonical_label: str
     count: int
     total_amount: Decimal
+    base_currency: str
