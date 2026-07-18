@@ -7,7 +7,7 @@ requires-python = ">=3.12,<3.13"
 license = { file = "LICENSE" }
 dependencies = [
     # web / api
-    "fastapi>=0.115,<0.116",
+    "fastapi>=0.139.2,<0.140",
     "uvicorn[standard]>=0.51.0",
     "python-multipart>=0.0.12",
     "pydantic>=2.9",
@@ -36,8 +36,8 @@ augment = [
 dev = [
     "pytest>=8.3",
     "pytest-cov>=5.0",
-    "ruff>=0.7",
-    "mypy>=1.13",
+    "ruff>=0.15.22",
+    "mypy>=2.3.0",
     "hypothesis>=6",
 ]
 
