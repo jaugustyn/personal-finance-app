@@ -100,8 +100,9 @@ prove model quality; metric interpretation remains a separate analysis step.
   diagnostics.
 - A class with 10 examples is merely eligible for training, not sufficiently
   validated for a final conclusion.
-- Forecasting selects among simple candidates by walk-forward RMSE; short
-  histories remain uncertain.
+- Forecasting requires complete monthly history and selects among baseline,
+  damped-trend and seasonal candidates using horizon-matched walk-forward RMSE.
+  A more complex model must improve the best baseline by at least 5%.
 - Anomaly detection is unsupervised and must be evaluated with manual top-k
   review.
 - Subscription output is cadence detection and requires manual validation.

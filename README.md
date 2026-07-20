@@ -20,8 +20,8 @@ the validation perspective.
 
 ## Main capabilities
 
-- Pekao and Revolut imports, plus a generic CSV/XLSX mapping flow.
-- Deduplication, multi-currency conversion and daily exchange rates.
+- Pekao and Revolut imports, plus a generic CSV/TSV/TXT mapping flow.
+- Deduplication, conversion of foreign amounts to PLN and daily exchange rates.
 - Transaction list with separate economic type and expense category workflows.
 - Dashboard, period summaries, merchant analysis and asset tracking.
 - Category suggestions using TF-IDF and linear classifiers.
@@ -70,13 +70,22 @@ Main optional settings:
 ```ini
 AUTH_USERNAME=
 AUTH_PASSWORD=
+APP_LOCK_COOKIE_SECURE=false
 OLLAMA_BASE_URL=http://localhost:11434
 LLM_ENABLED=true
 LLM_FALLBACK_ENABLED=false
 ```
 
 Set both auth values to enable BasicAuth. Ollama endpoints other than loopback
-or `host.docker.internal` are rejected.
+or `host.docker.internal` are rejected. An optional inactivity lock can be
+enabled from Settings; set `APP_LOCK_COOKIE_SECURE=true` only when the browser
+reaches the application over HTTPS.
+
+If the local lock code is lost, disable it from the host:
+
+```powershell
+docker compose --env-file .env -p personal-finance-app -f docker/docker-compose.yml exec api python scripts/reset_app_lock.py
+```
 
 ## Local development
 
@@ -133,6 +142,11 @@ Transaction-type ML is a separate evidence-only experiment. Runtime type
 decisions use deterministic suggestions, user rules and a safe debit/credit
 fallback.
 
+PLN is the single analytical currency. A foreign transaction contributes to
+totals and models only when it has a positive rate and a valid PLN conversion;
+otherwise it remains visible in its original currency and is reported as
+omitted from calculations.
+
 Evidence commands and interpretation rules are documented in
 [`docs/ml-evidence.md`](docs/ml-evidence.md).
 
@@ -142,6 +156,10 @@ Never publish bank exports, `.env` files, model artifacts or row-level reports.
 Keep them in ignored runtime locations such as `data/raw/`, `data/private/`,
 `data/models/` and `data/reports/`. The entire `data/` directory and local
 environment files are excluded from version control.
+
+The optional inactivity lock protects an application left open in a browser.
+It does not encrypt the database, exports or runtime files and does not replace
+the operating-system lock, HTTPS or BasicAuth for an exposed deployment.
 
 ## Documentation
 

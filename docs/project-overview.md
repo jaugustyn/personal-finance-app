@@ -56,12 +56,17 @@ parsing in `src/finance/ingestion`, and ML in `src/finance/ml`.
 ## Data flow
 
 1. A Pekao, Revolut or generic file is parsed into a common transaction DTO.
-2. The import service normalizes fields, obtains the date-specific FX rate when
-   needed, calculates a deduplication hash and stores the original bank values.
+2. The import service normalizes fields, obtains the date-specific PLN exchange
+   rate when available, calculates a deduplication hash and stores the original
+   bank values.
 3. Transaction-type rules and category sources create provisional suggestions.
 4. The user reviews or corrects the economic type and expense category.
 5. Only explicit manual decisions and accepted suggestions become ML labels.
 6. Deterministic analytics feed the dashboard and LLM tools.
+
+PLN is the fixed analytical currency. Foreign records without a complete,
+positive-rate PLN conversion remain available for review and export but are
+excluded from amounts, analytics and model datasets.
 
 Two concepts remain separate throughout the system:
 
@@ -78,7 +83,7 @@ expense-category model.
 | --- | --- | --- |
 | Expense category | TF-IDF, amount and weekday; Logistic Regression or calibrated LinearSVC | Operational candidate lifecycle |
 | Transaction type | Deterministic suggestions; supervised comparison on confirmed labels | Evidence-only ML |
-| Forecasting | Naive, rolling mean, SES and ARIMA with walk-forward evaluation | Provisional |
+| Forecasting | Complete-month series; baseline, damped trend and seasonal candidates with horizon-matched walk-forward evaluation | Provisional |
 | Anomalies | IsolationForest, robust statistics and explainable rules | Provisional |
 | Subscriptions | Merchant normalization, cadence and amount stability | Provisional |
 | Assistant | Polish routing and deterministic tools with optional local Ollama phrasing | Operational, optional LLM |
@@ -100,6 +105,9 @@ validation still depends on private-data review and evidence generation.
 - Numeric answers from the assistant use SQL-backed or deterministic tools.
 - Optional BasicAuth, CORS, rate limiting, security headers and import
   validation protect the single-host deployment.
+- An optional server-enforced inactivity lock hides the browser UI after a
+  configurable idle period. Its scrypt-protected code and process-local session
+  are intentionally separate from accounts or multi-user authentication.
 
 The project is not designed for multi-user banking, credit decisions, fraud
 accusations or regulated financial advice.

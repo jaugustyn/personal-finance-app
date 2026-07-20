@@ -33,6 +33,8 @@ This operation is destructive.
 1. Open `/imports` and upload a Pekao, Revolut or generic export.
 2. Verify the preview, mapping, detected currency and import summary.
 3. Open `/transactions` and verify amounts, ordering and merchant names.
+   Foreign rows without a PLN conversion should remain visible and be reported
+   as omitted from monetary summaries.
 4. Open `Do sprawdzenia` and review transaction types separately from expense
    categories.
 5. Accept only correct suggestions; use a manual value when a suggestion is
@@ -87,6 +89,7 @@ Backend:
 uv run pytest
 uv run ruff check .
 uv run mypy src apps scripts
+uv run python scripts\check_data_integrity.py
 ```
 
 Frontend:
@@ -113,3 +116,7 @@ Expected conditions:
 - only intended source changes are present;
 - `.env`, bank exports, generated reports and model artifacts are not tracked;
 - modules with incomplete evaluation remain marked as `provisional`.
+
+The integrity command prints aggregate counts and transaction IDs only. Exit
+code `0` means no critical inconsistency; exit code `1` means the reported IDs
+require review or an explicit currency recomputation.

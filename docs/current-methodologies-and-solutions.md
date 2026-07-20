@@ -1,6 +1,6 @@
 # Aktualne metodyki i rozwiązania
 
-Stan na 2026-07-13. Dokument opisuje rozwiązania faktycznie obecne w kodzie.
+Stan na 2026-07-20. Dokument opisuje rozwiązania faktycznie obecne w kodzie.
 Nie zawiera wyników z prywatnych danych; kryteria modelu kategorii znajdują się
 w [model card](model-card.md).
 
@@ -13,7 +13,8 @@ ML oraz opcjonalnego lokalnego asystenta językowego.
 Najważniejsze zasady:
 
 - fakty finansowe i agregacje są deterministyczne;
-- LLM może routować pytanie lub opisać wynik, ale nie wylicza kwot;
+- LLM może wyłącznie dobrać narzędzie dla nierozpoznanego pytania; wynik jest
+  formatowany deterministycznie;
 - sugestia nie jest etykietą treningową bez decyzji użytkownika;
 - typ przepływu pieniędzy jest oddzielony od kategorii budżetowej;
 - modele i raporty z realnych danych pozostają lokalne;
@@ -56,17 +57,20 @@ Przebieg importu:
 1. Walidacja rozszerzenia, MIME, rozmiaru i wymaganych pól.
 2. Parsowanie do wspólnego schematu.
 3. Normalizacja merchanta i kierunku przepływu.
-4. Przeliczenie na walutę profilu według daty księgowania.
+4. Przeliczenie na PLN według daty księgowania.
 5. Wyliczenie stabilnego `dedup_hash`.
 6. Zapis transakcji i bezpiecznych sugestii.
 
-`amount` przechowuje kwotę oryginalną, a `amount_base` kwotę analityczną w
-walucie profilu. Kurs jest dobierany dla konkretnego dnia; w razie braku
-notowania dostawca może użyć ograniczonego lookbacku. Dla waluty obcej brak
-poprawnego kursu nie jest zastępowany kursem `1`.
+`amount` przechowuje kwotę oryginalną, a `amount_base` kwotę analityczną w PLN.
+Kurs jest dobierany dla konkretnego dnia; w razie braku notowania dostawca może
+użyć ograniczonego lookbacku. Dla waluty obcej brak poprawnego kursu nie jest
+zastępowany kursem `1`: rekord pozostaje widoczny, ale nie trafia do agregacji,
+filtrów kwotowych ani datasetów.
 
-Deduplication chroni przed ponownym importem tej samej operacji, ale nie usuwa
-oryginalnych pól potrzebnych do audytu lub przyszłej zmiany ontologii.
+Deduplication chroni przed ponownym importem tej samej operacji. Jeżeli źródło
+dostarcza godzinę księgowania, jest ona częścią skrótu, dzięki czemu dwie
+identyczne kwotowo operacje z jednego dnia nie są automatycznie scalane.
+Oryginalne pola pozostają dostępne do audytu i eksportu.
 
 ## 4. Model transakcji
 
@@ -237,9 +241,13 @@ Regression oraz kalibrowany LinearSVC. Jego wynik nie uczestniczy w runtime.
 
 ### Forecasting
 
-Miesięczne szeregi wydatków są oceniane metodą walk-forward. Porównywane są
-Naive, rolling mean, SES i ARIMA, a wybór odbywa się po RMSE. Przy krótkiej
-historii wynik ma charakter orientacyjny. Moduł pozostaje provisional.
+Prognoza korzysta wyłącznie z zakończonych miesięcy i wymaga co najmniej 12
+miesięcy historii, 6 miesięcy z wydatkami oraz 6 okien walidacji dopasowanych
+do wybranego horyzontu. Porównywane są Naive, rolling mean, SES, tłumiony trend
+Holta i seasonal-naive. Model z trendem lub
+sezonowością jest wybierany tylko wtedy, gdy poprawia RMSE najlepszego prostego
+baseline'u o co najmniej 5%. W przeciwnym razie aplikacja jawnie prezentuje
+prognozę bazową. Moduł pozostaje provisional.
 
 ### Anomalie
 
@@ -260,8 +268,10 @@ pakiecie evidence do czasu osobnej walidacji.
 
 Asystent najpierw rozpoznaje polską intencję, a następnie wywołuje
 deterministyczne narzędzie dotyczące wydatków, cashflow, merchantów, prognoz,
-anomalii, subskrypcji lub rekomendacji. Ollama może sformułować odpowiedź po
-otrzymaniu wyniku narzędzia.
+anomalii, subskrypcji lub rekomendacji. Dla pytań nierozpoznanych przez reguły
+lokalna Ollama może dobrać jedno z dostępnych narzędzi. Odpowiedź końcowa jest
+zawsze tworzona przez kontrolowany formatter z wyniku narzędzia; LLM nie
+redaguje ani nie przelicza faktów finansowych.
 
 Ollama może działać wyłącznie pod `localhost`, `127.0.0.1`, `::1` albo
 `host.docker.internal`. Fallback kategorii wymaga globalnej flagi oraz
@@ -313,7 +323,8 @@ ale zmiana eksperymentalnej ontologii może wymagać czystego importu.
 - Małe oraz niezbalansowane klasy dają niestabilne metryki.
 - Próg `0.55` wymaga oceny na rzeczywistych OOF; nie jest gwarancją accuracy.
 - Drift merchantów i formatów bankowych może obniżać jakość.
-- Forecasting krótkich historii jest orientacyjny.
+- Forecasting jest blokowany przy zbyt krótkiej historii, a przechodzące
+  prognozy nadal należy traktować jako orientacyjne.
 - Anomalie i subskrypcje wymagają ręcznej oceny.
 - Local LLM zwiększa latency i jego jakość zależy od sprzętu oraz modelu.
 - BasicAuth i pamięciowy rate limit są adekwatne dla jednego hosta, nie dla
