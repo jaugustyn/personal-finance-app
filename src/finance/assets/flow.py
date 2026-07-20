@@ -45,6 +45,7 @@ def sankey(
         .where(
             Transaction.booking_date >= start,
             Transaction.direction == TransactionDirection.DEBIT.value,
+            amount_expr.is_not(None),
         )
         .group_by("cat", "merchant", "title")
     )
@@ -89,6 +90,7 @@ def sankey(
         select(func.coalesce(func.sum(func.abs(amount_expr)), 0)).where(
             Transaction.booking_date >= start,
             Transaction.direction == TransactionDirection.CREDIT.value,
+            amount_expr.is_not(None),
         )
     ).scalar_one()
     income_total = Decimal(income_total or 0)

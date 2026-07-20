@@ -120,6 +120,16 @@ def test_transaction_type_evidence_excludes_automatic_labels() -> None:
     assert prepare_training_frame(silver).empty
 
 
+def test_transaction_type_evidence_excludes_missing_amounts() -> None:
+    frame = _multiclass_df()
+    frame.loc[0, "amount"] = None
+
+    prepared = prepare_training_frame(frame)
+
+    assert len(prepared) == len(frame) - 1
+    assert prepared["abs_amount"].notna().all()
+
+
 def test_evaluate_transaction_type_returns_metrics() -> None:
     report = evaluate(_multiclass_df(), n_splits=2)
 

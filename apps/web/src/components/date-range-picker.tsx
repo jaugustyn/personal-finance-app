@@ -2,7 +2,13 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { CalendarRange, ChevronLeft, ChevronRight, X } from "lucide-react";
+import {
+  CalendarDays,
+  CalendarRange,
+  ChevronLeft,
+  ChevronRight,
+  X,
+} from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -267,6 +273,154 @@ export function DateRangePicker({
           )}
         </div>
 
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+export function DatePicker({
+  value,
+  onChange,
+  ariaLabel,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  ariaLabel: string;
+}) {
+  const { t, locale } = useT();
+  const [open, setOpen] = useState(false);
+  const [calendarMode, setCalendarMode] = useState<CalendarMode>("days");
+  const selectedDate = parseDateValue(value);
+  const [visibleMonth, setVisibleMonth] = useState(() =>
+    startOfMonth(selectedDate ?? new Date()),
+  );
+  const monthDays = useMemo(() => buildMonthDays(visibleMonth), [visibleMonth]);
+
+  const handleOpenChange = (nextOpen: boolean) => {
+    setOpen(nextOpen);
+    if (nextOpen) {
+      setCalendarMode("days");
+      setVisibleMonth(startOfMonth(selectedDate ?? new Date()));
+    }
+  };
+
+  return (
+    <Popover modal open={open} onOpenChange={handleOpenChange}>
+      <PopoverTrigger asChild>
+        <Button
+          type="button"
+          variant="outline"
+          className="relative w-full justify-center bg-transparent px-9 text-[15px] font-normal"
+          aria-label={ariaLabel}
+        >
+          <CalendarDays className="absolute left-3 h-4 w-4 text-muted-foreground" />
+          <span className="truncate">
+            {value ? formatDateValue(value) : ariaLabel}
+          </span>
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-[18rem] p-3">
+        <div className="rounded-md border p-2">
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8"
+              onClick={() =>
+                setVisibleMonth((current) =>
+                  calendarMode === "years"
+                    ? addYears(current, -12)
+                    : calendarMode === "months"
+                      ? addYears(current, -1)
+                      : addMonths(current, -1),
+                )
+              }
+              aria-label={t("transactions.dateRange.previousMonth")}
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <CalendarHeader
+              mode={calendarMode}
+              month={visibleMonth}
+              locale={locale}
+              selectMonthLabel={t("transactions.dateRange.selectMonth")}
+              selectYearLabel={t("transactions.dateRange.selectYear")}
+              onModeChange={setCalendarMode}
+            />
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8"
+              onClick={() =>
+                setVisibleMonth((current) =>
+                  calendarMode === "years"
+                    ? addYears(current, 12)
+                    : calendarMode === "months"
+                      ? addYears(current, 1)
+                      : addMonths(current, 1),
+                )
+              }
+              aria-label={t("transactions.dateRange.nextMonth")}
+            >
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+
+          {calendarMode === "days" ? (
+            <>
+              <div className="grid grid-cols-7 gap-1 text-center text-[11px] font-medium text-muted-foreground">
+                {weekdayLabels(locale).map((day) => (
+                  <div key={day} className="py-1">
+                    {day}
+                  </div>
+                ))}
+              </div>
+              <div className="mt-1 grid grid-cols-7 gap-1">
+                {monthDays.map((day, index) =>
+                  day ? (
+                    <CalendarDay
+                      key={toDateValue(day)}
+                      day={day}
+                      from={selectedDate}
+                      to={null}
+                      onClick={() => {
+                        onChange(toDateValue(day));
+                        setOpen(false);
+                      }}
+                    />
+                  ) : (
+                    <div key={`empty-${index}`} />
+                  ),
+                )}
+              </div>
+            </>
+          ) : null}
+
+          {calendarMode === "months" ? (
+            <MonthGrid
+              month={visibleMonth}
+              locale={locale}
+              onSelect={(month) => {
+                setVisibleMonth(
+                  new Date(visibleMonth.getFullYear(), month, 1),
+                );
+                setCalendarMode("days");
+              }}
+            />
+          ) : null}
+
+          {calendarMode === "years" ? (
+            <YearGrid
+              month={visibleMonth}
+              onSelect={(year) => {
+                setVisibleMonth(new Date(year, visibleMonth.getMonth(), 1));
+                setCalendarMode("months");
+              }}
+            />
+          ) : null}
+        </div>
       </PopoverContent>
     </Popover>
   );

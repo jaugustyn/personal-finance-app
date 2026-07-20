@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Check, ChevronRight, RotateCcw, XCircle } from "lucide-react";
+import { Check, ChevronRight, RotateCcw, X } from "lucide-react";
 
 import type { Subscription } from "@/lib/api";
 import { useT } from "@/lib/i18n";
@@ -32,7 +32,7 @@ export function SubscriptionCard({
   const isHidden = isRejected || subscription.status === "ignored";
   const needsDecision = !isHidden && !subscription.is_confirmed;
   return (
-    <Card>
+    <Card className="transition-colors hover:border-foreground/15">
       <CardContent className="flex h-full flex-col gap-4 p-4">
         <div className="min-w-0 space-y-2">
           <div className="flex items-start justify-between gap-2">
@@ -51,7 +51,7 @@ export function SubscriptionCard({
                 : statusLabels[subscription.status]}
             </Badge>
           </div>
-          <div className="text-2xl font-semibold tabular-nums">
+          <div className="text-xl font-semibold tabular-nums">
             {formatCurrency(
               subscription.estimated_monthly_cost,
               subscription.base_currency,
@@ -62,8 +62,8 @@ export function SubscriptionCard({
           </div>
         </div>
 
-        <div className="mt-auto grid grid-cols-3 gap-2 rounded-md bg-muted/30 p-2 text-xs">
-          <div className="min-w-0">
+        <div className="mt-auto grid grid-cols-3 divide-x border-y py-3 text-xs">
+          <div className="min-w-0 pr-3">
             <div className="truncate text-muted-foreground">
               {t("subscriptions.nextPaymentShort")}
             </div>
@@ -73,7 +73,7 @@ export function SubscriptionCard({
                 : t("common.unknown")}
             </div>
           </div>
-          <div className="min-w-0">
+          <div className="min-w-0 px-3">
             <div className="truncate text-muted-foreground">
               {t("subscriptions.cadence")}
             </div>
@@ -81,7 +81,7 @@ export function SubscriptionCard({
               {cadenceLabels[subscription.cadence] ?? subscription.cadence}
             </div>
           </div>
-          <div className="min-w-0">
+          <div className="min-w-0 pl-3">
             <div className="truncate text-muted-foreground">
               {t("subscriptions.lastPaymentShort")}
             </div>
@@ -106,16 +106,20 @@ export function SubscriptionCard({
               <Button
                 size="sm"
                 variant="outline"
-                className="border-red-500/30 bg-red-500/5 text-red-700 hover:bg-red-500/10 hover:text-red-800 dark:text-red-300 dark:hover:text-red-200"
                 onClick={onReject}
                 disabled={isPending}
               >
-                <XCircle className="mr-2 h-4 w-4" />
-                {t("subscriptions.reject")}
+                <X className="mr-2 h-4 w-4" />
+                {t("subscriptions.notSubscription")}
               </Button>
             </>
           ) : null}
-          <Button size="sm" variant="outline" onClick={onDetails}>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="ml-auto"
+            onClick={onDetails}
+          >
             {t("subscriptions.details")}
             <ChevronRight className="ml-2 h-4 w-4" />
           </Button>

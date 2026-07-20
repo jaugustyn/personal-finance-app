@@ -9,42 +9,11 @@ from apps.api.schemas.profile import (
     PersonalRuleCreate,
     PersonalRuleRow,
     PersonalRuleUpdate,
-    UserProfileRow,
-    UserProfileUpdate,
 )
 from finance.db import get_session
 from finance.profile import service as profile_service
 
 router = APIRouter(prefix="/profile", tags=["profile"])
-
-
-@router.get("", response_model=UserProfileRow)
-def get_profile(session: Session = Depends(get_session)) -> UserProfileRow:
-    profile = profile_service.get_or_create_profile(session)
-    return UserProfileRow.model_validate(profile)
-
-
-@router.patch("", response_model=UserProfileRow)
-def patch_profile(
-    payload: UserProfileUpdate,
-    session: Session = Depends(get_session),
-) -> UserProfileRow:
-    current = profile_service.get_or_create_profile(session)
-    fields = payload.model_fields_set
-    profile = profile_service.update_profile(
-        session,
-        base_currency=payload.base_currency
-        if "base_currency" in fields
-        else current.base_currency,
-        salary_day=payload.salary_day if "salary_day" in fields else current.salary_day,
-        monthly_savings_goal=payload.monthly_savings_goal
-        if "monthly_savings_goal" in fields
-        else current.monthly_savings_goal,
-        category_limits=payload.category_limits
-        if "category_limits" in fields
-        else current.category_limits,
-    )
-    return UserProfileRow.model_validate(profile)
 
 
 @router.get("/rules", response_model=list[PersonalRuleRow])

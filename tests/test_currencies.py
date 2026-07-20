@@ -2,14 +2,19 @@ from datetime import date
 from decimal import Decimal
 
 import pytest
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from finance.currencies import (
+    BASE_CURRENCY,
     MissingFxRate,
     add_manual_rate,
+    amount_base_expr,
+    amount_base_value,
     convert_amount,
     prefetch_nbp_rates,
     recompute_transactions,
+    status,
 )
 from finance.domain.models import Transaction
 
@@ -26,6 +31,119 @@ def test_same_currency_converts_with_rate_one(db_session: Session) -> None:
     assert result.amount_base == Decimal("-12.34")
     assert result.fx_rate == Decimal("1.00000000")
     assert result.fx_rate_source == "same_currency"
+
+
+def test_safe_amount_policy_uses_pln_and_rejects_invalid_foreign_conversion(
+    db_session: Session,
+) -> None:
+    local = Transaction(
+        booking_date=date(2026, 1, 10),
+        amount=Decimal("-12.00"),
+        currency="PLN",
+        direction="debit",
+        merchant="Local",
+        title="",
+        source="unknown",
+        dedup_hash="safe-local",
+        is_transfer=False,
+    )
+    valid_foreign = Transaction(
+        booking_date=date(2026, 1, 10),
+        amount=Decimal("-10.00"),
+        currency="USD",
+        amount_base=Decimal("-40.00"),
+        base_currency=BASE_CURRENCY,
+        fx_rate=Decimal("4.00"),
+        direction="debit",
+        merchant="Foreign valid",
+        title="",
+        source="unknown",
+        dedup_hash="safe-foreign-valid",
+        is_transfer=False,
+    )
+    invalid_foreign = Transaction(
+        booking_date=date(2026, 1, 10),
+        amount=Decimal("-10.00"),
+        currency="USD",
+        amount_base=Decimal("-40.00"),
+        base_currency="EUR",
+        fx_rate=Decimal("4.00"),
+        direction="debit",
+        merchant="Foreign invalid",
+        title="",
+        source="unknown",
+        dedup_hash="safe-foreign-invalid",
+        is_transfer=False,
+    )
+    db_session.add_all([local, valid_foreign, invalid_foreign])
+    db_session.commit()
+
+    assert amount_base_value(local) == Decimal("-12.00")
+    assert amount_base_value(valid_foreign) == Decimal("-40.00")
+    assert amount_base_value(invalid_foreign) is None
+    sql_values = dict(
+        db_session.execute(select(Transaction.id, amount_base_expr())).all()
+    )
+    assert sql_values[local.id] == Decimal("-12.00")
+    assert sql_values[valid_foreign.id] == Decimal("-40.00")
+    assert sql_values[invalid_foreign.id] is None
+
+
+def test_manual_rate_rejects_non_pln_base_and_pln_pair(db_session: Session) -> None:
+    with pytest.raises(ValueError, match="Base currency must be PLN"):
+        add_manual_rate(
+            db_session,
+            currency="USD",
+            base_currency="EUR",
+            rate_date=date(2026, 1, 10),
+            rate=Decimal("1.10"),
+        )
+    with pytest.raises(ValueError, match="not allowed"):
+        add_manual_rate(
+            db_session,
+            currency="PLN",
+            base_currency="PLN",
+            rate_date=date(2026, 1, 10),
+            rate=Decimal("1.00"),
+        )
+
+
+def test_status_reports_stale_base_and_non_positive_rate(db_session: Session) -> None:
+    for index, overrides in enumerate(
+        [
+            {
+                "amount_base": Decimal("-40"),
+                "base_currency": "EUR",
+                "fx_rate": Decimal("4"),
+            },
+            {
+                "amount_base": Decimal("-40"),
+                "base_currency": "PLN",
+                "fx_rate": Decimal("0"),
+            },
+        ]
+    ):
+        db_session.add(
+            Transaction(
+                booking_date=date(2026, 1, 10),
+                amount=Decimal("-10.00"),
+                currency="USD",
+                direction="debit",
+                merchant="Foreign",
+                title="",
+                source="unknown",
+                dedup_hash=f"currency-invalid-status-{index}",
+                is_transfer=False,
+                **overrides,
+            )
+        )
+    db_session.commit()
+
+    result = status(db_session)
+
+    assert result["base_currency"] == "PLN"
+    assert result["missing_rate_count"] == 2
+    assert result["missing_rates"][0]["count"] == 2
 
 
 def test_manual_rate_converts_to_base_currency(db_session: Session) -> None:
@@ -273,6 +391,39 @@ def test_recompute_transactions_updates_base_amounts(db_session: Session) -> Non
     assert tx.amount_base == Decimal("-40.00")
     assert tx.base_currency == "PLN"
     assert tx.fx_rate_source == "manual"
+
+
+def test_recompute_clears_stale_conversion_when_rate_is_missing(
+    db_session: Session,
+) -> None:
+    tx = Transaction(
+        booking_date=date(2026, 1, 10),
+        amount=Decimal("-10.00"),
+        currency="USD",
+        amount_base=Decimal("-99.00"),
+        base_currency="EUR",
+        fx_rate=Decimal("9.90"),
+        fx_rate_date=date(2026, 1, 10),
+        fx_rate_source="manual",
+        direction="debit",
+        merchant="Foreign Shop",
+        title="",
+        source="unknown",
+        dedup_hash="currency-recompute-stale",
+        is_transfer=False,
+    )
+    db_session.add(tx)
+    db_session.commit()
+
+    result = recompute_transactions(db_session, allow_fetch=False)
+    db_session.refresh(tx)
+
+    assert result == {"updated": 0, "missing": 1}
+    assert tx.amount_base is None
+    assert tx.base_currency is None
+    assert tx.fx_rate is None
+    assert tx.fx_rate_date is None
+    assert tx.fx_rate_source is None
 
 
 def test_recompute_fetches_distinct_rates_for_distinct_booking_dates(

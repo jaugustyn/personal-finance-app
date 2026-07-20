@@ -1,8 +1,6 @@
 """Datasets for evidence-only transaction-type classification."""
 from __future__ import annotations
 
-from decimal import Decimal
-
 import pandas as pd
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -65,11 +63,15 @@ def prepare_training_frame(df: pd.DataFrame) -> pd.DataFrame:
     out["text"] = out["text"].where(out["text"].str.len() > 0, "(missing)")
 
     if "abs_amount" in out.columns:
-        out["abs_amount"] = out["abs_amount"].astype(float).abs()
+        amounts = pd.to_numeric(out["abs_amount"], errors="coerce")
     elif "amount" in out.columns:
-        out["abs_amount"] = out["amount"].map(lambda value: float(abs(value or Decimal(0))))
+        amounts = pd.to_numeric(out["amount"], errors="coerce")
     else:
-        out["abs_amount"] = 0.0
+        return out.iloc[0:0].assign(label_source=LABEL_SOURCE)
+    out = out[amounts.notna()].copy()
+    out["abs_amount"] = amounts.loc[out.index].astype(float).abs()
+    if out.empty:
+        return out.assign(label_source=LABEL_SOURCE)
 
     out["direction"] = out.get("direction", "unknown")
     out["direction"] = out["direction"].fillna("unknown").astype(str)
@@ -112,6 +114,7 @@ def load_training_set(session: Session) -> pd.DataFrame:
         )
         .where(Transaction.transaction_type_confirmation_method.in_(TYPE_GOLD_METHODS))
         .where(Transaction.transaction_type_confirmed_at.is_not(None))
+        .where(amount_base_expr().is_not(None))
     ).all()
     df = pd.DataFrame(
         rows,

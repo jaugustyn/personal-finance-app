@@ -2,23 +2,27 @@ export class ApiError extends Error {
   readonly status: number;
   readonly detail: unknown;
   readonly code?: string;
+  readonly retryAfter?: number;
 
   constructor({
     status,
     statusText,
     detail,
     code,
+    retryAfter,
   }: {
     status: number;
     statusText: string;
     detail: unknown;
     code?: string;
+    retryAfter?: number;
   }) {
     super(`API ${status}: ${formatApiDetail(detail) || statusText}`);
     this.name = "ApiError";
     this.status = status;
     this.detail = detail;
     this.code = code;
+    this.retryAfter = retryAfter;
   }
 }
 
@@ -41,7 +45,25 @@ async function apiErrorFromResponse(res: Response): Promise<ApiError> {
     statusText: res.statusText,
     detail,
     code: parsed.code,
+    retryAfter: parseRetryAfter(res.headers.get("retry-after")),
   });
+}
+
+function parseRetryAfter(value: string | null): number | undefined {
+  if (!value) return undefined;
+  const seconds = Number(value);
+  return Number.isFinite(seconds) && seconds > 0 ? seconds : undefined;
+}
+
+function notifyIfLocked(error: ApiError): ApiError {
+  if (
+    error.status === 423 &&
+    error.code === "app_locked" &&
+    typeof window !== "undefined"
+  ) {
+    window.dispatchEvent(new CustomEvent("finance:app-locked"));
+  }
+  return error;
 }
 
 function parseErrorBody(raw: string): {
@@ -92,7 +114,7 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
     },
   });
   if (!res.ok) {
-    throw await apiErrorFromResponse(res);
+    throw notifyIfLocked(await apiErrorFromResponse(res));
   }
   if (res.status === 204) return undefined as T;
   return (await res.json()) as T;
@@ -104,7 +126,7 @@ export async function requestMultipart<T>(
 ): Promise<T> {
   const res = await fetch(`/api/proxy${path}`, { method: "POST", body: formData });
   if (!res.ok) {
-    throw await apiErrorFromResponse(res);
+    throw notifyIfLocked(await apiErrorFromResponse(res));
   }
   return (await res.json()) as T;
 }

@@ -83,6 +83,7 @@ class FilterSummaryResponse(BaseModel):
     total_income: Decimal
     total_expenses: Decimal
     net: Decimal
+    unconverted_count: int
 
 
 class MerchantGroup(BaseModel):

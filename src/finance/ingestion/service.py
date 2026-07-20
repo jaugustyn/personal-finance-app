@@ -6,7 +6,12 @@ from typing import IO
 
 from sqlalchemy.orm import Session
 
-from finance.currencies import convert_amount, prefetch_nbp_rates, resolve_base_currency
+from finance.currencies import (
+    MissingFxRate,
+    convert_amount,
+    prefetch_nbp_rates,
+    resolve_base_currency,
+)
 from finance.domain.dto import ImportSummary, TransactionDTO
 from finance.domain.enums import BankSource
 from finance.ingestion.base import BankParser
@@ -33,6 +38,7 @@ def compute_dedup_hash(dto: TransactionDTO) -> str:
         [
             dto.source.value,
             dto.booking_date.isoformat(),
+            dto.booking_datetime.isoformat() if dto.booking_datetime else "",
             f"{dto.amount:.2f}",
             dto.currency,
             dto.direction.value,
@@ -104,14 +110,19 @@ def ingest_file(
     duplicates = 0
     for dto in dtos:
         h = compute_dedup_hash(dto)
-        converted = convert_amount(
-            session,
-            amount=dto.amount,
-            currency=dto.currency,
-            rate_date=dto.booking_date,
-            base_currency=base_currency,
-            allow_fetch=False,
-        )
+        try:
+            converted = convert_amount(
+                session,
+                amount=dto.amount,
+                currency=dto.currency,
+                rate_date=dto.booking_date,
+                base_currency=base_currency,
+                allow_fetch=False,
+            )
+        except MissingFxRate:
+            if fx_mode == "require_existing":
+                raise
+            converted = None
         personal = effect_for_transaction(session, merchant=dto.merchant, title=dto.title)
         values = policy.build_transaction_values(
             dto,

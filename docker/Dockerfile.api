@@ -17,6 +17,7 @@ COPY pyproject.toml uv.lock README.md LICENSE ./
 COPY src ./src
 COPY apps/__init__.py ./apps/__init__.py
 COPY apps/api ./apps/api
+COPY scripts ./scripts
 COPY alembic ./alembic
 COPY alembic.ini ./alembic.ini
 

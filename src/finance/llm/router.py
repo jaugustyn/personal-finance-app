@@ -46,10 +46,13 @@ FALLBACK_ANSWER = (
 # ---------------------------------------------------------------------------
 
 SYSTEM_PROMPT = (
-    "Jesteś asystentem finansowym. Odpowiadaj wyłącznie po polsku, krótko i konkretnie. "
-    "Gdy pytanie dotyczy danych liczbowych z konta (wydatki, subskrypcje, anomalie, prognozy) "
-    "WYWOŁAJ jedno z dostępnych narzędzi zamiast zgadywać liczby. "
-    "Po otrzymaniu wyniku narzędzia zwróć krótkie podsumowanie w jednym-dwóch zdaniach."
+    "Jesteś routerem lokalnego asystenta finansowego. "
+    "Jeżeli pytanie dotyczy danych dostępnych w aplikacji, wybierz dokładnie jedno "
+    "pasujące narzędzie. Nie odpowiadaj samodzielnie i nie zgaduj liczb."
+)
+
+TOOL_ERROR_ANSWER = (
+    "Nie udało się teraz odczytać wymaganych danych. Spróbuj ponownie za chwilę."
 )
 
 
@@ -82,25 +85,6 @@ def _llm_pick_tool(question: str) -> ToolCall | None:
     if name in TOOLS:
         return ToolCall(name=name, args=dict(raw_args))
     return None
-
-
-def _llm_summarise(question: str, tool: str, result: ToolResult) -> str | None:
-    if not client.is_available():
-        return None
-    try:
-        msg = client.chat(messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": question},
-            {
-                "role": "tool",
-                "content": json.dumps(result, ensure_ascii=False, default=str),
-                "name": tool,
-            },
-        ])
-    except client.OllamaUnavailable:
-        return None
-    content = msg.get("content")
-    return content.strip() if isinstance(content, str) else None
 
 
 def _contextual_route(
@@ -145,7 +129,6 @@ def answer(
     question: str,
     session: Session,
     *,
-    use_llm_summary: bool = False,
     previous_tool: str | None = None,
     previous_tool_args: dict[str, Any] | None = None,
     today: date | None = None,
@@ -157,8 +140,8 @@ def answer(
       2. Else LLM tool-call → run tool, format answer.
       3. Else smalltalk fallback.
 
-    `use_llm_summary` is opt-in: if True, the LLM rephrases the deterministic
-    answer. Off by default to spare CPU.
+    Ollama may select a read-only tool for an unmatched question, but the final
+    answer is always formatted deterministically from the tool result.
     """
     q_norm = " ".join(question.strip().lower().split())
     call = _cached_route(q_norm)
@@ -185,16 +168,17 @@ def answer(
     fn = TOOLS[call.name]
     try:
         data = fn(session, call.args)
-    except Exception as exc:  # noqa: BLE001
+    except Exception:  # noqa: BLE001
         logger.exception("Tool %s failed", call.name)
         return ChatResult(
-            answer=f"Błąd narzędzia {call.name}: {exc}",
+            answer=TOOL_ERROR_ANSWER,
             tool=call.name, tool_args=call.args, data=None, source=source,
         )
 
-    base = format_answer(call.name, data)
-    if use_llm_summary:
-        polished = _llm_summarise(question, call.name, data)
-        if polished:
-            base = polished
-    return ChatResult(answer=base, tool=call.name, tool_args=call.args, data=data, source=source)
+    return ChatResult(
+        answer=format_answer(call.name, data),
+        tool=call.name,
+        tool_args=call.args,
+        data=data,
+        source=source,
+    )

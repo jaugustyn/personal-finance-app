@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 
 from finance.analytics.filters import is_expense_category_candidate
 from finance.config import get_settings
+from finance.currencies import amount_base_value
 from finance.domain.category_mapping import map_source_category
 from finance.domain.enums import (
     CATEGORY_VALUES,
@@ -427,12 +428,19 @@ def reclassify_unlabelled(
             r.category_predicted_source = None
             r.category_predicted_ref = None
             continue
+        base_amount = amount_base_value(r)
+        if base_amount is None:
+            r.category_predicted = None
+            r.category_confidence = None
+            r.category_predicted_source = None
+            r.category_predicted_ref = None
+            continue
         if registered_artifact is None:
             registered_artifact = require_registered_active_artifact(session)
         result = predict_transaction(
             r.merchant,
             r.title,
-            r.amount_base if r.amount_base is not None else r.amount,
+            base_amount,
             r.booking_date,
             use_llm_fallback=False,
             source=str(r.source or "unknown"),

@@ -1,15 +1,13 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
 import { Bot, Loader2, Send, Sparkles, Trash2, User } from "lucide-react";
 import { api, type ChatRequest, type ChatResponse } from "@/lib/api";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
-import { Switch } from "@/components/ui/switch";
-import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { useT } from "@/lib/i18n";
 
@@ -17,7 +15,6 @@ interface ChatMessage {
   id: number;
   role: "user" | "assistant";
   content: string;
-  source?: string;
   tool?: string | null;
   toolArgs?: Record<string, unknown> | null;
   error?: boolean;
@@ -36,18 +33,11 @@ export default function AssistantPage() {
   const { t } = useT();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
-  const [useLlm, setUseLlm] = useState(false);
   const nextId = useRef(1);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  const health = useQuery({
-    queryKey: ["chat-health"],
-    queryFn: api.chatHealth,
-  });
-
   const chat = useMutation({
-    mutationFn: (payload: ChatRequest) =>
-      api.chat({ ...payload, use_llm_summary: useLlm }),
+    mutationFn: (payload: ChatRequest) => api.chat(payload),
     onSuccess: (res: ChatResponse) => {
       setMessages((prev) => [
         ...prev,
@@ -55,7 +45,6 @@ export default function AssistantPage() {
           id: nextId.current++,
           role: "assistant",
           content: res.answer,
-          source: res.source,
           tool: res.tool,
           toolArgs: res.tool_args,
         },
@@ -105,7 +94,6 @@ export default function AssistantPage() {
   }
 
   const isEmpty = messages.length === 0;
-  const ollamaAvailable = health.data?.ollama_available === true;
 
   return (
     <div className="flex h-[calc(100vh-7rem)] flex-col gap-4">
@@ -113,31 +101,16 @@ export default function AssistantPage() {
         title={t("assistant.title")}
         description={t("assistant.subtitle")}
         actions={
-          <div className="flex items-center gap-3">
-            <label className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Switch
-                checked={useLlm}
-                onCheckedChange={setUseLlm}
-                aria-label={t("assistant.useLlm")}
-              />
-              {t("assistant.useLlm")}
-            </label>
-            <Badge variant={ollamaAvailable ? "secondary" : "outline"}>
-              {ollamaAvailable
-                ? t("assistant.ollama.available")
-                : t("assistant.ollama.deterministic")}
-            </Badge>
-            {messages.length > 0 && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setMessages([])}
-              >
-                <Trash2 className="mr-2 h-4 w-4" />
-                {t("assistant.clear")}
-              </Button>
-            )}
-          </div>
+          messages.length > 0 ? (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setMessages([])}
+            >
+              <Trash2 className="mr-2 h-4 w-4" />
+              {t("assistant.clear")}
+            </Button>
+          ) : undefined
         }
       />
 
@@ -228,20 +201,6 @@ function MessageBubble({ message }: { message: ChatMessage }) {
         >
           {message.content}
         </div>
-        {!isUser && (message.tool || message.source) && (
-          <div className="flex flex-wrap gap-1.5">
-            {message.tool && (
-              <Badge variant="secondary" className="text-[10px]">
-                {message.tool}
-              </Badge>
-            )}
-            {message.source && (
-              <Badge variant="outline" className="text-[10px]">
-                {message.source}
-              </Badge>
-            )}
-          </div>
-        )}
       </div>
     </div>
   );

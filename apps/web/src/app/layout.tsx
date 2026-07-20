@@ -11,6 +11,7 @@ import { AppHeader } from "@/components/app-header";
 import { ConfirmProvider } from "@/components/confirm-dialog";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { AppLockProvider } from "@/components/app-lock-provider";
 
 const geist = Geist({ subsets: ["latin"], variable: "--font-geist-sans" });
 
@@ -42,15 +43,17 @@ export default function RootLayout({
               <QueryProvider>
                 <TooltipProvider delayDuration={200}>
                   <ConfirmProvider>
-                    <div className="flex h-screen">
-                      <Sidebar />
-                      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-                        <AppHeader />
-                        <main className="min-w-0 flex-1 overflow-y-auto [scrollbar-gutter:stable] p-4 sm:p-6">
-                          <ErrorBoundary>{children}</ErrorBoundary>
-                        </main>
+                    <AppLockProvider>
+                      <div className="flex h-screen">
+                        <Sidebar />
+                        <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+                          <AppHeader />
+                          <main className="min-w-0 flex-1 overflow-y-auto [scrollbar-gutter:stable] p-4 sm:p-6">
+                            <ErrorBoundary>{children}</ErrorBoundary>
+                          </main>
+                        </div>
                       </div>
-                    </div>
+                    </AppLockProvider>
                     <Toaster />
                   </ConfirmProvider>
                 </TooltipProvider>

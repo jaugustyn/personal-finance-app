@@ -25,7 +25,7 @@ EVENT_ACCEPT_TRANSACTION_TYPE = "accept_transaction_type_suggestion"
 EVENT_AUTO_TRANSACTION_TYPE = "auto_transaction_type"
 EVENT_ANOMALY_RELEVANT = "anomaly_relevant"
 EVENT_ANOMALY_NOT_RELEVANT = "anomaly_not_relevant"
-EVENT_ANOMALY_IGNORE_MERCHANT = "anomaly_ignore_merchant"
+EVENT_ANOMALY_REVIEW_RESTORED = "anomaly_review_restored"
 EVENT_SUBSCRIPTION_CONFIRMED = "subscription_confirmed"
 EVENT_SUBSCRIPTION_REJECTED = "subscription_rejected"
 EVENT_SUBSCRIPTION_RESTORED = "subscription_restored"
@@ -113,9 +113,12 @@ def feedback_quality(
     *,
     since: datetime | None = None,
 ) -> dict[str, Any]:
-    event_counts = select(
-        MlFeedbackEvent.event_type, func.count().label("cnt")
-    ).group_by(MlFeedbackEvent.event_type)
+    event_counts = (
+        select(MlFeedbackEvent.event_type, func.count().label("cnt"))
+        .select_from(MlFeedbackEvent)
+        .join(Transaction, Transaction.id == MlFeedbackEvent.transaction_id)
+        .group_by(MlFeedbackEvent.event_type)
+    )
     if since is not None:
         event_counts = event_counts.where(MlFeedbackEvent.created_at > since)
     rows = session.execute(event_counts).all()
@@ -131,6 +134,8 @@ def feedback_quality(
             MlFeedbackEvent.event_type,
             func.count().label("cnt"),
         )
+        .select_from(MlFeedbackEvent)
+        .join(Transaction, Transaction.id == MlFeedbackEvent.transaction_id)
         .where(MlFeedbackEvent.predicted_category.is_not(None))
         .group_by(MlFeedbackEvent.predicted_category, MlFeedbackEvent.event_type)
     )
@@ -183,7 +188,10 @@ def feedback_report(
     if since_model_filter is not None:
         since_model = int(
             session.execute(
-                select(func.count()).where(since_model_filter)
+                select(func.count())
+                .select_from(MlFeedbackEvent)
+                .join(Transaction, Transaction.id == MlFeedbackEvent.transaction_id)
+                .where(since_model_filter)
             ).scalar_one()
             or 0
         )
@@ -225,6 +233,8 @@ def feedback_report(
             MlFeedbackEvent.event_type,
             func.count().label("cnt"),
         )
+        .select_from(MlFeedbackEvent)
+        .join(Transaction, Transaction.id == MlFeedbackEvent.transaction_id)
         .where(MlFeedbackEvent.predicted_category.is_not(None))
         .where(
             (MlFeedbackEvent.event_type == EVENT_REJECT_SUGGESTION)
@@ -248,6 +258,8 @@ def feedback_report(
             MlFeedbackEvent.event_type,
             func.count().label("cnt"),
         )
+        .select_from(MlFeedbackEvent)
+        .join(Transaction, Transaction.id == MlFeedbackEvent.transaction_id)
         .where(MlFeedbackEvent.predicted_category.is_not(None))
         .where(
             MlFeedbackEvent.event_type.in_(
@@ -331,7 +343,7 @@ def confusion_hotspots(
             Transaction.title,
             func.count().label("cnt"),
         )
-        .outerjoin(Transaction, Transaction.id == MlFeedbackEvent.transaction_id)
+        .join(Transaction, Transaction.id == MlFeedbackEvent.transaction_id)
         .where(MlFeedbackEvent.predicted_category.is_not(None))
         .where(
             (MlFeedbackEvent.event_type == EVENT_REJECT_SUGGESTION)
@@ -378,22 +390,46 @@ def confusion_hotspots(
 
 
 def anomaly_feedback_summary(session: Session) -> dict[str, Any]:
-    relevant = session.execute(
-        select(func.count()).where(
-            MlFeedbackEvent.event_type == EVENT_ANOMALY_RELEVANT
+    rows = session.execute(
+        select(MlFeedbackEvent.transaction_id, MlFeedbackEvent.event_type)
+        .select_from(MlFeedbackEvent)
+        .join(Transaction, Transaction.id == MlFeedbackEvent.transaction_id)
+        .where(
+            MlFeedbackEvent.transaction_id.is_not(None),
+            MlFeedbackEvent.event_type.in_(
+                [
+                    EVENT_ANOMALY_RELEVANT,
+                    EVENT_ANOMALY_NOT_RELEVANT,
+                    EVENT_ANOMALY_REVIEW_RESTORED,
+                ]
+            ),
         )
-    ).scalar_one()
-    not_relevant = session.execute(
-        select(func.count()).where(
-            MlFeedbackEvent.event_type == EVENT_ANOMALY_NOT_RELEVANT
-        )
-    ).scalar_one()
-    reviewed = int(relevant or 0) + int(not_relevant or 0)
+        .order_by(MlFeedbackEvent.created_at.asc(), MlFeedbackEvent.id.asc())
+    ).all()
+    latest_by_transaction = {
+        int(transaction_id): str(event_type)
+        for transaction_id, event_type in rows
+        if transaction_id is not None
+    }
+    active_events = {
+        transaction_id: event_type
+        for transaction_id, event_type in latest_by_transaction.items()
+        if event_type != EVENT_ANOMALY_REVIEW_RESTORED
+    }
+    relevant = sum(
+        event_type == EVENT_ANOMALY_RELEVANT
+        for event_type in active_events.values()
+    )
+    not_relevant = sum(
+        event_type == EVENT_ANOMALY_NOT_RELEVANT
+        for event_type in active_events.values()
+    )
+    reviewed = relevant + not_relevant
     return {
         "reviewed": reviewed,
-        "relevant": int(relevant or 0),
-        "not_relevant": int(not_relevant or 0),
-        "relevant_share": int(relevant or 0) / reviewed if reviewed else None,
+        "relevant": relevant,
+        "not_relevant": not_relevant,
+        "relevant_share": relevant / reviewed if reviewed else None,
         "metric_note": (
             "Overall reviewed share; precision@k is computed only from ordered "
             "private top-k evidence review."

@@ -25,9 +25,10 @@ from sqlalchemy.orm import Session, sessionmaker
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
+from finance.currencies import BASE_CURRENCY, amount_base_expr  # noqa: E402
 from finance.db import SessionLocal  # noqa: E402
 from finance.domain.enums import CATEGORY_CONFIRMATION_METHOD_VALUES, Category  # noqa: E402
-from finance.domain.models import MlModelVersion, Transaction, UserProfile  # noqa: E402
+from finance.domain.models import MlModelVersion, Transaction  # noqa: E402
 from finance.ml.classification.artifacts import runtime_versions  # noqa: E402
 from finance.ml.classification.constants import (  # noqa: E402
     MINIMUM_LABELLED_ROWS,
@@ -76,13 +77,13 @@ def _begin_consistent_snapshot(session: Session) -> None:
 
 
 def _load_all_from_db(session: Session) -> pd.DataFrame:
-    profile = session.get(UserProfile, 1)
-    base_currency = str(profile.base_currency if profile else "PLN").upper()
+    base_currency = BASE_CURRENCY
     rows = session.execute(
         select(
             Transaction.id,
             Transaction.booking_date,
             Transaction.amount,
+            amount_base_expr().label("amount"),
             Transaction.amount_base,
             Transaction.base_currency,
             Transaction.currency,
@@ -110,6 +111,7 @@ def _load_all_from_db(session: Session) -> pd.DataFrame:
             "transaction_id",
             "booking_date",
             "original_amount",
+            "amount",
             "amount_base",
             "base_currency",
             "currency",
@@ -133,13 +135,8 @@ def _load_all_from_db(session: Session) -> pd.DataFrame:
     )
     if df.empty:
         return df
-    same_currency = df["currency"].fillna("").str.upper() == base_currency
-    df["amount"] = df["amount_base"].where(
-        df["amount_base"].notna(),
-        df["original_amount"].where(same_currency),
-    )
     df["amount_resolved"] = df["amount"].notna()
-    df["abs_amount"] = df["amount"].fillna(0).abs().astype(float)
+    df["abs_amount"] = pd.to_numeric(df["amount"], errors="coerce").abs()
     confirmed = (
         df["category_confirmation_method"].isin(CATEGORY_CONFIRMATION_METHOD_VALUES)
         & df["category_confirmed_at"].notna()
@@ -185,10 +182,15 @@ def _registry_classification_report(
 ) -> dict[str, Any]:
     """Build DB evidence from registered candidate metrics without re-evaluation."""
     ontology_labels = sorted(item.value for item in Category)
+    eligible = (
+        df[df["amount_resolved"]].copy()
+        if "amount_resolved" in df.columns
+        else df
+    )
     confirmed = (
-        df[df["category"].isin(ontology_labels)].copy()
-        if "category" in df
-        else df.iloc[0:0]
+        eligible[eligible["category"].isin(ontology_labels)].copy()
+        if "category" in eligible
+        else eligible.iloc[0:0]
     )
     counts = confirmed["category"].astype(str).value_counts().to_dict()
     class_counts = {label: int(counts.get(label, 0)) for label in ontology_labels}

@@ -27,6 +27,7 @@ from apps.api.schemas.transactions import (
     TransactionRow,
     TypeUpdate,
 )
+from finance.currencies import BASE_CURRENCY, amount_base_value
 from finance.db import get_session
 from finance.ml.classification.policy import (
     ClassificationPolicy,
@@ -68,6 +69,13 @@ def _transaction_row(
     label_map: dict[str, str] | None = None,
 ) -> TransactionRow:
     row = TransactionRow.model_validate(tx)
+    safe_amount = amount_base_value(tx)
+    row.amount_base = safe_amount
+    row.base_currency = BASE_CURRENCY if safe_amount is not None else None
+    if safe_amount is None:
+        row.fx_rate = None
+        row.fx_rate_date = None
+        row.fx_rate_source = None
     identity = merchant_identity(
         tx.merchant,
         tx.title,
@@ -163,6 +171,7 @@ def filter_summary(
         total_income=result.total_income,
         total_expenses=result.total_expenses,
         net=result.net,
+        unconverted_count=result.unconverted_count,
     )
 
 

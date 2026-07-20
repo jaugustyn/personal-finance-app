@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from apps.api.dependencies.app_lock import require_app_unlock
 from apps.api.middleware import (
     RateLimitMiddleware,
     RequestLogMiddleware,
@@ -14,6 +15,7 @@ from apps.api.middleware import (
 )
 from apps.api.routers import (
     anomalies,
+    app_lock,
     assets,
     categories,
     chat,
@@ -119,7 +121,9 @@ def health_ready(session: Session = Depends(get_session)):
 
 
 # Protected routers (BasicAuth applied conditionally on each request) ------
-_protected = [Depends(require_auth)]
+_app_lock_access = [Depends(require_auth)]
+_protected = [Depends(require_auth), Depends(require_app_unlock)]
+app.include_router(app_lock.router, dependencies=_app_lock_access)
 app.include_router(imports.router, dependencies=_protected)
 app.include_router(transactions.router, dependencies=_protected)
 app.include_router(merchants.router, dependencies=_protected)

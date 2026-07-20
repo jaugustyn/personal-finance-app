@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 from datetime import datetime
-from decimal import Decimal
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -11,24 +10,6 @@ from finance.domain.enums import Category, TransactionType
 
 RuleTarget = Literal["merchant", "title", "both"]
 RuleMode = Literal["suggest_only", "auto_apply"]
-
-
-class UserProfileRow(BaseModel):
-    id: int
-    base_currency: str
-    salary_day: int | None
-    monthly_savings_goal: Decimal | None
-    category_limits: dict[str, float]
-    created_at: datetime | None = None
-
-    model_config = {"from_attributes": True}
-
-
-class UserProfileUpdate(BaseModel):
-    base_currency: str | None = Field(default=None, min_length=3, max_length=3)
-    salary_day: int | None = Field(default=None, ge=1, le=31)
-    monthly_savings_goal: Decimal | None = Field(default=None, ge=0)
-    category_limits: dict[str, float] | None = None
 
 
 class PersonalRuleRow(BaseModel):

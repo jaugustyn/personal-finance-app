@@ -9,7 +9,11 @@ from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.orm import Session
 
 from finance.analytics.filters import expense_category_candidate_filters
-from finance.currencies import amount_base_expr
+from finance.currencies import (
+    amount_base_expr,
+    amount_base_fields_expr,
+    amount_base_value,
+)
 from finance.domain.enums import (
     TRANSACTION_DIRECTION_VALUES,
     TransactionDirection,
@@ -103,7 +107,7 @@ def _transaction_order_by(
     if sort_by == "amount":
         amount = amount_base_expr()
         return (
-            getattr(amount, direction)(),
+            getattr(amount, direction)().nulls_last(),
             Transaction.booking_date.desc(),
             Transaction.id.desc(),
         )
@@ -260,9 +264,13 @@ def filter_summary(
         )
         income = Decimal(0)
         expenses = Decimal(0)
+        unconverted_count = 0
         for row in rows:
-            amount = row.amount_base if row.amount_base is not None else row.amount
-            value = abs(Decimal(amount or 0))
+            amount = amount_base_value(row)
+            if amount is None:
+                unconverted_count += 1
+                continue
+            value = abs(amount)
             if row.direction == TransactionDirection.CREDIT.value:
                 income += value
             elif row.direction == TransactionDirection.DEBIT.value:
@@ -272,10 +280,17 @@ def filter_summary(
             total_income=income,
             total_expenses=expenses,
             net=income - expenses,
+            unconverted_count=unconverted_count,
         )
 
     base = filtered_transactions_stmt(filters).subquery()
-    base_amount = func.coalesce(base.c.amount_base, base.c.amount)
+    base_amount = amount_base_fields_expr(
+        currency=base.c.currency,
+        amount=base.c.amount,
+        amount_base=base.c.amount_base,
+        base_currency=base.c.base_currency,
+        fx_rate=base.c.fx_rate,
+    )
     income_expr = func.coalesce(
         func.sum(
             case(
@@ -305,6 +320,9 @@ def filter_summary(
             func.count().label("cnt"),
             income_expr.label("inc"),
             expense_expr.label("exp"),
+            func.sum(case((base_amount.is_(None), 1), else_=0)).label(
+                "unconverted"
+            ),
         ).select_from(base)
     ).one()
     income = Decimal(str(aggregate_row.inc or 0))
@@ -314,6 +332,7 @@ def filter_summary(
         total_income=income,
         total_expenses=expenses,
         net=income - expenses,
+        unconverted_count=int(aggregate_row.unconverted or 0),
     )
 
 
@@ -419,8 +438,10 @@ def summary_by_category(
     ).label("total_credit")
     tx_count = func.count().label("tx_count")
 
-    stmt = select(Transaction.category, debit, credit, tx_count).group_by(
-        Transaction.category
+    stmt = (
+        select(Transaction.category, debit, credit, tx_count)
+        .where(amount_base_expr().is_not(None))
+        .group_by(Transaction.category)
     )
     if date_from is not None:
         stmt = stmt.where(Transaction.booking_date >= date_from)
@@ -448,7 +469,10 @@ def merchant_groups(
     sort_by: MerchantGroupSortBy = "count",
     sort_direction: TransactionSortDirection = "desc",
 ) -> list[MerchantGroupSummary]:
-    stmt = select(Transaction).where(Transaction.merchant != "")
+    stmt = select(Transaction).where(
+        Transaction.merchant != "",
+        amount_base_expr().is_not(None),
+    )
     if only_uncategorized:
         stmt = stmt.where(Transaction.category.is_(None))
         stmt = stmt.where(*_category_candidate_conditions())
@@ -481,11 +505,12 @@ def merchant_groups(
             },
         )
         group["count"] += 1
-        amount = tx.amount_base if tx.amount_base is not None else tx.amount
-        if tx.direction == TransactionDirection.DEBIT.value:
-            group["total_debit"] += amount or Decimal(0)
-        elif tx.direction == TransactionDirection.CREDIT.value:
-            group["total_credit"] += amount or Decimal(0)
+        amount = amount_base_value(tx)
+        if amount is not None:
+            if tx.direction == TransactionDirection.DEBIT.value:
+                group["total_debit"] += amount
+            elif tx.direction == TransactionDirection.CREDIT.value:
+                group["total_credit"] += amount
         if tx.merchant:
             group["merchants"].append(tx.merchant)
         if tx.title:

@@ -1,6 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
+import { CircleAlert } from "lucide-react";
 
 import { EmptyState } from "@/components/empty-state";
 import {
@@ -53,6 +54,10 @@ export default function DashboardPage() {
   const overview = useQuery({
     queryKey: ["dashboard", "overview", months, allData, includeTransfers],
     queryFn: () => api.overview(months, allData, includeTransfers),
+  });
+  const currencyStatus = useQuery({
+    queryKey: ["dashboard", "currencyStatus"],
+    queryFn: api.currencyStatus,
   });
   const cashflow = useQuery({
     queryKey: ["dashboard", "cashflow", months, allData, includeTransfers],
@@ -178,7 +183,12 @@ export default function DashboardPage() {
   });
   const anomalies = useQuery({
     queryKey: ["dashboard", "anomalies"],
-    queryFn: () => api.anomalies({ direction: "debit", mode: "review", limit: 5 }),
+    queryFn: () =>
+      api.anomalies({
+        direction: "all",
+        review_state: "pending",
+        limit: 5,
+      }),
   });
   const subscriptionsOverview = useQuery({
     queryKey: ["dashboard", "subscriptionsOverview"],
@@ -191,6 +201,7 @@ export default function DashboardPage() {
   const totalExpenses = overviewData ? Number(overviewData.total_expenses) : 0;
   const netCashflow = overviewData ? Number(overviewData.net_cashflow) : 0;
   const savingsRate = overviewData ? Number(overviewData.savings_rate) : 0;
+  const unconvertedCount = currencyStatus.data?.missing_rate_count ?? 0;
   const cashflowData = normalizeCashflowMonths(cashflow.data ?? [], range, months);
 
   return (
@@ -205,6 +216,17 @@ export default function DashboardPage() {
         onIncludeTransfersChange={setIncludeTransfers}
         onChartLimitChange={setChartLimit}
       />
+
+      {unconvertedCount > 0 && (
+        <div className="mt-4 flex items-center gap-2 rounded-lg border border-amber-300/70 bg-amber-50/60 px-3 py-2 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/25 dark:text-amber-200">
+          <CircleAlert className="h-4 w-4 shrink-0" />
+          <span>
+            {t("dashboard.unconvertedWarning", {
+              count: unconvertedCount,
+            })}
+          </span>
+        </div>
+      )}
 
       <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
         <main className="min-w-0 space-y-7">
@@ -274,7 +296,6 @@ export default function DashboardPage() {
               reviewRows={reviewQueue.data}
               anomalies={anomalies.data}
               subscriptions={subscriptionsOverview.data}
-              baseCurrency={baseCurrency}
               reviewLoading={reviewQueue.isLoading}
               anomaliesLoading={anomalies.isLoading}
               subscriptionsLoading={subscriptionsOverview.isLoading}
@@ -337,7 +358,6 @@ export default function DashboardPage() {
               reviewRows={reviewQueue.data}
               anomalies={anomalies.data}
               subscriptions={subscriptionsOverview.data}
-              baseCurrency={baseCurrency}
               reviewLoading={reviewQueue.isLoading}
               anomaliesLoading={anomalies.isLoading}
               subscriptionsLoading={subscriptionsOverview.isLoading}

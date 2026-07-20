@@ -13,6 +13,7 @@ from apps.api.schemas.currencies import (
     RecomputeResult,
 )
 from finance.currencies import (
+    BASE_CURRENCY,
     add_manual_rate,
     fetch_nbp_rates_for_missing_transactions,
     list_rates,
@@ -33,7 +34,6 @@ def currency_status(session: Session = Depends(get_session)) -> CurrencyStatus:
 def get_rates(
     session: Session = Depends(get_session),
     currency: str | None = Query(default=None, min_length=3, max_length=3),
-    base_currency: str | None = Query(default=None, min_length=3, max_length=3),
     limit: int = Query(default=200, ge=1, le=1000),
 ) -> list[FxRateRow]:
     return [
@@ -41,7 +41,6 @@ def get_rates(
         for row in list_rates(
             session,
             currency=currency,
-            base_currency=base_currency,
             limit=limit,
         )
     ]
@@ -56,7 +55,7 @@ def post_rate(
         row = add_manual_rate(
             session,
             currency=payload.currency,
-            base_currency=payload.base_currency or status(session)["base_currency"],
+            base_currency=BASE_CURRENCY,
             rate_date=payload.rate_date,
             rate=payload.rate,
             source="manual",

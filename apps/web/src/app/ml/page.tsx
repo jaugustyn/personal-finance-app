@@ -153,9 +153,19 @@ export default function MlPage() {
         <ErrorState onRetry={() => query.refetch()} />
       ) : (
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-          <TabsList className="h-auto flex-wrap justify-start">
-            <TabsTrigger value="overview">{t("ml.tab.overview")}</TabsTrigger>
-            <TabsTrigger value="technical">{t("ml.tab.technical")}</TabsTrigger>
+          <TabsList className="h-9 items-stretch justify-start divide-x divide-border/60 overflow-hidden rounded-md border border-input bg-card p-0">
+            <TabsTrigger
+              value="overview"
+              className="h-full rounded-none py-0 focus-visible:z-10 focus-visible:ring-inset data-[state=active]:bg-accent-soft data-[state=active]:text-accent-soft-foreground data-[state=active]:shadow-none"
+            >
+              {t("ml.tab.overview")}
+            </TabsTrigger>
+            <TabsTrigger
+              value="technical"
+              className="h-full rounded-none py-0 focus-visible:z-10 focus-visible:ring-inset data-[state=active]:bg-accent-soft data-[state=active]:text-accent-soft-foreground data-[state=active]:shadow-none"
+            >
+              {t("ml.tab.technical")}
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="overview" className="space-y-3">

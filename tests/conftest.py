@@ -13,6 +13,7 @@ import os
 # Assign explicitly because Docker Compose provides production-like defaults.
 os.environ["RATE_LIMIT_PER_MINUTE"] = "0"
 os.environ["APP_ENV"] = "test"
+os.environ["APP_LOCK_COOKIE_SECURE"] = "false"
 
 from collections.abc import Iterator
 

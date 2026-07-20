@@ -29,6 +29,9 @@ class Settings(BaseSettings):
     auth_username: str = ""
     auth_password: str = ""
 
+    # Optional local privacy lock. Enable Secure cookies behind HTTPS.
+    app_lock_cookie_secure: bool = False
+
     # CORS / rate limiting
     cors_allow_origins: str = "http://localhost:3000"
     rate_limit_per_minute: int = 120

@@ -44,23 +44,23 @@ export const NAV_SECTIONS: NavSection[] = [
       { href: "/categories", labelKey: "nav.categories", icon: Tag },
       { href: "/merchants", labelKey: "nav.merchants", icon: Store },
       { href: "/currencies", labelKey: "nav.currencies", icon: CircleDollarSign },
-      { href: "/ml", labelKey: "nav.ml", icon: BrainCircuit },
     ],
   },
   {
     titleKey: "nav.section.insights",
     items: [
-      { href: "/forecast", labelKey: "nav.forecast", icon: TrendingUp },
       { href: "/recap", labelKey: "nav.recap", icon: CalendarRange },
-      { href: "/anomalies", labelKey: "nav.anomalies", icon: AlertTriangle },
       { href: "/subscriptions", labelKey: "nav.subscriptions", icon: Repeat },
+      { href: "/anomalies", labelKey: "nav.anomalies", icon: AlertTriangle },
       { href: "/assets", labelKey: "nav.assets", icon: PiggyBank },
+      { href: "/forecast", labelKey: "nav.forecast", icon: TrendingUp },
     ],
   },
   {
     titleKey: "nav.section.more",
     items: [
       { href: "/assistant", labelKey: "nav.assistant", icon: Sparkles },
+      { href: "/ml", labelKey: "nav.ml", icon: BrainCircuit },
       { href: "/settings", labelKey: "nav.settings", icon: Settings },
     ],
   },

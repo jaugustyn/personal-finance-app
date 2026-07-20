@@ -21,6 +21,7 @@ class Overview(BaseModel):
     tx_count: int
     base_currency: str
     provisional_transaction_count: int = 0
+    unconverted_count: int = 0
 
 
 class CashflowBucket(BaseModel):

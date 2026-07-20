@@ -28,6 +28,7 @@ export interface OverviewStats {
   tx_count: number;
   base_currency: string;
   provisional_transaction_count: number;
+  unconverted_count: number;
 }
 
 export interface CashflowPoint {
@@ -165,6 +166,7 @@ export interface FilterSummary {
   total_income: number;
   total_expenses: number;
   net: number;
+  unconverted_count: number;
 }
 
 export interface CategoryDef {
@@ -253,16 +255,25 @@ export interface ReviewQueueItem {
 
 export interface Recap {
   period: "week" | "month" | "custom";
+  base_currency: string;
   current_from: string;
   current_to: string;
   previous_from: string;
   previous_to: string;
   cashflow: {
     income: number;
+    gross_expenses: number;
+    refunds: number;
     expenses: number;
+    debt_payments: number;
+    asset_allocations: number;
     net: number;
     income_delta: number;
+    gross_expenses_delta: number;
+    refunds_delta: number;
     expenses_delta: number;
+    debt_payments_delta: number;
+    asset_allocations_delta: number;
     net_delta: number;
   };
   category_changes: {
@@ -270,26 +281,22 @@ export interface Recap {
     current: number;
     previous: number;
     delta: number;
+    current_count: number;
+    previous_count: number;
+    change_percent: number | null;
   }[];
-  top_merchants: {
+  merchant_changes: {
     merchant: string;
     merchant_display?: string | null;
     merchant_canonical_key?: string | null;
-    amount: number;
-    count: number;
+    current: number;
+    previous: number;
+    delta: number;
+    current_count: number;
+    previous_count: number;
+    change_percent: number | null;
   }[];
-  limit_breaches: {
-    category: string;
-    spent: number;
-    limit: number;
-    overshoot: number;
-  }[];
-  savings_progress: {
-    goal: number;
-    net: number;
-    ratio: number;
-    met: boolean;
-  } | null;
+  unconverted_count: number;
 }
 
 export interface ImportHistoryRow {
@@ -309,10 +316,18 @@ export interface ForecastPoint {
 
 export interface ForecastResponse {
   category: string | null;
+  base_currency: string;
   model: string;
   horizon: number;
   mape: number | null;
   rmse: number | null;
+  validation_folds: number;
+  baseline_rmse: number | null;
+  improvement_vs_baseline: number | null;
+  is_baseline: boolean;
+  history_months: number;
+  active_months: number;
+  required_history_months: number;
   history: ForecastPoint[];
   forecast: ForecastPoint[];
 }
@@ -325,17 +340,27 @@ export interface Anomaly {
   merchant_canonical_key: string;
   title: string;
   amount: number;
+  base_currency: string;
   direction: "debit" | "credit";
   category: string | null;
-  severity: number;
-  priority_score: number;
-  anomaly_type: string;
+  severity: number | null;
+  priority_score: number | null;
+  anomaly_type: string | null;
   reasons: string[];
   reason_codes: string[];
   merchant_occurrences: number;
   merchant_median_amount: number;
   is_recurring_merchant: boolean;
-  feedback_status: "relevant" | "not_relevant" | "ignore_merchant" | null;
+  review_status: "relevant" | "not_relevant" | null;
+  reviewed_at: string | null;
+  currently_detected: boolean;
+}
+
+export interface AnomalyListResponse {
+  items: Anomaly[];
+  total: number;
+  pending_total: number;
+  reviewed_total: number;
 }
 
 export interface Subscription {
@@ -530,22 +555,6 @@ export interface ImportSummary {
   inserted: number;
   duplicates: number;
   total_rows: number;
-}
-
-export interface UserProfile {
-  id: number;
-  base_currency: string;
-  salary_day: number | null;
-  monthly_savings_goal: number | string | null;
-  category_limits: Record<string, number>;
-  created_at: string | null;
-}
-
-export interface UserProfileInput {
-  base_currency?: string | null;
-  salary_day?: number | null;
-  monthly_savings_goal?: number | null;
-  category_limits?: Record<string, number>;
 }
 
 export interface PersonalRule {
@@ -881,7 +890,6 @@ export interface MlFeedbackResponse {
 
 export interface ChatRequest {
   question: string;
-  use_llm_summary?: boolean;
   previous_tool?: string | null;
   previous_tool_args?: Record<string, unknown> | null;
 }
@@ -894,9 +902,20 @@ export interface ChatResponse {
   source: string;
 }
 
-export interface ChatHealthResponse {
-  ollama_available: boolean;
-  llm_enabled: boolean;
-  mode: "hybrid" | "deterministic";
-  deterministic_tools: string[];
+export interface AppLockStatus {
+  enabled: boolean;
+  locked: boolean;
+  timeout_minutes: number;
+}
+
+export interface AppLockSetupInput {
+  code: string;
+  timeout_minutes: 5 | 15 | 30 | 60;
+}
+
+export interface AppLockSettingsInput {
+  enabled: boolean;
+  current_code: string;
+  timeout_minutes: 5 | 15 | 30 | 60;
+  new_code?: string | null;
 }

@@ -37,6 +37,7 @@ def test_protected_endpoint_requires_auth_when_enabled():
     # Protected route without credentials -> 401
     r = client.get("/transactions")
     assert r.status_code == 401
+    assert client.get("/app-lock/status").status_code == 401
 
     # Wrong credentials -> 401
     r = client.get("/transactions", auth=("alice", "wrong"))
@@ -46,6 +47,7 @@ def test_protected_endpoint_requires_auth_when_enabled():
     # env, but auth itself passed).
     r = client.get("/transactions", auth=("alice", "secret"))
     assert r.status_code != 401
+    assert client.get("/app-lock/status", auth=("alice", "secret")).status_code != 401
 
 
 @pytest.fixture(autouse=True)

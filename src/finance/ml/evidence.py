@@ -11,7 +11,14 @@ from typing import Any
 import pandas as pd
 
 from finance.ml.anomaly.detector import detect_anomalies
-from finance.ml.forecasting.pipeline import build_monthly_series, evaluate_walk_forward
+from finance.ml.forecasting.pipeline import (
+    MIN_TRAIN_MONTHS,
+    ForecastDataNotReady,
+    build_monthly_series,
+    evaluate_walk_forward,
+    forecast_best,
+    forecast_readiness,
+)
 from finance.ml.subscriptions.detector import detect_subscriptions
 
 EVIDENCE_SCHEMA_VERSION = "3.0"
@@ -140,7 +147,7 @@ def build_forecasting_evidence(
     *,
     categories: list[str | None] | None = None,
     horizon: int = 1,
-    min_train: int = 4,
+    min_train: int = MIN_TRAIN_MONTHS,
 ) -> dict[str, Any]:
     """Evaluate forecasting models per category with walk-forward CV."""
     d = _prepared(df)
@@ -153,15 +160,33 @@ def build_forecasting_evidence(
 
     out = []
     for category in categories:
-        series = build_monthly_series(d, category=category, direction="debit")
+        series = build_monthly_series(
+            d,
+            category=category,
+            direction="debit",
+            exclude_incomplete_month=True,
+        )
         cv = evaluate_walk_forward(series, horizon=horizon, min_train=min_train)
-        best = min(cv.keys(), key=lambda k: cv[k]["rmse"]) if cv else None
+        readiness = forecast_readiness(
+            series,
+            horizon=horizon,
+            min_train=min_train,
+        )
+        try:
+            selected = forecast_best(series, horizon=horizon, min_train=min_train)
+        except ForecastDataNotReady:
+            selected = None
         out.append(
             {
                 "category": category,
                 "n_months": int(len(series)),
+                "active_months": readiness.active_months,
+                "required_months": readiness.required_history_months,
+                "ready": readiness.ready,
                 "total": float(series.sum()),
-                "best_model": best,
+                "best_model": selected.name if selected else None,
+                "validation_folds": selected.validation_folds if selected else 0,
+                "is_baseline": selected.is_baseline if selected else None,
                 "models": cv,
             }
         )

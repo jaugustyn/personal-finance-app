@@ -309,7 +309,9 @@ def alias_suggestions(
         return []
     alias_map, label_map = load_merchant_alias_maps(session)
     rows = session.execute(
-        select(Transaction.merchant, Transaction.title, amount_base_expr())
+        select(Transaction.merchant, Transaction.title, amount_base_expr()).where(
+            amount_base_expr().is_not(None)
+        )
     ).all()
     variants: defaultdict[str, _AliasSuggestionAccumulator] = defaultdict(
         _AliasSuggestionAccumulator
@@ -363,6 +365,7 @@ def alias_candidates(
         select(Transaction.merchant, Transaction.title, amount_base_expr()).where(
             *expense_category_candidate_filters(),
             Transaction.direction == "debit",
+            amount_base_expr().is_not(None),
         )
     ).all()
 

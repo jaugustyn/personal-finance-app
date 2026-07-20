@@ -45,6 +45,7 @@ interface DataTableProps<T> {
   className?: string;
   tableClassName?: string;
   toolbar?: React.ReactNode;
+  toolbarPosition?: "top" | "bottom";
   rowCountLabel?: string;
 }
 
@@ -77,6 +78,7 @@ export function DataTable<T>({
   className,
   tableClassName,
   toolbar,
+  toolbarPosition = "top",
   rowCountLabel,
 }: DataTableProps<T>) {
   const { t } = useT();
@@ -128,7 +130,33 @@ export function DataTable<T>({
     );
   }
 
+  const tableToolbar =
+    toolbar || rowCountLabel ? (
+      <div
+        className={cn(
+          "flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-xs text-muted-foreground",
+          toolbarPosition === "top" ? "border-b" : "border-t",
+        )}
+      >
+        {rowCountLabel ? <div>{rowCountLabel}</div> : null}
+        {toolbar}
+      </div>
+    ) : null;
+
   if (!sorted || sorted.length === 0) {
+    if (tableToolbar) {
+      return (
+        <div className={cn("overflow-hidden rounded-lg border", className)}>
+          {toolbarPosition === "top" ? tableToolbar : null}
+          <EmptyState
+            title={emptyTitle ?? t("common.empty")}
+            description={emptyDescription}
+            className="rounded-none border-0"
+          />
+          {toolbarPosition === "bottom" ? tableToolbar : null}
+        </div>
+      );
+    }
     return (
       <EmptyState
         title={emptyTitle ?? t("common.empty")}
@@ -139,12 +167,7 @@ export function DataTable<T>({
 
   return (
     <div className={cn("overflow-x-auto rounded-lg border", className)}>
-      {(toolbar || rowCountLabel) && (
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b px-3 py-2 text-xs text-muted-foreground">
-          <div>{rowCountLabel}</div>
-          {toolbar}
-        </div>
-      )}
+      {toolbarPosition === "top" ? tableToolbar : null}
       <Table className={tableClassName}>
         <TableHeader
           className={cn(stickyHeader && "sticky top-0 z-10 bg-card")}
@@ -224,6 +247,7 @@ export function DataTable<T>({
           ))}
         </TableBody>
       </Table>
+      {toolbarPosition === "bottom" ? tableToolbar : null}
     </div>
   );
 }

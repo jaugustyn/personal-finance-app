@@ -1,5 +1,5 @@
-"""GET /anomalies — flagged transactions with severity score."""
-from datetime import date
+"""Anomaly review queue and assessment history."""
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Literal
 
@@ -11,9 +11,9 @@ from apps.api.errors import not_found
 from finance.db import get_session
 from finance.ml.anomaly.service import (
     AnomalyDirection,
-    AnomalyMode,
     AnomalyReviewRow,
-    list_anomaly_rows,
+    AnomalyReviewState,
+    get_anomaly_review_result,
 )
 from finance.ml.anomaly.service import (
     record_anomaly_feedback as record_anomaly_feedback_event,
@@ -26,25 +26,35 @@ class AnomalyRow(BaseModel):
     id: int
     booking_date: date
     amount: Decimal
+    base_currency: str
     direction: str
     merchant: str
     merchant_display: str
     merchant_canonical_key: str
     title: str
     category: str | None
-    severity: float
-    priority_score: float
-    anomaly_type: str
+    severity: float | None
+    priority_score: float | None
+    anomaly_type: str | None
     reasons: list[str]
     reason_codes: list[str]
     merchant_occurrences: int
     merchant_median_amount: float
     is_recurring_merchant: bool
-    feedback_status: Literal["relevant", "not_relevant", "ignore_merchant"] | None = None
+    review_status: Literal["relevant", "not_relevant"] | None = None
+    reviewed_at: datetime | None = None
+    currently_detected: bool
+
+
+class AnomalyListResponse(BaseModel):
+    items: list[AnomalyRow]
+    total: int
+    pending_total: int
+    reviewed_total: int
 
 
 class AnomalyFeedbackRequest(BaseModel):
-    action: Literal["relevant", "not_relevant", "ignore_merchant"]
+    action: Literal["relevant", "not_relevant", "restore"]
 
 
 class FeedbackResponse(BaseModel):
@@ -57,6 +67,7 @@ def _to_response(row: AnomalyReviewRow) -> AnomalyRow:
         id=row.id,
         booking_date=row.booking_date,
         amount=row.amount,
+        base_currency=row.base_currency,
         direction=row.direction,
         merchant=row.merchant,
         merchant_display=row.merchant_display,
@@ -71,13 +82,16 @@ def _to_response(row: AnomalyReviewRow) -> AnomalyRow:
         merchant_occurrences=row.merchant_occurrences,
         merchant_median_amount=row.merchant_median_amount,
         is_recurring_merchant=row.is_recurring_merchant,
-        feedback_status=row.feedback_status,
+        review_status=row.review_status,
+        reviewed_at=row.reviewed_at,
+        currently_detected=row.currently_detected,
     )
 
 
-@router.get("", response_model=list[AnomalyRow])
+@router.get("", response_model=AnomalyListResponse)
 def list_anomalies(
     session: Session = Depends(get_session),
+    review_state: AnomalyReviewState = Query(default="pending"),
     date_from: date | None = None,
     date_to: date | None = None,
     contamination: float = Query(default=0.05, ge=0.005, le=0.3),
@@ -85,23 +99,23 @@ def list_anomalies(
         default="debit",
         pattern="^(debit|credit|both)$",
     ),
-    limit: int = Query(default=50, le=500),
-    mode: AnomalyMode = Query(default="review"),
-    include_model_only: bool = Query(default=False),
-) -> list[AnomalyRow]:
-    return [
-        _to_response(row)
-        for row in list_anomaly_rows(
-            session,
-            date_from=date_from,
-            date_to=date_to,
-            contamination=contamination,
-            direction=direction,
-            limit=limit,
-            mode=mode,
-            include_model_only=include_model_only,
-        )
-    ]
+    limit: int | None = Query(default=None, le=500),
+) -> AnomalyListResponse:
+    result = get_anomaly_review_result(
+        session,
+        review_state=review_state,
+        date_from=date_from,
+        date_to=date_to,
+        contamination=contamination,
+        direction=direction,
+        limit=limit,
+    )
+    return AnomalyListResponse(
+        items=[_to_response(row) for row in result.items],
+        total=result.total,
+        pending_total=result.pending_total,
+        reviewed_total=result.reviewed_total,
+    )
 
 
 @router.post("/{transaction_id}/feedback", response_model=FeedbackResponse)

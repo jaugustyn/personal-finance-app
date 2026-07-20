@@ -17,6 +17,8 @@ async function forward(req: NextRequest, path: string[]): Promise<NextResponse> 
   const headers: HeadersInit = {};
   const ct = req.headers.get("content-type");
   if (ct) headers["content-type"] = ct;
+  const cookie = req.headers.get("cookie");
+  if (cookie) headers["cookie"] = cookie;
   const auth = buildAuthHeader();
   if (auth) headers["authorization"] = auth;
 
@@ -38,10 +40,15 @@ async function forward(req: NextRequest, path: string[]): Promise<NextResponse> 
     const upstream = await fetch(target, { ...init, signal: controller.signal });
     const body = await upstream.arrayBuffer();
     const respHeaders = new Headers();
+    respHeaders.set("cache-control", "no-store");
     const upstreamCt = upstream.headers.get("content-type");
     if (upstreamCt) respHeaders.set("content-type", upstreamCt);
     const upstreamCd = upstream.headers.get("content-disposition");
     if (upstreamCd) respHeaders.set("content-disposition", upstreamCd);
+    const retryAfter = upstream.headers.get("retry-after");
+    if (retryAfter) respHeaders.set("retry-after", retryAfter);
+    const setCookie = upstream.headers.get("set-cookie");
+    if (setCookie) respHeaders.set("set-cookie", setCookie);
     if (upstream.status === 204 || upstream.status === 304) {
       return new NextResponse(null, {
         status: upstream.status,
@@ -57,7 +64,7 @@ async function forward(req: NextRequest, path: string[]): Promise<NextResponse> 
           ? "FastAPI upstream timed out"
           : "FastAPI upstream is unavailable",
       },
-      { status: 502 },
+      { status: 502, headers: { "cache-control": "no-store" } },
     );
   } finally {
     clearTimeout(timeout);

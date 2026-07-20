@@ -1,12 +1,11 @@
 """Forecaster registry: small, interchangeable wrappers.
 
-Constraint: dataset is short (≈9 months) → ARIMA/Prophet can be brittle.
-We start with cheap, robust baselines (Naive last-month, monthly mean,
-exponential smoothing). ARIMA wrapper is provided but only kicks in when
-we have ≥12 monthly observations.
+The registry deliberately stays small: robust flat baselines, one damped trend
+model and a seasonal baseline that is enabled only for sufficiently long data.
 """
 from __future__ import annotations
 
+import warnings
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -84,17 +83,21 @@ class SESForecaster:
         if len(y) < 2:
             raise ValueError("SES requires at least 2 points")
         model = SimpleExpSmoothing(y.astype(float), initialization_method="estimated")
-        if self.alpha is not None:
-            self._fitted = model.fit(smoothing_level=self.alpha, optimized=False)
-        else:
-            self._fitted = model.fit(optimized=True)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)
+            if self.alpha is not None:
+                self._fitted = model.fit(smoothing_level=self.alpha, optimized=False)
+            else:
+                self._fitted = model.fit(optimized=True)
         self._last_index = y.index[-1]
         return self
 
     def predict(self, horizon: int) -> pd.Series:
         if self._fitted is None:
             raise RuntimeError("SESForecaster not fitted")
-        fc = self._fitted.forecast(horizon)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)
+            fc = self._fitted.forecast(horizon)
         idx = pd.date_range(
             start=self._last_index + pd.offsets.MonthBegin(1),
             periods=horizon,
@@ -103,39 +106,80 @@ class SESForecaster:
         return pd.Series(np.asarray(fc, dtype=float), index=idx, name=self.name)
 
 
-class ARIMAForecaster:
-    """Tiny ARIMA(p,d,q) wrapper. Only safe with ≥12 observations."""
-    name = "arima"
+class HoltDampedForecaster:
+    """Holt trend with damping to avoid unrealistic long-range growth."""
 
-    def __init__(self, order: tuple[int, int, int] = (1, 1, 1)) -> None:
-        self.order = order
+    name = "holt_damped"
+
+    def __init__(self) -> None:
         self._fitted = None
         self._last_index: pd.Timestamp | None = None
 
-    def fit(self, y: pd.Series) -> ARIMAForecaster:
-        from statsmodels.tsa.arima.model import ARIMA
+    def fit(self, y: pd.Series) -> HoltDampedForecaster:
+        from statsmodels.tsa.holtwinters import Holt
 
-        if len(y) < 8:
-            raise ValueError("ARIMA needs at least 8 observations")
-        self._fitted = ARIMA(y.astype(float), order=self.order).fit()
+        if len(y) < 6:
+            raise ValueError("Holt trend requires at least 6 observations")
+        model = Holt(
+            y.astype(float),
+            damped_trend=True,
+            initialization_method="estimated",
+        )
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)
+            self._fitted = model.fit(optimized=True)
         self._last_index = y.index[-1]
         return self
 
     def predict(self, horizon: int) -> pd.Series:
         if self._fitted is None:
-            raise RuntimeError("ARIMAForecaster not fitted")
-        fc = self._fitted.forecast(steps=horizon)
+            raise RuntimeError("HoltDampedForecaster not fitted")
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)
+            fc = self._fitted.forecast(horizon)
         idx = pd.date_range(
             start=self._last_index + pd.offsets.MonthBegin(1),
             periods=horizon,
             freq="MS",
         )
         return pd.Series(np.asarray(fc, dtype=float), index=idx, name=self.name)
+
+
+@dataclass
+class SeasonalNaiveForecaster:
+    """Repeat the values observed in the same months of the previous year."""
+
+    name: str = "seasonal_naive"
+    season_length: int = 12
+    _season: np.ndarray | None = None
+    _last_index: pd.Timestamp | None = None
+
+    def fit(self, y: pd.Series) -> SeasonalNaiveForecaster:
+        if len(y) < self.season_length * 2:
+            raise ValueError("Seasonal naive requires at least 24 observations")
+        self._season = y.tail(self.season_length).to_numpy(dtype=float)
+        self._last_index = y.index[-1]
+        return self
+
+    def predict(self, horizon: int) -> pd.Series:
+        if self._season is None or self._last_index is None:
+            raise RuntimeError("SeasonalNaiveForecaster not fitted")
+        values = [
+            float(self._season[index % self.season_length])
+            for index in range(horizon)
+        ]
+        idx = pd.date_range(
+            start=self._last_index + pd.offsets.MonthBegin(1),
+            periods=horizon,
+            freq="MS",
+        )
+        return pd.Series(values, index=idx, name=self.name)
 
 
 FORECASTERS: dict[str, type] = {
     "naive": NaiveForecaster,
     "mean3": MeanForecaster,
     "ses": SESForecaster,
-    "arima": ARIMAForecaster,
+    "holt_damped": HoltDampedForecaster,
+    "seasonal_naive": SeasonalNaiveForecaster,
 }

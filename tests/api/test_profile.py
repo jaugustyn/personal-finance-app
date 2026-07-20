@@ -1,38 +1,12 @@
 """Tests for local profile and personal rules API."""
 from __future__ import annotations
 
-from decimal import Decimal
-
 from finance.domain.models import PersonalRule
 
 
-def test_profile_get_creates_singleton(client) -> None:
-    response = client.get("/profile")
-
-    assert response.status_code == 200
-    body = response.json()
-    assert body["id"] == 1
-    assert body["base_currency"] == "PLN"
-    assert body["category_limits"] == {}
-
-
-def test_profile_patch_updates_operational_fields(client) -> None:
-    response = client.patch(
-        "/profile",
-        json={
-            "base_currency": "eur",
-            "salary_day": 10,
-            "monthly_savings_goal": "1200.00",
-            "category_limits": {"food": 900.0, "unknown": 999.0},
-        },
-    )
-
-    assert response.status_code == 200
-    body = response.json()
-    assert body["base_currency"] == "EUR"
-    assert body["salary_day"] == 10
-    assert Decimal(body["monthly_savings_goal"]) == Decimal("1200.00")
-    assert body["category_limits"] == {"food": 900.0}
+def test_profile_settings_endpoints_are_not_exposed(client) -> None:
+    assert client.get("/profile").status_code == 404
+    assert client.patch("/profile", json={"base_currency": "EUR"}).status_code == 404
 
 
 def test_personal_rules_crud(client, db_session) -> None:

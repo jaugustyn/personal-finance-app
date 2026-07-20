@@ -3,7 +3,6 @@ import type { CurrencyStatus, FxRate } from "./types";
 
 export interface FxRateInput {
   currency: string;
-  base_currency?: string;
   rate_date: string;
   rate: number;
 }

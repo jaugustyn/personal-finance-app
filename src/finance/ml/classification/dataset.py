@@ -61,6 +61,7 @@ def load_training_set(session: Session) -> pd.DataFrame:
     stmt = stmt.where(
         Transaction.direction == "debit",
         effective_transaction_type_expr() == "expense",
+        amount_base_expr().is_not(None),
     )
     rows = session.execute(stmt).all()
     data = []
@@ -69,7 +70,7 @@ def load_training_set(session: Session) -> pd.DataFrame:
             {
                 "transaction_id": r.id,
                 "text": f"{r.merchant} {r.title}".strip(),
-                "abs_amount": float(abs(base_amount or Decimal(0))),
+                "abs_amount": float(abs(base_amount)),
                 "day_of_week": r.booking_date.weekday(),
                 "category": r.category,
                 "category_confirmation_method": r.category_confirmation_method,

@@ -1,8 +1,9 @@
 """Deterministic currency conversion for transaction amounts.
 
 Transaction ``amount`` is always the original bank amount. Analytical totals use
-``amount_base`` in the user's base currency. Foreign currencies without a known
-rate raise ``MissingFxRate`` instead of silently falling back to ``1``.
+PLN and accept a foreign ``amount_base`` only with complete conversion metadata.
+Foreign currencies without a known rate raise ``MissingFxRate`` instead of
+silently falling back to ``1``.
 """
 from __future__ import annotations
 
@@ -11,7 +12,7 @@ from datetime import date, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
-from sqlalchemy import case, func, select
+from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.orm import Session
 
 from finance.currencies.providers import (
@@ -20,10 +21,9 @@ from finance.currencies.providers import (
     NbpFxRateProvider,
 )
 from finance.currencies.types import ConversionResult, MissingFxRate
-from finance.domain.models import FxRate, Transaction, UserProfile
+from finance.domain.models import FxRate, Transaction
 
-PROFILE_ID = 1
-DEFAULT_BASE_CURRENCY = "PLN"
+BASE_CURRENCY = "PLN"
 RATE_QUANT = Decimal("0.00000001")
 AMOUNT_QUANT = Decimal("0.01")
 
@@ -35,24 +35,69 @@ def normalize_currency(value: str | None) -> str:
     return code
 
 
-def resolve_base_currency(session: Session) -> str:
-    profile = session.get(UserProfile, PROFILE_ID)
-    if profile is None:
-        return DEFAULT_BASE_CURRENCY
-    try:
-        return normalize_currency(profile.base_currency)
-    except ValueError:
-        return DEFAULT_BASE_CURRENCY
+def resolve_base_currency(session: Session | None = None) -> str:
+    """Return the single analytical currency supported by the application.
+
+    The optional session argument is retained for existing callers, but the
+    runtime no longer reads the value from the user profile.
+    """
+
+    del session
+    return BASE_CURRENCY
 
 
 def amount_base_expr() -> Any:
-    """SQL expression for analytical amount in base currency.
+    """Return a safe SQL amount in PLN, or NULL when conversion is invalid."""
 
-    ``coalesce`` keeps old synthetic tests and manually inserted rows usable,
-    while normal imports always populate ``amount_base``.
-    """
+    return amount_base_fields_expr(
+        currency=Transaction.currency,
+        amount=Transaction.amount,
+        amount_base=Transaction.amount_base,
+        base_currency=Transaction.base_currency,
+        fx_rate=Transaction.fx_rate,
+    )
 
-    return func.coalesce(Transaction.amount_base, Transaction.amount)
+
+def amount_base_fields_expr(
+    *,
+    currency: Any,
+    amount: Any,
+    amount_base: Any,
+    base_currency: Any,
+    fx_rate: Any,
+) -> Any:
+    """Build the safe PLN expression for table aliases and subqueries."""
+
+    return case(
+        (func.upper(currency) == BASE_CURRENCY, amount),
+        (
+            and_(
+                func.upper(base_currency) == BASE_CURRENCY,
+                amount_base.is_not(None),
+                fx_rate.is_not(None),
+                fx_rate > 0,
+            ),
+            amount_base,
+        ),
+        else_=None,
+    )
+
+
+def amount_base_value(transaction: Transaction) -> Decimal | None:
+    """Return a safe in-memory amount in PLN using the SQL policy above."""
+
+    currency = str(transaction.currency or "").strip().upper()
+    if currency == BASE_CURRENCY:
+        return Decimal(transaction.amount)
+    base_currency = str(transaction.base_currency or "").strip().upper()
+    if (
+        base_currency != BASE_CURRENCY
+        or transaction.amount_base is None
+        or transaction.fx_rate is None
+        or Decimal(transaction.fx_rate) <= 0
+    ):
+        return None
+    return Decimal(transaction.amount_base)
 
 
 def _quant_rate(value: Decimal) -> Decimal:
@@ -112,6 +157,10 @@ def add_manual_rate(
 ) -> FxRate:
     currency = normalize_currency(currency)
     base_currency = normalize_currency(base_currency)
+    if base_currency != BASE_CURRENCY:
+        raise ValueError(f"Base currency must be {BASE_CURRENCY}.")
+    if currency == BASE_CURRENCY:
+        raise ValueError(f"A manual rate for {BASE_CURRENCY}/{BASE_CURRENCY} is not allowed.")
     rate = _quant_rate(rate)
     if rate <= 0:
         raise ValueError("FX rate must be positive.")
@@ -142,14 +191,11 @@ def list_rates(
     session: Session,
     *,
     currency: str | None = None,
-    base_currency: str | None = None,
     limit: int = 200,
 ) -> list[FxRate]:
-    filters = []
+    filters = [FxRate.base_currency == BASE_CURRENCY]
     if currency:
         filters.append(FxRate.currency == normalize_currency(currency))
-    if base_currency:
-        filters.append(FxRate.base_currency == normalize_currency(base_currency))
     return list(
         session.execute(
             select(FxRate)
@@ -170,7 +216,7 @@ def ensure_nbp_rate(
 ) -> FxRate | None:
     currency = normalize_currency(currency)
     base_currency = normalize_currency(base_currency)
-    if base_currency != "PLN":
+    if base_currency != BASE_CURRENCY:
         return None
     fetched = (provider or NbpFxRateProvider()).fetch_rate(currency, rate_date)
     if fetched is None:
@@ -194,7 +240,9 @@ def prefetch_nbp_rates(
     provider: FxRateProvider | None = None,
 ) -> dict[str, int]:
     """Fetch missing NBP rates for unique currency/date requests without committing."""
-    base = normalize_currency(base_currency or resolve_base_currency(session))
+    base = normalize_currency(base_currency or BASE_CURRENCY)
+    if base != BASE_CURRENCY:
+        raise ValueError(f"Base currency must be {BASE_CURRENCY}.")
     existing = 0
     fetched = 0
     missing = 0
@@ -242,7 +290,9 @@ def convert_amount(
     provider: FxRateProvider | None = None,
 ) -> ConversionResult:
     currency = normalize_currency(currency)
-    base_currency = normalize_currency(base_currency or resolve_base_currency(session))
+    base_currency = normalize_currency(base_currency or BASE_CURRENCY)
+    if base_currency != BASE_CURRENCY:
+        raise ValueError(f"Base currency must be {BASE_CURRENCY}.")
     if currency == base_currency:
         return ConversionResult(
             amount_base=_quant_amount(amount),
@@ -293,8 +343,16 @@ def _missing_rate_rows(session: Session, base_currency: str) -> list[dict[str, A
             Transaction.booking_date,
             func.count().label("count"),
         )
-        .where(Transaction.currency != base_currency)
-        .where((Transaction.amount_base.is_(None)) | (Transaction.fx_rate.is_(None)))
+        .where(func.upper(Transaction.currency) != base_currency)
+        .where(
+            or_(
+                Transaction.amount_base.is_(None),
+                Transaction.base_currency.is_(None),
+                func.upper(Transaction.base_currency) != base_currency,
+                Transaction.fx_rate.is_(None),
+                Transaction.fx_rate <= 0,
+            )
+        )
         .group_by(Transaction.currency, Transaction.booking_date)
         .order_by(Transaction.booking_date.desc(), Transaction.currency)
     ).mappings().all()
@@ -363,7 +421,9 @@ def recompute_transactions(
     allow_fetch: bool = True,
     provider: FxRateProvider | None = None,
 ) -> dict[str, int]:
-    base = normalize_currency(base_currency or resolve_base_currency(session))
+    base = normalize_currency(base_currency or BASE_CURRENCY)
+    if base != BASE_CURRENCY:
+        raise ValueError(f"Base currency must be {BASE_CURRENCY}.")
     updated = 0
     missing = 0
     rows = list(
@@ -387,6 +447,11 @@ def recompute_transactions(
                 allow_fetch=False,
             )
         except MissingFxRate:
+            tx.amount_base = None
+            tx.base_currency = None
+            tx.fx_rate = None
+            tx.fx_rate_date = None
+            tx.fx_rate_source = None
             missing += 1
             continue
         tx.amount_base = converted.amount_base

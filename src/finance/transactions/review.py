@@ -286,6 +286,8 @@ def review_summary(
                 MlFeedbackEvent.final_transaction_type,
                 func.count(),
             )
+            .select_from(MlFeedbackEvent)
+            .join(Transaction, Transaction.id == MlFeedbackEvent.transaction_id)
             .where(MlFeedbackEvent.entity_type == "transaction_type")
             .where(MlFeedbackEvent.final_transaction_type.is_not(None))
             .where(

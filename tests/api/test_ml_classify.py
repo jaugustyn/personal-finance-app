@@ -652,16 +652,22 @@ def test_dashboard_scopes_technical_report_to_latest_completed_training(
         confidence_policy={"default_threshold": 0.55},
         promotable=True,
     )
+    feedback_tx = _tx(
+        db_session,
+        dedup_hash="latest-training-feedback",
+    )
     db_session.add_all(
         [
             job,
             candidate,
             MlFeedbackEvent(
+                transaction_id=feedback_tx.id,
                 event_type="reject_suggestion",
                 predicted_category="food",
                 created_at=finished_at - timedelta(minutes=5),
             ),
             MlFeedbackEvent(
+                transaction_id=feedback_tx.id,
                 event_type="accept_suggestion",
                 predicted_category="transport",
                 final_category="transport",

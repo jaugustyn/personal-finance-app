@@ -18,9 +18,11 @@ import { tooltipStyle } from "./chart-utils";
 export function ForecastChart({
   history,
   forecast,
+  currency,
 }: {
   history: ForecastPoint[];
   forecast: ForecastPoint[];
+  currency: string;
 }) {
   const data = useMemo(
     () => [
@@ -49,7 +51,9 @@ export function ForecastChart({
         />
         <Tooltip
           contentStyle={tooltipStyle()}
-          formatter={(value) => (value == null ? "-" : formatCurrency(Number(value)))}
+          formatter={(value) =>
+            value == null ? "-" : formatCurrency(Number(value), currency)
+          }
         />
         <Legend wrapperStyle={{ fontSize: 12 }} />
         <Line type="monotone" dataKey="historia" name="Historia" stroke="hsl(var(--chart-2))" strokeWidth={2} connectNulls />

@@ -5,6 +5,7 @@ import pandas as pd
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from finance.currencies import BASE_CURRENCY, amount_base_value
 from finance.domain.models import MlFeedbackEvent, SubscriptionPreference, Transaction
 from finance.ml.feedback import (
     EVENT_SUBSCRIPTION_CONFIRMED,
@@ -25,6 +26,9 @@ def transaction_frame(session: Session) -> pd.DataFrame:
     alias_map, label_map = load_merchant_alias_maps(session)
     items = []
     for row in rows:
+        base_amount = amount_base_value(row)
+        if base_amount is None:
+            continue
         identity = merchant_identity(
             row.merchant,
             row.title,
@@ -44,16 +48,14 @@ def transaction_frame(session: Session) -> pd.DataFrame:
                 "booking_date": row.booking_date,
                 "transaction_id": row.id,
                 "amount": float(row.amount),
-                "amount_base": float(
-                    row.amount_base if row.amount_base is not None else row.amount
-                ),
+                "amount_base": float(base_amount),
                 "direction": row.direction,
                 "merchant": row.merchant or "",
                 "title": row.title or "",
                 "merchant_norm": merchant_norm,
                 "merchant_display": merchant_display,
                 "currency": row.currency or "",
-                "base_currency": row.base_currency or row.currency or "",
+                "base_currency": BASE_CURRENCY,
                 "category": row.category,
                 "category_source": row.category_source,
                 "is_transfer": row.is_transfer,

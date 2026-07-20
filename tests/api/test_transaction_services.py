@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from datetime import date
+import csv
+import io
+from datetime import UTC, date, datetime
 from decimal import Decimal
 
 from sqlalchemy import select
@@ -352,7 +354,22 @@ def test_transaction_filters_max_confidence(db_session) -> None:
 
 
 def test_export_csv_lines_escapes_formula_cells(db_session) -> None:
-    _tx(db_session, merchant="=cmd", title="+1+1", dedup_hash="csv")
+    _tx(
+        db_session,
+        booking_datetime=datetime(2026, 4, 15, 13, 45, tzinfo=UTC),
+        merchant="=cmd",
+        title="+1+1",
+        dedup_hash="csv",
+        notes="private note",
+        tags=["ważne", "2026"],
+        raw_category="bank category",
+        raw_transaction_type="card payment",
+        external_id="bank-123",
+        transaction_type="expense",
+        transaction_type_source="manual",
+        transaction_type_confirmation_method="manual",
+        transaction_type_confirmed_at=datetime(2026, 4, 16, tzinfo=UTC),
+    )
 
     csv_text = "".join(
         service.export_csv_lines(db_session, service.TransactionFilters())
@@ -360,6 +377,15 @@ def test_export_csv_lines_escapes_formula_cells(db_session) -> None:
 
     assert "'=cmd" in csv_text
     assert "'+1+1" in csv_text
+    row = next(csv.DictReader(io.StringIO(csv_text)))
+    assert row["tags"] == '["ważne","2026"]'
+    assert row["notes"] == "private note"
+    assert row["raw_category"] == "bank category"
+    assert row["raw_transaction_type"] == "card payment"
+    assert row["booking_datetime"].startswith("2026-04-15 13:45:00")
+    assert row["external_id"] == "bank-123"
+    assert "amount_base" in row
+    assert row["transaction_type_confirmation_method"] == "manual"
 
 
 def test_bulk_categorize_and_delete(db_session) -> None:

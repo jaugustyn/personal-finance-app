@@ -12,6 +12,7 @@ from finance.llm.tools import (
     cashflow_overview,
     category_review_summary,
     compare_periods,
+    forecast_for,
     get_spending,
     list_anomalies,
     list_subscriptions,
@@ -19,7 +20,6 @@ from finance.llm.tools import (
     top_categories,
     top_merchants,
 )
-from finance.profile.service import update_profile
 
 
 @pytest.fixture()
@@ -33,6 +33,8 @@ def session():
 def _add_tx(s: Session, **kw) -> None:
     defaults = {
         "currency": "PLN",
+        "base_currency": "PLN",
+        "amount_base": kw.get("amount"),
         "direction": "debit",
         "merchant": "Shop",
         "title": "",
@@ -243,7 +245,15 @@ def test_list_subscriptions_picks_whitelisted(session):
     session.commit()
 
     res = list_subscriptions(session, {"min_confidence": 0.5})
+    assert res["base_currency"] == "PLN"
     assert any(s["merchant"].lower() == "spotify" for s in res["subscriptions"])
+
+
+def test_forecast_without_history_returns_structured_diagnostic(session):
+    res = forecast_for(session, {"horizon": 3})
+
+    assert res["error"] == "no_data"
+    assert res["base_currency"] == "PLN"
 
 
 def test_list_subscriptions_confirm_feedback_keeps_subscription_visible(session):
@@ -287,6 +297,7 @@ def test_list_anomalies_returns_reason_list(session, monkeypatch):
                     "id": 1,
                     "booking_date": date(2026, 4, 10),
                     "amount": -500.0,
+                    "base_currency": "PLN",
                     "direction": "debit",
                     "merchant": "Odd merchant",
                     "title": "",
@@ -313,7 +324,7 @@ def test_list_anomalies_returns_reason_list(session, monkeypatch):
     ]
 
 
-def test_list_anomalies_honors_ignore_feedback(session, monkeypatch):
+def test_list_anomalies_hides_reviewed_feedback(session, monkeypatch):
     from finance.llm import insight_tools
     from finance.ml.anomaly.service import record_anomaly_feedback
 
@@ -334,6 +345,7 @@ def test_list_anomalies_honors_ignore_feedback(session, monkeypatch):
                     "id": 1,
                     "booking_date": date(2026, 4, 10),
                     "amount": -500.0,
+                    "base_currency": "PLN",
                     "direction": "debit",
                     "merchant": "Odd merchant",
                     "title": "",
@@ -351,7 +363,7 @@ def test_list_anomalies_honors_ignore_feedback(session, monkeypatch):
         lambda *_args, **_kwargs: _Result(),
     )
 
-    record_anomaly_feedback(session, transaction_id=1, action="ignore_merchant")
+    record_anomaly_feedback(session, transaction_id=1, action="not_relevant")
 
     res = list_anomalies(session, {"period": "2026-04"})
     assert res["anomalies"] == []
@@ -397,12 +409,7 @@ def test_recommend_savings_uses_deterministic_facts(session, monkeypatch):
     assert res["category_opportunities"][0]["delta"] == pytest.approx(80.0)
 
 
-def test_recommend_savings_uses_profile_goals_and_limits(session, monkeypatch):
-    update_profile(
-        session,
-        monthly_savings_goal=Decimal("500.00"),
-        category_limits={"food": 150.0},
-    )
+def test_recommend_savings_reports_income_and_actual_difference(session, monkeypatch):
     _add_tx(
         session,
         booking_date=date(2026, 4, 1),
@@ -429,11 +436,9 @@ def test_recommend_savings_uses_profile_goals_and_limits(session, monkeypatch):
 
     res = recommend_savings(session, {"period": "2026-04", "limit": 3})
 
-    assert res["savings_goal"]["target"] == pytest.approx(500.0)
-    assert res["savings_goal"]["actual_savings"] == pytest.approx(820.0)
-    assert res["savings_goal"]["met"] is True
-    assert res["category_limit_alerts"][0]["category"] == "food"
-    assert res["category_limit_alerts"][0]["over_by"] == pytest.approx(30.0)
+    assert res["base_currency"] == "PLN"
+    assert res["income"] == pytest.approx(1000.0)
+    assert res["actual_savings"] == pytest.approx(820.0)
 
 
 def test_category_review_summary_counts_uncertain_suggestions(session):

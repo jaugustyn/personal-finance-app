@@ -25,11 +25,13 @@ def test_format_answer_get_spending_is_deterministic() -> None:
             "period": {"start": "2026-04-01", "end": "2026-04-30"},
             "category": "food",
             "total": 123.45,
+            "currency": "EUR",
             "transactions": 3,
         },
     )
-    assert "food" in answer
-    assert "123,45 zł" in answer
+    assert "Jedzenie" in answer
+    assert "123,45 EUR" in answer
+    assert "01.04.2026–30.04.2026" in answer
 
 
 def test_format_answer_top_categories_is_deterministic() -> None:
@@ -68,7 +70,7 @@ def test_format_answer_cashflow_overview_is_deterministic() -> None:
             "transactions": 2,
         },
     )
-    assert "przychody" in answer
+    assert "wpływy" in answer
     assert "700,00 zł" in answer
 
 
@@ -93,7 +95,7 @@ def test_format_answer_recommend_savings_is_deterministic() -> None:
         },
     )
     assert "230,00 zł" in answer
-    assert "food" in answer
+    assert "Jedzenie" in answer
 
 
 def test_format_answer_forecast_ignores_empty_error_field() -> None:
@@ -101,6 +103,7 @@ def test_format_answer_forecast_ignores_empty_error_field() -> None:
         "forecast_for",
         {
             "category": "food",
+            "base_currency": "USD",
             "error": None,
             "model": "naive",
             "mape": None,
@@ -108,8 +111,76 @@ def test_format_answer_forecast_ignores_empty_error_field() -> None:
             "forecast": [{"month": "2026-08-01", "amount": 123.0}],
         },
     )
-    assert "Prognoza dla food" in answer
-    assert "123,00 zł" in answer
+    assert "Orientacyjna prognoza" in answer
+    assert "Jedzenie" in answer
+    assert "sierpień 2026" in answer
+    assert "123,00 USD" in answer
+
+
+def test_format_forecast_explains_missing_history() -> None:
+    answer = format_answer(
+        "forecast_for",
+        {
+            "category": None,
+            "base_currency": "PLN",
+            "error": "insufficient_data",
+            "history_months": 8,
+            "active_months": 5,
+            "required_history_months": 14,
+            "required_active_months": 6,
+            "forecast": [],
+        },
+    )
+
+    assert "8 z 14" in answer
+    assert "5 z 6" in answer
+
+
+def test_format_subscriptions_hides_technical_confidence() -> None:
+    answer = format_answer(
+        "list_subscriptions",
+        {
+            "base_currency": "EUR",
+            "estimated_monthly_cost": 12.5,
+            "subscriptions": [
+                {
+                    "merchant": "Example",
+                    "cadence": "monthly",
+                    "estimated_monthly_cost": 12.5,
+                    "confidence": 0.91,
+                }
+            ],
+        },
+    )
+
+    assert "12,50 EUR" in answer
+    assert "co miesiąc" in answer
+    assert "confidence" not in answer
+    assert "zaufanie" not in answer
+
+
+def test_format_anomalies_uses_priority_instead_of_severity() -> None:
+    answer = format_answer(
+        "list_anomalies",
+        {
+            "anomalies": [
+                {
+                    "booking_date": "2026-04-10",
+                    "merchant": "Sklep",
+                    "amount": -500.0,
+                    "base_currency": "EUR",
+                    "priority_score": 0.8,
+                    "severity": 0.95,
+                    "reasons": ["nietypowa kwota"],
+                }
+            ]
+        },
+    )
+
+    assert "10.04.2026" in answer
+    assert "500,00 EUR" in answer
+    assert "priorytet wysoki" in answer
+    assert "severity" not in answer
 
 
 def test_format_answer_unknown_falls_back_to_json() -> None:

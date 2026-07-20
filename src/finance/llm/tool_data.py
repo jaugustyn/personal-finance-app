@@ -25,7 +25,7 @@ def load_transactions_df(session: Session) -> pd.DataFrame:
             Transaction.category_predicted,
             Transaction.is_transfer,
             Transaction.transaction_type,
-        )
+        ).where(amount_base_expr().is_not(None))
     ).all()
     df = pd.DataFrame(
         rows,

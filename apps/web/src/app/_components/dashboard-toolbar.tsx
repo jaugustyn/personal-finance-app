@@ -90,7 +90,7 @@ export function ToolbarGroup({
       <div className="mb-1 flex h-4 items-center px-0.5 text-xs font-medium text-muted-foreground">
         {label}
       </div>
-      <div className="inline-flex min-h-9 max-w-full flex-wrap items-center gap-0.5 rounded-md bg-muted/55 p-0.5">
+      <div className="inline-flex h-9 max-w-full items-stretch divide-x divide-border/60 overflow-hidden rounded-md border border-input bg-card">
         {children}
       </div>
     </div>
@@ -111,10 +111,10 @@ export function ToolbarButton({
       type="button"
       onClick={onClick}
       className={cn(
-        "flex h-8 items-center whitespace-nowrap rounded-[calc(var(--radius)-0.25rem)] px-3 text-xs font-medium leading-none transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background",
+        "relative flex h-full items-center whitespace-nowrap px-3 text-xs font-medium leading-none transition-colors focus-visible:z-10 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
         active
-          ? "bg-background text-foreground shadow-sm"
-          : "text-muted-foreground hover:bg-background/60 hover:text-foreground",
+          ? "bg-accent-soft text-accent-soft-foreground"
+          : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
       )}
     >
       {children}

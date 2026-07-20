@@ -55,6 +55,9 @@ def test_delete_transaction_detaches_ml_feedback(client, db_session) -> None:
     stored_event = db_session.get(MlFeedbackEvent, event_id)
     assert stored_event is not None
     assert stored_event.transaction_id is None
+    assert client.get("/transactions/review-summary").json()["anomaly_feedback"][
+        "reviewed"
+    ] == 0
 
 
 def test_bulk_delete(client, db_session) -> None:

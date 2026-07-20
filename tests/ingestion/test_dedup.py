@@ -1,5 +1,5 @@
 """Tests for the dedup hash used by the ingestion service."""
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 
 from finance.domain.dto import TransactionDTO
@@ -37,3 +37,18 @@ def test_dedup_hash_normalizes_merchant_case() -> None:
     a = compute_dedup_hash(_dto(merchant="Lidl"))
     b = compute_dedup_hash(_dto(merchant="LIDL"))
     assert a == b
+
+
+def test_dedup_hash_distinguishes_revolut_transactions_by_time() -> None:
+    first = compute_dedup_hash(
+        _dto(booking_datetime=datetime(2026, 1, 1, 10, 15))
+    )
+    second = compute_dedup_hash(
+        _dto(booking_datetime=datetime(2026, 1, 1, 18, 45))
+    )
+    repeated = compute_dedup_hash(
+        _dto(booking_datetime=datetime(2026, 1, 1, 10, 15))
+    )
+
+    assert first != second
+    assert repeated == first

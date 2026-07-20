@@ -139,6 +139,8 @@ def test_list_amount_sort_is_global_and_uses_base_currency(client, db_session) -
         amount=Decimal("-100"),
         amount_base=Decimal("-400"),
         currency="USD",
+        base_currency="PLN",
+        fx_rate=Decimal("4"),
         dedup_hash="h-amount-sort-foreign",
     )
     local_expense = _seed(
@@ -146,6 +148,14 @@ def test_list_amount_sort_is_global_and_uses_base_currency(client, db_session) -
         amount=Decimal("-200"),
         amount_base=Decimal("-200"),
         dedup_hash="h-amount-sort-local",
+    )
+    invalid_foreign = _seed(
+        db_session,
+        amount=Decimal("999"),
+        amount_base=None,
+        currency="EUR",
+        merchant="Unconverted",
+        dedup_hash="h-amount-sort-unconverted",
     )
 
     first_page = client.get(
@@ -156,7 +166,37 @@ def test_list_amount_sort_is_global_and_uses_base_currency(client, db_session) -
     ).json()
 
     assert [row["id"] for row in first_page] == [income.id, local_expense.id]
-    assert [row["id"] for row in second_page] == [foreign_expense.id]
+    assert [row["id"] for row in second_page] == [
+        foreign_expense.id,
+        invalid_foreign.id,
+    ]
+    assert Decimal(str(second_page[1]["amount"])) == Decimal("999.00")
+    assert second_page[1]["currency"] == "EUR"
+    assert second_page[1]["amount_base"] is None
+
+
+def test_filter_summary_reports_and_excludes_unconverted_amount(
+    client, db_session
+) -> None:
+    _seed(
+        db_session,
+        amount=Decimal("-10"),
+        currency="PLN",
+        dedup_hash="h-summary-local",
+    )
+    _seed(
+        db_session,
+        amount=Decimal("-500"),
+        amount_base=None,
+        currency="USD",
+        dedup_hash="h-summary-unconverted",
+    )
+
+    summary = client.get("/transactions/filter-summary").json()
+
+    assert summary["count"] == 2
+    assert Decimal(summary["total_expenses"]) == Decimal("10")
+    assert summary["unconverted_count"] == 1
 
 
 def test_list_merchant_sort_is_global(client, db_session) -> None:
@@ -237,6 +277,8 @@ def test_amount_range_uses_absolute_amount_in_base_currency(
         amount=Decimal("-40"),
         amount_base=Decimal("-160"),
         currency="USD",
+        base_currency="PLN",
+        fx_rate=Decimal("4"),
         merchant="Foreign payment",
         dedup_hash="h-amount-range-match",
     )
@@ -528,7 +570,9 @@ def test_export_csv_streams_attachment(client, db_session) -> None:
     assert "attachment" in r.headers["content-disposition"]
     text = r.text
     lines = text.strip().splitlines()
-    assert lines[0].startswith("id,booking_date,amount,currency,direction,")
+    assert lines[0].startswith(
+        "id,booking_date,booking_datetime,amount,currency,amount_base,"
+    )
     assert len(lines) == 2
     assert "Carrefour" in lines[1]
 

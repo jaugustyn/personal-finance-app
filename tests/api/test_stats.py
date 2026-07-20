@@ -497,10 +497,10 @@ def test_recap_shape() -> None:
     body = r.json()
     for key in (
         "period",
+        "base_currency",
         "cashflow",
         "category_changes",
-        "top_merchants",
-        "limit_breaches",
-        "savings_progress",
+        "merchant_changes",
+        "unconverted_count",
     ):
         assert key in body

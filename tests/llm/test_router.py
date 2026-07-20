@@ -1,6 +1,7 @@
 """Tests for heuristic Polish router (no LLM, no DB)."""
 import pytest
 
+from finance.llm import router as llm_router
 from finance.llm.router import heuristic_route
 
 
@@ -143,6 +144,57 @@ def test_routes_compare():
 def test_unknown_returns_none():
     call = heuristic_route("Cześć, jak się masz?")
     assert call is None
+
+
+def test_tool_failure_returns_controlled_message(monkeypatch):
+    def _fail(_session, _args):
+        raise RuntimeError("private database detail")
+
+    monkeypatch.setitem(llm_router.TOOLS, "get_spending", _fail)
+
+    result = llm_router.answer("Ile wydałem?", object())  # type: ignore[arg-type]
+
+    assert result.answer == llm_router.TOOL_ERROR_ANSWER
+    assert "private database detail" not in result.answer
+
+
+def test_llm_selects_tool_but_does_not_author_answer(monkeypatch):
+    monkeypatch.setattr(llm_router.client, "is_available", lambda: True)
+    monkeypatch.setattr(
+        llm_router.client,
+        "chat",
+        lambda **_kwargs: {
+            "content": "Zmyślona odpowiedź z inną kwotą: 999 EUR",
+            "tool_calls": [
+                {
+                    "function": {
+                        "name": "get_spending",
+                        "arguments": {"period": "2026-04"},
+                    }
+                }
+            ],
+        },
+    )
+    monkeypatch.setitem(
+        llm_router.TOOLS,
+        "get_spending",
+        lambda _session, _args: {
+            "period": {"start": "2026-04-01", "end": "2026-04-30"},
+            "category": None,
+            "total": 123.0,
+            "currency": "EUR",
+            "transactions": 2,
+        },
+    )
+
+    result = llm_router.answer(
+        "Przygotuj finansowe zestawienie alfa",
+        object(),  # type: ignore[arg-type]
+    )
+
+    assert result.source == "llm"
+    assert "123,00 EUR" in result.answer
+    assert "999 EUR" not in result.answer
 
 
 def test_year_month_extracted():

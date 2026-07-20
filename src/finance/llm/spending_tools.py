@@ -53,7 +53,10 @@ def get_spending(session: Session, args: dict[str, Any]) -> ToolResult:
     amount = amount_base_expr()
     stmt = (
         select(func.sum(func.abs(amount)), func.count())
-        .where(*debit_spending_filters(start, end, category=parsed.category))
+        .where(
+            *debit_spending_filters(start, end, category=parsed.category),
+            amount.is_not(None),
+        )
     )
     total, n = session.execute(stmt).one()
     return tool_result(
@@ -73,7 +76,8 @@ def top_merchants(session: Session, args: dict[str, Any]) -> ToolResult:
     amount_expr = amount_base_expr()
     rows = session.execute(
         select(Transaction.merchant, Transaction.title, func.abs(amount_expr)).where(
-            *debit_spending_filters(start, end, category=parsed.category)
+            *debit_spending_filters(start, end, category=parsed.category),
+            amount_expr.is_not(None),
         )
     ).all()
     alias_map, label_map = load_merchant_alias_maps(session)
@@ -129,11 +133,12 @@ def top_merchants(session: Session, args: dict[str, Any]) -> ToolResult:
 def top_categories(session: Session, args: dict[str, Any]) -> ToolResult:
     parsed = TopCategoriesArgs(**args)
     start, end = parse_period(parsed.period)
+    amount_expr = amount_base_expr()
     base_filters = [
         *debit_spending_filters(start, end),
         _category_candidate_type_filter(),
+        amount_expr.is_not(None),
     ]
-    amount_expr = amount_base_expr()
     total_stmt = select(
         func.sum(func.abs(amount_expr)),
         func.count(),
@@ -213,6 +218,7 @@ def cashflow_overview(session: Session, args: dict[str, Any]) -> ToolResult:
         ).where(
             *period_filters(start, end),
             *non_transfer_filters(),
+            amount_expr.is_not(None),
         )
     ).one()
     income = float(row.income or 0.0)
@@ -240,7 +246,10 @@ def compare_periods(session: Session, args: dict[str, Any]) -> ToolResult:
         amount_expr = amount_base_expr()
         stmt = (
             select(func.sum(func.abs(amount_expr)))
-            .where(*debit_spending_filters(start, end, category=parsed.category))
+            .where(
+                *debit_spending_filters(start, end, category=parsed.category),
+                amount_expr.is_not(None),
+            )
         )
         return float(session.execute(stmt).scalar() or 0.0)
 

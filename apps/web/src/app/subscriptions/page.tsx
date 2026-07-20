@@ -1,28 +1,26 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Construction, Repeat } from "lucide-react";
+import { ReceiptText, Repeat } from "lucide-react";
 import {
   api,
   type Subscription,
+  type SubscriptionOverview,
   type SubscriptionPreferenceInput,
 } from "@/lib/api";
 import { PageHeader } from "@/components/page-header";
 import { EmptyState } from "@/components/empty-state";
+import { ErrorState } from "@/components/error-state";
 import { cn, formatCurrency } from "@/lib/utils";
 import { showErrorToast } from "@/lib/toasts";
 import { CardGridSkeleton } from "@/components/ui/skeleton";
 import { useT, type TranslationKey } from "@/lib/i18n";
-import { useLocalStorageState } from "@/hooks/use-local-storage-state";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { MetricCard } from "./_components/metric-card";
 import { SubscriptionCard } from "./_components/subscription-card";
 import { SubscriptionDetailsSheet } from "./_components/subscription-details-sheet";
-import { UpcomingPaymentsCard } from "./_components/upcoming-payments-card";
 import { SUBSCRIPTION_QUERY_KEYS } from "./_lib/query-keys";
 import type { SubscriptionScope } from "./_lib/subscription-format";
 
@@ -47,10 +45,6 @@ function isHiddenSubscription(row: Subscription) {
 
 function requiresSubscriptionDecision(row: Subscription) {
   return !row.is_confirmed && !isHiddenSubscription(row);
-}
-
-function isRecurringPaymentsTab(value: string): value is RecurringPaymentsTab {
-  return value === "subscriptions" || value === "fixed";
 }
 
 function applyPreferenceToSubscription(
@@ -106,22 +100,11 @@ function optimisticSubscriptionList(
 export default function SubscriptionsPage() {
   const { t } = useT();
   const queryClient = useQueryClient();
-  const [activeTab, setActiveTab] = useLocalStorageState<RecurringPaymentsTab>(
-    "finance.recurringPayments.tab",
-    "subscriptions",
-  );
   const [scope, setScope] = useState<SubscriptionScope>("all");
-  const recurringTab = isRecurringPaymentsTab(activeTab)
-    ? activeTab
-    : "subscriptions";
+  const [activeTab, setActiveTab] =
+    useState<RecurringPaymentsTab>("subscriptions");
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
-  const includeRejected = scope === "hidden" || scope === "all";
-
-  useEffect(() => {
-    if (!isRecurringPaymentsTab(activeTab)) {
-      setActiveTab("subscriptions");
-    }
-  }, [activeTab, setActiveTab]);
+  const includeRejected = true;
 
   const query = useQuery({
     queryKey: SUBSCRIPTION_QUERY_KEYS.list(includeRejected),
@@ -192,6 +175,18 @@ export default function SubscriptionsPage() {
     [query.data],
   );
 
+  const scopeCounts = useMemo(() => {
+    const rows = query.data ?? [];
+    return {
+      all: rows.length,
+      attention: rows.filter(requiresSubscriptionDecision).length,
+      active: rows.filter(
+        (row) => !isHiddenSubscription(row) && !requiresSubscriptionDecision(row),
+      ).length,
+      hidden: rows.filter(isHiddenSubscription).length,
+    } satisfies Record<SubscriptionScope, number>;
+  }, [query.data]);
+
   const visibleSubscriptions = useMemo(() => {
     const rows = [...(query.data ?? [])].filter((row) => {
       if (scope === "all") return true;
@@ -232,122 +227,102 @@ export default function SubscriptionsPage() {
   const overview = overviewQuery.data;
 
   return (
-    <div className="space-y-6">
-      <PageHeader
-        title={t("subscriptions.title")}
-        description={t("subscriptions.subtitle")}
-      />
-
-      <div className="grid gap-3 md:grid-cols-4">
-        <MetricCard
-          label={t("subscriptions.monthlyTotal")}
-          value={formatCurrency(
-            overview?.monthly_total ?? 0,
-            overview?.base_currency ?? "PLN",
-          )}
-        />
-        <MetricCard
-          label={t("subscriptions.yearlyTotal")}
-          value={formatCurrency(
-            overview?.yearly_total ?? 0,
-            overview?.base_currency ?? "PLN",
-          )}
-        />
-        <MetricCard
-          label={t("subscriptions.next30Total")}
-          value={formatCurrency(
-            overview?.next_30_days_total ?? 0,
-            overview?.base_currency ?? "PLN",
-          )}
-        />
-        <MetricCard
-          label={t("subscriptions.needsAttention")}
-          value={String(attentionCount)}
-        />
-      </div>
+    <div className="space-y-5">
+      <PageHeader title={t("subscriptions.title")} />
 
       <Tabs
-        value={recurringTab}
+        value={activeTab}
         onValueChange={(value) => {
-          if (isRecurringPaymentsTab(value)) setActiveTab(value);
+          if (value === "subscriptions" || value === "fixed") {
+            setActiveTab(value);
+            setSelectedKey(null);
+          }
         }}
-        className="space-y-4"
+        className="space-y-5"
       >
-        <TabsList className="h-auto flex-wrap justify-start">
-          <TabsTrigger value="subscriptions">
+        <TabsList className="h-9 items-stretch justify-start divide-x divide-border/60 overflow-hidden rounded-md border border-input bg-card p-0">
+          <TabsTrigger
+            value="subscriptions"
+            className="h-full rounded-none py-0 focus-visible:z-10 focus-visible:ring-inset data-[state=active]:bg-accent-soft data-[state=active]:text-accent-soft-foreground data-[state=active]:shadow-none"
+          >
             {t("subscriptions.tab.subscriptions")}
           </TabsTrigger>
-          <TabsTrigger value="fixed">
+          <TabsTrigger
+            value="fixed"
+            className="h-full rounded-none py-0 focus-visible:z-10 focus-visible:ring-inset data-[state=active]:bg-accent-soft data-[state=active]:text-accent-soft-foreground data-[state=active]:shadow-none"
+          >
             {t("subscriptions.tab.fixed")}
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="subscriptions" className="space-y-4">
-          <UpcomingPaymentsCard overview={overview} />
+        <TabsContent value="subscriptions" className="space-y-5">
+          <SubscriptionSummary
+            overview={overview}
+            attentionCount={attentionCount}
+            isLoading={overviewQuery.isLoading || query.isLoading}
+          />
 
-          <section className="space-y-3">
-            <div className="flex flex-wrap items-end justify-between gap-3">
-              <div>
-                <h2 className="text-sm font-semibold">
-                  {t("subscriptions.listTitle")}
-                </h2>
-                <p className="text-xs text-muted-foreground">
-                  {t("subscriptions.listHint")}
-                </p>
-              </div>
-              <div className="text-xs text-muted-foreground">
-                {t("subscriptions.visibleCount", {
-                  count: visibleSubscriptions.length,
-                })}
-              </div>
-            </div>
+          <SubscriptionScopeFilter
+            value={scope}
+            counts={scopeCounts}
+            onChange={setScope}
+            labelFor={(item) => t(SUBSCRIPTION_SCOPE_LABELS[item])}
+          />
 
-            <SubscriptionScopeFilter
-              value={scope}
-              onChange={setScope}
-              labelFor={(item) => t(SUBSCRIPTION_SCOPE_LABELS[item])}
+          {query.isError ? (
+            <ErrorState
+              title={t("subscriptions.error")}
+              onRetry={() => {
+                void query.refetch();
+                void overviewQuery.refetch();
+              }}
             />
-
-            {query.isLoading ? (
-              <CardGridSkeleton />
-            ) : !query.data || visibleSubscriptions.length === 0 ? (
-              <EmptyState title={t("subscriptions.empty")} icon={Repeat} />
-            ) : (
-              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                {visibleSubscriptions.map((subscription) => (
-                  <SubscriptionCard
-                    key={subscription.merchant_key}
-                    subscription={subscription}
-                    isPending={preference.isPending}
-                    onConfirm={() =>
-                      preference.mutate({
-                        subscription_key: subscription.merchant_key,
-                        action: "confirm",
-                        display_name: subscription.display_name,
-                      })
-                    }
-                    onReject={() =>
-                      preference.mutate({
-                        subscription_key: subscription.merchant_key,
-                        action: "reject",
-                      })
-                    }
-                    onRestore={() =>
-                      preference.mutate({
-                        subscription_key: subscription.merchant_key,
-                        action: "restore",
-                      })
-                    }
-                    onDetails={() => setSelectedKey(subscription.merchant_key)}
-                  />
-                ))}
-              </div>
-            )}
-          </section>
+          ) : query.isLoading ? (
+            <CardGridSkeleton />
+          ) : !query.data || visibleSubscriptions.length === 0 ? (
+            <EmptyState title={t("subscriptions.empty")} icon={Repeat} />
+          ) : (
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              {visibleSubscriptions.map((subscription) => (
+                <SubscriptionCard
+                  key={subscription.merchant_key}
+                  subscription={subscription}
+                  isPending={preference.isPending}
+                  onConfirm={() =>
+                    preference.mutate({
+                      subscription_key: subscription.merchant_key,
+                      action: "confirm",
+                      display_name: subscription.display_name,
+                    })
+                  }
+                  onReject={() =>
+                    preference.mutate({
+                      subscription_key: subscription.merchant_key,
+                      action: "reject",
+                    })
+                  }
+                  onRestore={() =>
+                    preference.mutate({
+                      subscription_key: subscription.merchant_key,
+                      action: "restore",
+                    })
+                  }
+                  onDetails={() =>
+                    setSelectedKey(subscription.merchant_key)
+                  }
+                />
+              ))}
+            </div>
+          )}
         </TabsContent>
 
         <TabsContent value="fixed">
-          <FixedPaymentsPlaceholder />
+          <EmptyState
+            title={t("subscriptions.fixed.empty")}
+            description={t("subscriptions.fixed.description")}
+            icon={ReceiptText}
+            className="min-h-64"
+          />
         </TabsContent>
       </Tabs>
 
@@ -364,39 +339,82 @@ export default function SubscriptionsPage() {
   );
 }
 
-function FixedPaymentsPlaceholder() {
+function SubscriptionSummary({
+  overview,
+  attentionCount,
+  isLoading,
+}: {
+  overview: SubscriptionOverview | undefined;
+  attentionCount: number;
+  isLoading: boolean;
+}) {
   const { t } = useT();
+  const currency = overview?.base_currency ?? "PLN";
+  const items = [
+    {
+      label: t("subscriptions.monthlyTotal"),
+      value: overview
+        ? formatCurrency(overview.monthly_total, currency)
+        : "—",
+    },
+    {
+      label: t("subscriptions.yearlyTotal"),
+      value: overview
+        ? formatCurrency(overview.yearly_total, currency)
+        : "—",
+    },
+    {
+      label: t("subscriptions.next30Total"),
+      value: overview
+        ? formatCurrency(overview.next_30_days_total, currency)
+        : "—",
+    },
+    {
+      label: t("subscriptions.needsAttention"),
+      value: isLoading ? "—" : String(attentionCount),
+    },
+  ];
+
   return (
-    <Card>
-      <CardContent className="flex min-h-64 flex-col items-center justify-center gap-3 p-8 text-center">
-        <div className="rounded-full bg-muted p-3 text-muted-foreground">
-          <Construction className="h-6 w-6" />
-        </div>
-        <Badge variant="secondary">{t("subscriptions.fixed.badge")}</Badge>
-        <div className="space-y-1">
-          <div className="text-base font-medium">
-            {t("subscriptions.fixed.title")}
+    <section className="grid overflow-hidden rounded-lg border bg-card sm:grid-cols-2 xl:grid-cols-4">
+      {items.map((item, index) => (
+        <div
+          key={item.label}
+          className={cn(
+            "px-4 py-3.5",
+            index > 0 && "border-t sm:border-t-0",
+            index % 2 === 1 && "sm:border-l",
+            index >= 2 && "sm:border-t xl:border-t-0",
+            index > 0 && "xl:border-l",
+          )}
+        >
+          <div className="text-xs text-muted-foreground">{item.label}</div>
+          <div className="mt-1 text-lg font-semibold tabular-nums">
+            {item.value}
           </div>
-          <p className="max-w-xl text-sm text-muted-foreground">
-            {t("subscriptions.fixed.description")}
-          </p>
         </div>
-      </CardContent>
-    </Card>
+      ))}
+    </section>
   );
 }
 
 function SubscriptionScopeFilter({
   value,
+  counts,
   onChange,
   labelFor,
 }: {
   value: SubscriptionScope;
+  counts: Record<SubscriptionScope, number>;
   onChange: (value: SubscriptionScope) => void;
   labelFor: (value: SubscriptionScope) => string;
 }) {
+  const { t } = useT();
   return (
-    <div className="inline-flex h-auto flex-wrap items-center justify-start rounded-lg bg-muted p-1 text-muted-foreground">
+    <nav
+      className="flex max-w-full overflow-x-auto border-b"
+      aria-label={t("subscriptions.scopeLabel")}
+    >
       {SUBSCRIPTION_SCOPES.map((item) => {
         const active = item === value;
         return (
@@ -406,16 +424,25 @@ function SubscriptionScopeFilter({
             aria-pressed={active}
             onClick={() => onChange(item)}
             className={cn(
-              "inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-md px-3 py-1 text-sm font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+              "inline-flex h-11 shrink-0 items-center justify-center gap-2 whitespace-nowrap border-b-2 px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
               active
-                ? "bg-card text-foreground shadow-sm"
-                : "hover:bg-background/60 hover:text-foreground",
+                ? "border-primary text-foreground"
+                : "border-transparent text-muted-foreground hover:text-foreground",
             )}
           >
             {labelFor(item)}
+            <Badge
+              variant="secondary"
+              className={cn(
+                "h-5 min-w-5 justify-center px-1.5 text-[11px] tabular-nums",
+                active && "bg-primary/10 text-primary",
+              )}
+            >
+              {counts[item]}
+            </Badge>
           </button>
         );
       })}
-    </div>
+    </nav>
   );
 }

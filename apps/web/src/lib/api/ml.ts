@@ -1,7 +1,7 @@
 import { request } from "./client";
 import { withQuery } from "./query";
 import type {
-  Anomaly,
+  AnomalyListResponse,
   Direction,
   ForecastResponse,
   MlComparison,
@@ -71,22 +71,20 @@ export const mlApi = {
       direction?: Direction;
       contamination?: number;
       limit?: number;
-      mode?: "review" | "suspicious" | "all";
-      include_model_only?: boolean;
+      review_state?: "pending" | "reviewed";
     } = {},
   ) =>
-    request<Anomaly[]>(
+    request<AnomalyListResponse>(
       withQuery("/anomalies", {
         direction: params.direction === "all" ? "both" : params.direction,
         contamination: params.contamination,
         limit: params.limit,
-        mode: params.mode,
-        include_model_only: params.include_model_only ? true : undefined,
+        review_state: params.review_state,
       }),
     ),
   recordAnomalyFeedback: (
     transactionId: number,
-    action: "relevant" | "not_relevant" | "ignore_merchant",
+    action: "relevant" | "not_relevant" | "restore",
   ) =>
     request<{ id: number | null; status: string }>(
       `/anomalies/${transactionId}/feedback`,

@@ -10,6 +10,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from finance.analytics.filters import expense_category_candidate_filters
+from finance.currencies import amount_base_value
 from finance.domain.category_mapping import map_source_category
 from finance.domain.models import MlFeedbackEvent, Transaction
 from finance.ml.classification.policy import (
@@ -157,7 +158,7 @@ def review_queue(
     max_amount_log = (
         max(
             math.log1p(
-                abs(float((row.amount_base if row.amount_base is not None else row.amount) or 0))
+                abs(float(amount_base_value(row) or 0))
             )
             for row in rows
         )
@@ -178,7 +179,7 @@ def review_queue(
             decision.action,
             tx.category_confidence,
         )
-        base_amount = tx.amount_base if tx.amount_base is not None else tx.amount
+        base_amount = amount_base_value(tx)
         amount_score = round(
             (math.log1p(abs(float(base_amount or 0))) / max_amount_log) * 20.0,
             2,
@@ -231,8 +232,8 @@ def review_queue(
                 merchant_display=merchant_identity_.display_label,
                 merchant_canonical_key=merchant_key,
                 title=str(tx.title or ""),
-                amount=base_amount,
-                currency=str(tx.base_currency or tx.currency),
+                amount=base_amount if base_amount is not None else Decimal(tx.amount),
+                currency=("PLN" if base_amount is not None else str(tx.currency)),
                 direction=str(tx.direction),
                 predicted_category=tx.category_predicted,
                 confidence=tx.category_confidence,

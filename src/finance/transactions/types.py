@@ -79,6 +79,7 @@ class FilterSummaryResult:
     total_income: Decimal
     total_expenses: Decimal
     net: Decimal
+    unconverted_count: int
 
 
 @dataclass(frozen=True)

@@ -122,3 +122,19 @@ def test_policy_preserves_fx_values_from_conversion_input() -> None:
     assert values["fx_rate_source"] == "manual"
     assert values["import_id"] == 7
     assert values["dedup_hash"] == "hash-7"
+
+
+def test_policy_preserves_unconverted_foreign_transaction_without_fake_pln() -> None:
+    values = build_transaction_values(
+        _dto(currency="USD", amount=Decimal("-10.00")),
+        converted=None,
+        personal=None,
+        import_id=8,
+        dedup_hash="hash-unconverted",
+    )
+
+    assert values["amount"] == Decimal("-10.00")
+    assert values["currency"] == "USD"
+    assert values["amount_base"] is None
+    assert values["base_currency"] is None
+    assert values["fx_rate"] is None

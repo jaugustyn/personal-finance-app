@@ -16,7 +16,6 @@ router = APIRouter(prefix="/chat", tags=["chat"])
 
 class ChatRequest(BaseModel):
     question: str = Field(min_length=1, max_length=500)
-    use_llm_summary: bool = False
     previous_tool: str | None = None
     previous_tool_args: dict[str, Any] | None = None
 
@@ -34,7 +33,6 @@ def chat(req: ChatRequest, session: Session = Depends(get_session)) -> ChatRespo
     res = answer(
         req.question,
         session,
-        use_llm_summary=req.use_llm_summary,
         previous_tool=req.previous_tool,
         previous_tool_args=req.previous_tool_args,
     )

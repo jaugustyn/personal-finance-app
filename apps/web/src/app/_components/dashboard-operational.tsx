@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 
 import type {
-  Anomaly,
+  AnomalyListResponse,
   ReviewQueueItem,
   SubscriptionOverview,
   SubscriptionUpcomingPayment,
@@ -30,16 +30,14 @@ export function AttentionPanel({
   reviewRows,
   anomalies,
   subscriptions,
-  baseCurrency,
   reviewLoading,
   anomaliesLoading,
   subscriptionsLoading,
   layout = "grid",
 }: {
   reviewRows: ReviewQueueItem[] | undefined;
-  anomalies: Anomaly[] | undefined;
+  anomalies: AnomalyListResponse | undefined;
   subscriptions: SubscriptionOverview | undefined;
-  baseCurrency: string;
   reviewLoading: boolean;
   anomaliesLoading: boolean;
   subscriptionsLoading: boolean;
@@ -105,17 +103,19 @@ export function AttentionPanel({
           icon={AlertTriangle}
           tone="negative"
           title={t("dashboard.operational.alerts")}
-          count={anomalies?.length ?? 0}
+          count={anomalies?.pending_total ?? 0}
           href="/anomalies"
           footer={t("dashboard.operational.openAnomalies")}
           loading={anomaliesLoading}
         >
-          {anomalies?.slice(0, 2).map((row) => (
+          {anomalies?.items.slice(0, 2).map((row) => (
             <AttentionItem
               key={row.id}
               tone="negative"
               href={transactionsHref({
                 search: row.merchant || row.title,
+                date_from: row.booking_date,
+                date_to: row.booking_date,
               })}
             >
               <div className="flex items-center justify-between gap-3">
@@ -128,7 +128,7 @@ export function AttentionPanel({
                   </div>
                 </div>
                 <div className="shrink-0 text-xs font-semibold tabular-nums text-negative">
-                  {formatCurrency(Number(row.amount), baseCurrency)}
+                  {formatCurrency(Number(row.amount), row.base_currency)}
                 </div>
               </div>
             </AttentionItem>

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { Check, RotateCcw, XCircle } from "lucide-react";
+import { Check, ChevronDown, RotateCcw, X } from "lucide-react";
 
 import type { Subscription, SubscriptionPreferenceInput } from "@/lib/api";
 import { useT } from "@/lib/i18n";
@@ -64,9 +64,6 @@ export function SubscriptionDetailsSheet({
                 {subscription.is_confirmed ? (
                   <Badge variant="outline">{t("subscriptions.confirmed")}</Badge>
                 ) : null}
-                <Badge variant="outline">
-                  {(subscription.confidence * 100).toFixed(0)}%
-                </Badge>
               </div>
             </SheetHeader>
 
@@ -165,7 +162,6 @@ export function SubscriptionDetailsSheet({
                       <Button
                         size="sm"
                         variant="outline"
-                        className="border-red-500/30 bg-red-500/5 text-red-700 hover:bg-red-500/10 hover:text-red-800 dark:text-red-300 dark:hover:text-red-200"
                         onClick={() =>
                           onPreference({
                             subscription_key: subscription.merchant_key,
@@ -174,40 +170,11 @@ export function SubscriptionDetailsSheet({
                         }
                         disabled={isPending}
                       >
-                        <XCircle className="mr-2 h-4 w-4" />
-                        {t("subscriptions.reject")}
+                        <X className="mr-2 h-4 w-4" />
+                        {t("subscriptions.notSubscription")}
                       </Button>
                     ) : null}
                   </div>
-                </div>
-              </DetailsSection>
-
-              <DetailsSection title={t("subscriptions.evidence")}>
-                <div className="grid gap-2 text-sm text-muted-foreground">
-                  <EvidenceRow
-                    label={t("subscriptions.evidenceSource")}
-                    value={sourceLabel(subscription.source, t)}
-                  />
-                  <EvidenceRow
-                    label={t("subscriptions.evidenceOccurrences")}
-                    value={String(subscription.evidence.occurrences ?? subscription.occurrences)}
-                  />
-                  <EvidenceRow
-                    label={t("subscriptions.evidenceCadence")}
-                    value={cadenceLabels[subscription.cadence] ?? subscription.cadence}
-                  />
-                  <EvidenceRow
-                    label={t("subscriptions.evidenceStability")}
-                    value={
-                      subscription.evidence.amount_stability == null
-                        ? t("common.unknown")
-                        : `${(subscription.evidence.amount_stability * 100).toFixed(0)}%`
-                    }
-                  />
-                  <EvidenceRow
-                    label={t("subscriptions.evidenceManual")}
-                    value={String(subscription.evidence.manual_category_count ?? 0)}
-                  />
                 </div>
               </DetailsSection>
 
@@ -235,6 +202,8 @@ export function SubscriptionDetailsSheet({
                         key={transaction.id}
                         href={transactionsHref({
                           search: transaction.merchant || transaction.title,
+                          date_from: transaction.booking_date,
+                          date_to: transaction.booking_date,
                         })}
                         className="grid gap-1 border-b p-3 text-sm last:border-b-0 hover:bg-muted/50 sm:grid-cols-[6.5rem_minmax(0,1fr)_auto]"
                       >
@@ -262,6 +231,49 @@ export function SubscriptionDetailsSheet({
                   </div>
                 )}
               </DetailsSection>
+
+              <details className="group border-b pb-5">
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-3 py-1 text-sm font-semibold [&::-webkit-details-marker]:hidden">
+                  {t("subscriptions.evidence")}
+                  <ChevronDown className="h-4 w-4 text-muted-foreground transition-transform group-open:rotate-180" />
+                </summary>
+                <div className="mt-3 grid gap-2 text-sm text-muted-foreground">
+                  <EvidenceRow
+                    label={t("subscriptions.evidenceSource")}
+                    value={sourceLabel(subscription.source, t)}
+                  />
+                  <EvidenceRow
+                    label={t("subscriptions.evidenceOccurrences")}
+                    value={String(
+                      subscription.evidence.occurrences ??
+                        subscription.occurrences,
+                    )}
+                  />
+                  <EvidenceRow
+                    label={t("subscriptions.evidenceCadence")}
+                    value={
+                      cadenceLabels[subscription.cadence] ??
+                      subscription.cadence
+                    }
+                  />
+                  <EvidenceRow
+                    label={t("subscriptions.evidenceStability")}
+                    value={
+                      subscription.evidence.amount_stability == null
+                        ? t("common.unknown")
+                        : `${(
+                            subscription.evidence.amount_stability * 100
+                          ).toFixed(0)}%`
+                    }
+                  />
+                  <EvidenceRow
+                    label={t("subscriptions.evidenceManual")}
+                    value={String(
+                      subscription.evidence.manual_category_count ?? 0,
+                    )}
+                  />
+                </div>
+              </details>
             </div>
           </>
         ) : null}
@@ -280,7 +292,7 @@ function DetailsSection({
   children: ReactNode;
 }) {
   return (
-    <section className="space-y-3 rounded-md border bg-muted/10 p-4">
+    <section className="space-y-3 border-b pb-5">
       <div className="flex items-center justify-between gap-3">
         <h3 className="text-sm font-semibold">{title}</h3>
         {action}
@@ -292,7 +304,7 @@ function DetailsSection({
 
 function DetailMetric({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-md border bg-muted/20 p-3">
+    <div>
       <div className="text-xs text-muted-foreground">{label}</div>
       <div className="mt-1 font-semibold tabular-nums">{value}</div>
     </div>

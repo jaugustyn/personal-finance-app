@@ -16,8 +16,8 @@ from apps.api.schemas.merchants import (
     MerchantCandidateRow,
     MerchantCandidateVariantRow,
 )
+from finance.currencies import BASE_CURRENCY
 from finance.db import get_session
-from finance.profile import service as profile_service
 from finance.transactions import merchants as merchant_service
 
 router = APIRouter(prefix="/merchants", tags=["merchants"])
@@ -97,7 +97,7 @@ def alias_suggestions(
     limit: int = Query(default=10, ge=1, le=30),
     session: Session = Depends(get_session),
 ) -> list[MerchantAliasSuggestionRow]:
-    base_currency = profile_service.get_or_create_profile(session).base_currency
+    base_currency = BASE_CURRENCY
     return [
         MerchantAliasSuggestionRow(
             alias_key=row.alias_key,
@@ -126,7 +126,7 @@ def alias_candidates(
     ] = "count",
     sort_dir: Literal["asc", "desc"] = "desc",
 ) -> list[MerchantCandidateRow]:
-    base_currency = profile_service.get_or_create_profile(session).base_currency
+    base_currency = BASE_CURRENCY
     return [
         MerchantCandidateRow(
             canonical_key=row.canonical_key,

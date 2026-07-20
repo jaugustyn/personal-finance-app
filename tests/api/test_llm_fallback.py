@@ -138,16 +138,3 @@ def test_unmatched_question_returns_smalltalk(client) -> None:
     assert body["source"] == "smalltalk"
     assert body["tool"] is None
     assert "Nie wiem" in body["answer"] or "Spróbuj" in body["answer"]
-
-
-def test_use_llm_summary_falls_back_to_deterministic(client, db_session) -> None:
-    _seed(db_session)
-    r = client.post(
-        "/chat",
-        json={"question": "Ile wydałem w tym miesiącu?", "use_llm_summary": True},
-    )
-    assert r.status_code == 200
-    # Even though use_llm_summary=True, Ollama is down → deterministic answer used.
-    body = r.json()
-    assert body["source"] == "heuristic"
-    assert isinstance(body["answer"], str) and len(body["answer"]) > 0

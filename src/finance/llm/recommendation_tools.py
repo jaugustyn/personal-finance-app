@@ -9,18 +9,15 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from finance.analytics.filters import debit_spending_filters, non_transfer_filters
-from finance.currencies import amount_base_expr
+from finance.currencies import BASE_CURRENCY, amount_base_expr
 from finance.domain.models import Transaction
 from finance.llm.periods import parse_period
 from finance.llm.tool_schemas import SavingsRecommendationsArgs
 from finance.llm.types import (
     AnomalySummary,
-    CategoryLimitAlert,
     CategoryOpportunity,
     MerchantSpend,
     PeriodRange,
-    ProfileSummary,
-    SavingsGoalSummary,
     SavingsRecommendationResult,
     SubscriptionSummary,
     ToolResult,
@@ -28,7 +25,6 @@ from finance.llm.types import (
 )
 from finance.ml.anomaly.service import list_anomaly_rows
 from finance.ml.subscriptions.service import list_subscription_rows
-from finance.profile.service import get_or_create_profile
 from finance.transactions.merchants import (
     load_merchant_alias_maps,
     merchant_display_label,
@@ -55,7 +51,7 @@ def _category_totals(session: Session, start: date, end: date) -> dict[str, floa
     amount_expr = amount_base_expr()
     stmt = (
         select(Transaction.category, func.sum(func.abs(amount_expr)))
-        .where(*debit_spending_filters(start, end))
+        .where(*debit_spending_filters(start, end), amount_expr.is_not(None))
         .where(Transaction.category.is_not(None))
         .group_by(Transaction.category)
     )
@@ -72,7 +68,8 @@ def _top_merchants(
     amount_expr = amount_base_expr()
     rows = session.execute(
         select(Transaction.merchant, Transaction.title, func.abs(amount_expr)).where(
-            *debit_spending_filters(start, end)
+            *debit_spending_filters(start, end),
+            amount_expr.is_not(None),
         )
     ).all()
     alias_map, label_map = load_merchant_alias_maps(session)
@@ -117,6 +114,7 @@ def _income_total(session: Session, start: date, end: date) -> float:
         .where(*non_transfer_filters())
         .where(Transaction.booking_date >= start)
         .where(Transaction.booking_date <= end)
+        .where(amount_expr.is_not(None))
     )
     return _safe_float(session.execute(stmt).scalar())
 
@@ -134,10 +132,8 @@ def recommend_savings(session: Session, args: dict[str, Any]) -> ToolResult:
     previous = _category_totals(session, prev_start, prev_end)
     total_current = sum(current.values())
     total_previous = sum(previous.values())
-    profile = get_or_create_profile(session)
     income_current = _income_total(session, start, end)
     actual_savings = income_current - total_current
-    monthly_goal = _safe_float(profile.monthly_savings_goal, default=0.0)
 
     category_opportunities: list[CategoryOpportunity] = []
     for category, current_total in current.items():
@@ -161,22 +157,6 @@ def recommend_savings(session: Session, args: dict[str, Any]) -> ToolResult:
 
     merchants = _top_merchants(session, start, end, limit=parsed.limit)
     opportunities = category_opportunities[: parsed.limit]
-    limits = {
-        str(category): _safe_float(limit)
-        for category, limit in (profile.category_limits or {}).items()
-    }
-    limit_alerts = [
-        CategoryLimitAlert(
-            category=category,
-            limit=limit,
-            actual=current.get(category, 0.0),
-            over_by=current.get(category, 0.0) - limit,
-        )
-        for category, limit in limits.items()
-        if current.get(category, 0.0) > limit
-    ]
-    limit_alerts.sort(key=lambda row: row.over_by, reverse=True)
-
     subs = list_subscription_rows(session)
     subscriptions_summary = SubscriptionSummary(
         count=len(subs),
@@ -208,20 +188,9 @@ def recommend_savings(session: Session, args: dict[str, Any]) -> ToolResult:
             total_current=float(total_current),
             total_previous=float(total_previous),
             delta=float(total_current - total_previous),
-            profile=ProfileSummary(
-                base_currency=profile.base_currency,
-                salary_day=profile.salary_day,
-                monthly_savings_goal=monthly_goal if monthly_goal > 0 else None,
-                category_limits=limits,
-            ),
-            savings_goal=SavingsGoalSummary(
-                income=float(income_current),
-                actual_savings=float(actual_savings),
-                target=monthly_goal if monthly_goal > 0 else None,
-                remaining=(monthly_goal - actual_savings) if monthly_goal > 0 else None,
-                met=actual_savings >= monthly_goal if monthly_goal > 0 else None,
-            ),
-            category_limit_alerts=limit_alerts,
+            base_currency=BASE_CURRENCY,
+            income=float(income_current),
+            actual_savings=float(actual_savings),
             category_opportunities=opportunities,
             top_merchants=merchants,
             subscriptions=subscriptions_summary,

@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, date, datetime
+from decimal import Decimal
 from pathlib import Path
 
 import pandas as pd
 
 import scripts.build_ml_evidence as build_ml_evidence
 import scripts.inspect_report as inspect_report
+from finance.domain.models import Transaction, UserProfile
 from finance.ml.evidence import (
     EVIDENCE_SCHEMA_VERSION,
     AnomalyReview,
@@ -214,6 +217,55 @@ def test_registry_classification_report_uses_registered_metrics() -> None:
     assert report["confidence_policy"]["default_threshold"] == 0.7
     assert report["model_lifecycle"]["active_model_id"] == "model-1"
     assert inspect_report._validate_category_section(report, "classification") == []
+
+
+def test_db_evidence_loader_uses_fixed_safe_pln_amounts(db_session) -> None:
+    db_session.add(UserProfile(id=1, base_currency="EUR"))
+    db_session.add_all(
+        [
+            Transaction(
+                booking_date=date(2026, 1, 1),
+                amount=Decimal("-10.00"),
+                currency="PLN",
+                direction="debit",
+                merchant="Local",
+                title="",
+                category="food",
+                category_source="manual",
+                category_confirmation_method="manual",
+                category_confirmed_at=datetime.now(UTC),
+                source="unknown",
+                dedup_hash="evidence-safe-local",
+                is_transfer=False,
+            ),
+            Transaction(
+                booking_date=date(2026, 1, 2),
+                amount=Decimal("-100.00"),
+                currency="USD",
+                direction="debit",
+                merchant="Foreign",
+                title="",
+                category="food",
+                category_source="manual",
+                category_confirmation_method="manual",
+                category_confirmed_at=datetime.now(UTC),
+                source="unknown",
+                dedup_hash="evidence-unconverted-foreign",
+                is_transfer=False,
+            ),
+        ]
+    )
+    db_session.commit()
+
+    frame = build_ml_evidence._load_all_from_db(db_session)
+
+    diagnostics = frame.attrs["currency_diagnostics"]
+    assert diagnostics["base_currency"] == "PLN"
+    assert diagnostics["resolved_rows"] == 1
+    assert diagnostics["excluded_unresolved_rows"] == 1
+    assert frame.loc[frame["currency"] == "USD", "amount"].isna().all()
+    report = build_ml_evidence._registry_classification_report(frame, {})
+    assert report["n_total_labelled"] == 1
 
 
 def test_build_ml_evidence_cli_writes_latest_files_without_external_services(

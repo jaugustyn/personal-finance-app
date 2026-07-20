@@ -43,9 +43,10 @@ class CurrencyStatus(BaseModel):
 
 class FxRatePayload(BaseModel):
     currency: str = Field(min_length=3, max_length=3)
-    base_currency: str | None = Field(default=None, min_length=3, max_length=3)
     rate_date: date
     rate: Decimal = Field(gt=0)
+
+    model_config = {"extra": "forbid"}
 
 
 class FetchNbpResult(BaseModel):

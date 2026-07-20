@@ -370,6 +370,13 @@ export function TransactionFilters({
                     filterSummary.net >= 0 ? "text-positive" : "text-negative"
                   }
                 />
+                {filterSummary.unconverted_count > 0 ? (
+                  <SummaryValue
+                    label={t("transactions.filterSummary.unconverted")}
+                    value={String(filterSummary.unconverted_count)}
+                    valueClassName="text-warning"
+                  />
+                ) : null}
               </>
             ) : (
               <span className="text-muted-foreground">

@@ -93,6 +93,7 @@ class SubscriptionToolItem(BaseModel):
 
 
 class ListSubscriptionsResult(BaseModel):
+    base_currency: str
     subscriptions: list[SubscriptionToolItem]
     estimated_monthly_cost: float
 
@@ -102,6 +103,7 @@ class AnomalyToolItem(BaseModel):
     booking_date: str
     merchant: str
     amount: float | None
+    base_currency: str
     severity: float | None
     priority_score: float | None
     anomaly_type: str
@@ -121,7 +123,12 @@ class ForecastPoint(BaseModel):
 
 class ForecastResult(BaseModel):
     category: str | None
+    base_currency: str
     error: str | None = None
+    history_months: int = 0
+    active_months: int = 0
+    required_history_months: int = 0
+    required_active_months: int = 0
     model: str | None = None
     mape: float | None = None
     rmse: float | None = None
@@ -135,28 +142,6 @@ class CategoryOpportunity(BaseModel):
     previous_total: float
     delta: float
     delta_pct: float | None
-
-
-class CategoryLimitAlert(BaseModel):
-    category: str
-    limit: float
-    actual: float
-    over_by: float
-
-
-class ProfileSummary(BaseModel):
-    base_currency: str
-    salary_day: int | None
-    monthly_savings_goal: float | None
-    category_limits: dict[str, float]
-
-
-class SavingsGoalSummary(BaseModel):
-    income: float
-    actual_savings: float
-    target: float | None
-    remaining: float | None
-    met: bool | None
 
 
 class SubscriptionSummary(BaseModel):
@@ -175,9 +160,9 @@ class SavingsRecommendationResult(BaseModel):
     total_current: float
     total_previous: float
     delta: float
-    profile: ProfileSummary
-    savings_goal: SavingsGoalSummary
-    category_limit_alerts: list[CategoryLimitAlert]
+    base_currency: str
+    income: float
+    actual_savings: float
     category_opportunities: list[CategoryOpportunity]
     top_merchants: list[MerchantSpend]
     subscriptions: SubscriptionSummary

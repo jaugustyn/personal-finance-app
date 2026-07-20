@@ -121,11 +121,18 @@ def _period_start(months: int | None) -> date | None:
     return months_ago(months - 1) if months is not None else None
 
 
-def _base_filters(start: date | None, *, include_transfers: bool) -> list[Any]:
+def _scope_filters(start: date | None, *, include_transfers: bool) -> list[Any]:
     filters = [*non_transfer_filters(include_transfers=include_transfers)]
     if start is not None:
         filters.append(Transaction.booking_date >= start)
     return filters
+
+
+def _base_filters(start: date | None, *, include_transfers: bool) -> list[Any]:
+    return [
+        *_scope_filters(start, include_transfers=include_transfers),
+        amount_base_expr().is_not(None),
+    ]
 
 
 def _category_candidate_type_filter() -> Any:
@@ -168,6 +175,15 @@ def overview(
         func.max(Transaction.booking_date).label("dmax"),
     ).where(*_base_filters(start, include_transfers=include_transfers))
     row = session.execute(stmt).one()
+    unconverted_count = int(
+        session.execute(
+            select(func.count()).where(
+                *_scope_filters(start, include_transfers=include_transfers),
+                amount_base_expr().is_(None),
+            )
+        ).scalar_one()
+        or 0
+    )
     income = Decimal(row.inc or 0)
     gross_expenses = Decimal(row.gross_exp or 0)
     refunds = Decimal(row.refunds or 0)
@@ -191,6 +207,7 @@ def overview(
         tx_count=int(row.cnt or 0),
         base_currency=resolve_base_currency(session),
         provisional_transaction_count=int(row.provisional or 0),
+        unconverted_count=unconverted_count,
     )
 
 

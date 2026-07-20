@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import select
@@ -38,38 +37,6 @@ def get_or_create_profile(session: Session) -> UserProfile:
     session.commit()
     session.refresh(profile)
     return profile
-
-
-def update_profile(
-    session: Session,
-    *,
-    base_currency: str | None = None,
-    salary_day: int | None = None,
-    monthly_savings_goal: Decimal | None = None,
-    category_limits: dict[str, float] | None = None,
-) -> UserProfile:
-    profile = get_or_create_profile(session)
-    if base_currency is not None:
-        profile.base_currency = base_currency.strip().upper()[:3] or "PLN"
-    profile.salary_day = salary_day
-    profile.monthly_savings_goal = monthly_savings_goal
-    if category_limits is not None:
-        profile.category_limits = _clean_category_limits(category_limits)
-    session.commit()
-    session.refresh(profile)
-    return profile
-
-
-def _clean_category_limits(raw: dict[str, float]) -> dict[str, float]:
-    out: dict[str, float] = {}
-    for category, value in raw.items():
-        key = str(category).strip().lower()
-        if key not in CATEGORY_VALUES:
-            continue
-        numeric = float(value)
-        if numeric >= 0:
-            out[key] = numeric
-    return out
 
 
 def _validate_rule_payload(
