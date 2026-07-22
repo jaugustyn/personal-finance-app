@@ -64,6 +64,11 @@ parsing in `src/finance/ingestion`, and ML in `src/finance/ml`.
 5. Only explicit manual decisions and accepted suggestions become ML labels.
 6. Deterministic analytics feed the dashboard and LLM tools.
 
+User-maintained fixed charges form a separate planning schedule. They do not
+create bank transactions or change realised financial totals. A transaction
+can be linked manually to a scheduled occurrence; the reversible link records
+payment status without changing the transaction itself.
+
 PLN is the fixed analytical currency. Foreign records without a complete,
 positive-rate PLN conversion remain available for review and export but are
 excluded from amounts, analytics and model datasets.
@@ -86,6 +91,7 @@ expense-category model.
 | Forecasting | Complete-month series; baseline, damped trend and seasonal candidates with horizon-matched walk-forward evaluation | Provisional |
 | Anomalies | IsolationForest, robust statistics and explainable rules | Provisional |
 | Subscriptions | Merchant normalization, cadence and amount stability | Provisional |
+| Fixed charges | Manual PLN schedule with calendar-based future dates | Operational |
 | Assistant | Polish routing and deterministic tools with optional local Ollama phrasing | Operational, optional LLM |
 
 The category model is the primary ML workflow. It uses versioned candidates,
@@ -135,6 +141,7 @@ data/model identifiers, privacy diagnostics and explicit section statuses.
 | Transaction-type rules and review | Operational |
 | Category model results | Not bundled; generated from private data |
 | Forecasting, anomalies, subscriptions and type ML | Implemented, validation provisional |
+| Manual fixed-charge schedules | Operational |
 | Frozen private evaluation set | Backend available, hidden from normal UI |
 | Final evidence package | Pending sufficient confirmed data |
 

@@ -261,6 +261,14 @@ Normalizowane transakcje są grupowane według merchanta, a następnie oceniane 
 kadencji i stabilności kwoty. Wynik zawiera częstotliwość, confidence i
 szacowany koszt miesięczny. To detektor wzorca, nie klasyfikator nadzorowany.
 
+Stałe opłaty są odrębnym, ręcznie utrzymywanym harmonogramem planowanych
+kosztów w PLN. Terminy są przesuwane kalendarzowo, a podsumowanie pokazuje
+ekwiwalent miesięczny, roczny i płatności z najbliższych 30 dni. Harmonogram
+nie tworzy transakcji i nie zmienia statystyk faktycznie zaksięgowanych kwot.
+Użytkownik może ręcznie przypisać jedną lub kilka transakcji do terminu opłaty,
+co aktualizuje wyłącznie jej status i historię płatności. Przypisanie można
+cofnąć; nie modyfikuje ono typu ani kategorii transakcji.
+
 Wszystkie trzy moduły są użyteczne produktowo, lecz pozostają provisional w
 pakiecie evidence do czasu osobnej walidacji.
 

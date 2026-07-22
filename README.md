@@ -26,7 +26,7 @@ the validation perspective.
 - Dashboard, period summaries, merchant analysis and asset tracking.
 - Category suggestions using TF-IDF and linear classifiers.
 - Rule-based transaction-type suggestions with explicit user review.
-- Forecasting, anomaly and subscription detection.
+- Forecasting, anomaly and subscription detection, plus manual fixed-charge schedules.
 - Polish local assistant backed by deterministic finance tools.
 
 ## Architecture
@@ -92,12 +92,17 @@ docker compose --env-file .env -p personal-finance-app -f docker/docker-compose.
 Backend:
 
 ```powershell
-py -3.12 -m pip install uv==0.8.15
-uv sync --frozen --extra dev
+winget install --id astral-sh.uv --exact
+uv python install 3.12
+uv sync --python 3.12 --frozen --extra dev
 $env:PYTHONPATH="$PWD\src"
 uv run alembic upgrade head
 uv run uvicorn apps.api.main:app --reload --port 8000
 ```
+
+After installing `uv` for the first time, reopen PowerShell if the command is
+not yet visible. `uv sync` creates the project-local `.venv` automatically;
+manual activation is not required because project commands use `uv run`.
 
 Frontend:
 
