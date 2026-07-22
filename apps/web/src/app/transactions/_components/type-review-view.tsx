@@ -21,15 +21,15 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { api, apiErrorMessage } from "@/lib/api";
-import { useT } from "@/lib/i18n";
-import { formatDate } from "@/lib/utils";
-import { transactionQueryKeys } from "../_lib/query-keys";
+import { useFormatters, useT } from "@/lib/i18n";
+import { queryKeys } from "@/lib/query-keys";
 import { useTransactionMutations } from "../_lib/use-transaction-mutations";
 
 const PAGE_SIZE = 50;
 
 export function TypeReviewView() {
   const { t } = useT();
+  const { formatDate } = useFormatters();
   const [page, setPage] = useState(0);
   const [search, setSearch] = useState("");
   const [type, setType] = useState("");
@@ -40,18 +40,18 @@ export function TypeReviewView() {
     transaction_type: type || undefined,
     transaction_type_state: "needs_review" as const,
   };
+  const queryParams = {
+    ...filters,
+    limit: PAGE_SIZE,
+    offset: page * PAGE_SIZE,
+  };
   const query = useQuery({
-    queryKey: transactionQueryKeys.list(page, filters),
-    queryFn: () =>
-      api.transactions({
-        ...filters,
-        limit: PAGE_SIZE,
-        offset: page * PAGE_SIZE,
-      }),
+    queryKey: queryKeys.transactions.list(queryParams),
+    queryFn: () => api.transactions(queryParams),
     placeholderData: keepPreviousData,
   });
   const summary = useQuery({
-    queryKey: transactionQueryKeys.filterSummary(filters),
+    queryKey: queryKeys.transactions.filterSummary(filters),
     queryFn: () => api.filterSummary(filters),
     placeholderData: keepPreviousData,
   });
@@ -146,6 +146,14 @@ export function TypeReviewView() {
         </div>
       ) : null}
 
+      {summary.isError ? (
+        <ErrorState
+          variant="compact"
+          description={apiErrorMessage(summary.error)}
+          onRetry={() => void summary.refetch()}
+        />
+      ) : null}
+
       {query.isError ? (
         <ErrorState
           description={apiErrorMessage(query.error)}
@@ -167,6 +175,7 @@ export function TypeReviewView() {
                 <TableHead className="w-10">
                   <Checkbox
                     checked={allSelected}
+                    aria-label={t("transactions.selectAll")}
                     onCheckedChange={() =>
                       setSelected(
                         allSelected ? new Set() : new Set(rows.map((row) => row.id)),
@@ -193,6 +202,7 @@ export function TypeReviewView() {
                     <TableCell>
                       <Checkbox
                         checked={selected.has(row.id)}
+                        aria-label={t("transactions.selectRow", { id: row.id })}
                         onCheckedChange={() =>
                           setSelected((current) => {
                             const next = new Set(current);

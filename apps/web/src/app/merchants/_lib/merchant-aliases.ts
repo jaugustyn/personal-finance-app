@@ -13,7 +13,10 @@ export interface MerchantAliasPayload {
   aliases: string[];
 }
 
-export function groupAliases(aliases: MerchantAlias[]): MerchantAliasGroup[] {
+export function groupAliases(
+  aliases: MerchantAlias[],
+  compare: (left: string, right: string) => number,
+): MerchantAliasGroup[] {
   const groups = new Map<string, MerchantAliasGroup>();
   for (const alias of aliases) {
     const existing = groups.get(alias.canonical_key);
@@ -31,14 +34,10 @@ export function groupAliases(aliases: MerchantAlias[]): MerchantAliasGroup[] {
     .map((group) => ({
       ...group,
       aliases: [...group.aliases].sort((a, b) =>
-        a.alias_label.localeCompare(b.alias_label, "pl", { sensitivity: "base" }),
+        compare(a.alias_label, b.alias_label),
       ),
     }))
-    .sort((a, b) =>
-      a.canonical_label.localeCompare(b.canonical_label, "pl", {
-        sensitivity: "base",
-      }),
-    );
+    .sort((a, b) => compare(a.canonical_label, b.canonical_label));
 }
 
 export function candidateVariants(

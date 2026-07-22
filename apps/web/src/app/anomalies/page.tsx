@@ -22,15 +22,22 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { formatCurrency, formatDate } from "@/lib/utils";
-import { useT, tCategory } from "@/lib/i18n";
+import { useFormatters, useT, tCategory } from "@/lib/i18n";
 import { showErrorToast } from "@/lib/toasts";
-import { useLocalStorageState } from "@/hooks/use-local-storage-state";
+import {
+  storedValueOneOf,
+  useLocalStorageState,
+} from "@/hooks/use-local-storage-state";
 import { transactionsHref } from "@/lib/transaction-links";
+import { invalidateAnomalyData, queryKeys } from "@/lib/query-keys";
 import { MoreHorizontal } from "lucide-react";
 
 type AnomalyFeedbackAction = "relevant" | "not_relevant" | "restore";
 type AnomalyReviewState = "pending" | "reviewed";
+const isAnomalyReviewState = storedValueOneOf<AnomalyReviewState>([
+  "pending",
+  "reviewed",
+]);
 
 function priorityVariant(
   priority: number,
@@ -130,13 +137,18 @@ function feedbackToast(
 
 export default function AnomaliesPage() {
   const { t } = useT();
+  const { formatCurrency, formatDate, formatDateTime } = useFormatters();
   const qc = useQueryClient();
   const [reviewState, setReviewState] = useLocalStorageState<AnomalyReviewState>(
     "finance.anomalies.reviewState",
     "pending",
+    { validate: isAnomalyReviewState },
   );
   const query = useQuery({
-    queryKey: ["anomalies", reviewState],
+    queryKey: queryKeys.anomalies.list({
+      direction: "all",
+      reviewState,
+    }),
     queryFn: () =>
       api.anomalies({
         direction: "all",
@@ -152,9 +164,7 @@ export default function AnomaliesPage() {
       action: AnomalyFeedbackAction;
     }) => api.recordAnomalyFeedback(transactionId, action),
     onSuccess: (_result, variables) => {
-      qc.invalidateQueries({ queryKey: ["anomalies"] });
-      qc.invalidateQueries({ queryKey: ["dashboard", "anomalies"] });
-      qc.invalidateQueries({ queryKey: ["mlDashboard"] });
+      void invalidateAnomalyData(qc);
       feedbackToast(variables.action, t);
     },
     onError: (error) => showErrorToast(error, t("toast.error")),
@@ -309,10 +319,7 @@ export default function AnomaliesPage() {
                 </Badge>
                 {a.reviewed_at ? (
                   <div className="mt-1 text-xs text-muted-foreground">
-                    {new Date(a.reviewed_at).toLocaleString("pl-PL", {
-                      dateStyle: "short",
-                      timeStyle: "short",
-                    })}
+                    {formatDateTime(a.reviewed_at)}
                   </div>
                 ) : null}
               </div>

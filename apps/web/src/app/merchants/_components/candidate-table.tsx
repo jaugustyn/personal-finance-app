@@ -3,8 +3,7 @@
 import { ChevronRight, Loader2 } from "lucide-react";
 
 import type { MerchantCandidate } from "@/lib/api";
-import { useT } from "@/lib/i18n";
-import { formatCurrency } from "@/lib/utils";
+import { useFormatters, useT } from "@/lib/i18n";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DataTable, type DataTableColumn } from "@/components/data-table";
@@ -33,6 +32,7 @@ export function CandidateTable({
   onSortChange: (sort: MerchantCandidateSort) => void;
 }) {
   const { t } = useT();
+  const { formatCurrency } = useFormatters();
   const columns: DataTableColumn<MerchantCandidate>[] = [
     {
       id: "suggested_label",

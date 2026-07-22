@@ -1,7 +1,7 @@
 import { Sparkles } from "lucide-react";
 
 import type { MlModelComparison } from "@/lib/api";
-import { useT } from "@/lib/i18n";
+import { useFormatters, useT } from "@/lib/i18n";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DataTable, type DataTableColumn } from "@/components/data-table";
@@ -9,6 +9,7 @@ import { estimatorName, percent } from "../_lib/ml-format";
 
 export function ModelComparisonCard({ rows }: { rows: MlModelComparison[] }) {
   const { t } = useT();
+  const { formatPercent } = useFormatters();
   const recommended = rows.find((row) => row.is_recommended);
   if (rows.length === 0) return null;
 
@@ -31,7 +32,7 @@ export function ModelComparisonCard({ rows }: { rows: MlModelComparison[] }) {
       align: "right",
       className: "tabular-nums",
       sortValue: (row) => row.stability_score,
-      cell: (row) => percent(row.stability_score),
+      cell: (row) => percent(row.stability_score, formatPercent),
     },
     {
       id: "macro",
@@ -39,7 +40,7 @@ export function ModelComparisonCard({ rows }: { rows: MlModelComparison[] }) {
       align: "right",
       className: "tabular-nums",
       sortValue: (row) => row.macro_f1,
-      cell: (row) => percent(row.macro_f1),
+      cell: (row) => percent(row.macro_f1, formatPercent),
     },
     {
       id: "coverage",
@@ -47,7 +48,7 @@ export function ModelComparisonCard({ rows }: { rows: MlModelComparison[] }) {
       align: "right",
       className: "tabular-nums",
       sortValue: (row) => row.coverage_at_055,
-      cell: (row) => percent(row.coverage_at_055),
+      cell: (row) => percent(row.coverage_at_055, formatPercent),
     },
     {
       id: "accuracy",
@@ -55,7 +56,7 @@ export function ModelComparisonCard({ rows }: { rows: MlModelComparison[] }) {
       align: "right",
       className: "tabular-nums",
       sortValue: (row) => row.accuracy_at_055,
-      cell: (row) => percent(row.accuracy_at_055),
+      cell: (row) => percent(row.accuracy_at_055, formatPercent),
     },
     {
       id: "status",

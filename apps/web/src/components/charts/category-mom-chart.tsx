@@ -13,8 +13,7 @@ import {
 } from "recharts";
 import { useMemo } from "react";
 import type { CategoryTrendPoint } from "@/lib/api";
-import { useT, tCategory } from "@/lib/i18n";
-import { formatCurrency } from "@/lib/utils";
+import { useFormatters, useT, tCategory } from "@/lib/i18n";
 import { tooltipStyle } from "./chart-utils";
 
 /**
@@ -31,6 +30,7 @@ export function CategoryMoMChart({
   comparisonMode?: "latest" | "period";
 }) {
   const { t } = useT();
+  const { formatCurrency } = useFormatters();
 
   const { rows } = useMemo(() => {
     const months = Array.from(new Set(data.map((d) => d.month))).sort();

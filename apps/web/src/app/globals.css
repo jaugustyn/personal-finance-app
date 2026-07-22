@@ -240,7 +240,8 @@
     font-feature-settings: "rlig" 1, "calt" 1;
   }
   :focus-visible {
-    outline: none;
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 2px;
   }
   .select-scrollbar {
     scrollbar-color: hsl(var(--muted-foreground) / 0.35) transparent;

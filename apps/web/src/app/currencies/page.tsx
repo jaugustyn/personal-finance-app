@@ -30,27 +30,19 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Skeleton, TableSkeleton } from "@/components/ui/skeleton";
-import { formatCurrency, formatDate, formatNumber } from "@/lib/utils";
-import { useT } from "@/lib/i18n";
+import { useFormatters, useT } from "@/lib/i18n";
+import { invalidateCurrencyData, queryKeys } from "@/lib/query-keys";
 import { showErrorToast } from "@/lib/toasts";
 
-const STATUS_KEY = ["currencies", "status"] as const;
-const RATES_KEY = ["currencies", "rates"] as const;
 const EMPTY_MISSING_RATES: CurrencyStatus["missing_rates"] = [];
 
 function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-function invalidateMoneyQueries(qc: ReturnType<typeof useQueryClient>) {
-  // Currency recomputation affects nearly every financial view and query-key
-  // namespaces differ between pages. This rare user action is safer to refresh
-  // globally than to maintain a fragile list of derived caches here.
-  void qc.invalidateQueries();
-}
-
 export default function CurrenciesPage() {
   const { t } = useT();
+  const { formatCurrency, formatDate, formatNumber } = useFormatters();
   const qc = useQueryClient();
   const [currency, setCurrency] = useState("USD");
   const [rateDate, setRateDate] = useState(todayIso());
@@ -61,11 +53,11 @@ export default function CurrenciesPage() {
   );
 
   const statusQuery = useQuery({
-    queryKey: STATUS_KEY,
+    queryKey: queryKeys.currencies.status,
     queryFn: api.currencyStatus,
   });
   const ratesQuery = useQuery({
-    queryKey: RATES_KEY,
+    queryKey: queryKeys.currencies.rates,
     queryFn: api.fxRates,
   });
 
@@ -76,7 +68,7 @@ export default function CurrenciesPage() {
       setRate("");
       setManualRateOpen(false);
       setAffectedTransactions(null);
-      invalidateMoneyQueries(qc);
+      void invalidateCurrencyData(qc);
     },
     onError: (error) => showErrorToast(error, t("toast.error")),
   });
@@ -89,7 +81,7 @@ export default function CurrenciesPage() {
           missing: result.missing,
         }),
       );
-      invalidateMoneyQueries(qc);
+      void invalidateCurrencyData(qc);
     },
     onError: (error) => showErrorToast(error, t("toast.error")),
   });
@@ -148,7 +140,7 @@ export default function CurrenciesPage() {
         ),
       },
     ],
-    [t],
+    [formatDate, formatNumber, t],
   );
 
   function submitRate(event: FormEvent<HTMLFormElement>) {
@@ -434,34 +426,43 @@ export default function CurrenciesPage() {
             </DialogHeader>
 
             <div className="grid gap-4 sm:grid-cols-[7rem_minmax(0,1fr)]">
-              <label className="block space-y-1.5 text-sm">
-                <span className="font-medium">{t("currencies.currency")}</span>
+              <div className="block space-y-1.5 text-sm">
+                <label htmlFor="manual-rate-currency" className="font-medium">
+                  {t("currencies.currency")}
+                </label>
                 <CurrencyCombobox
+                  id="manual-rate-currency"
                   value={currency}
                   onChange={setCurrency}
                   baseCurrency={baseCurrency}
                   autoFocus
                 />
-              </label>
+              </div>
 
-              <label className="block space-y-1.5 text-sm">
-                <span className="font-medium">{t("currencies.rateDate")}</span>
+              <div className="block space-y-1.5 text-sm">
+                <label htmlFor="manual-rate-date" className="font-medium">
+                  {t("currencies.rateDate")}
+                </label>
                 <DatePicker
+                  id="manual-rate-date"
                   value={rateDate}
                   onChange={setRateDate}
                   ariaLabel={t("currencies.rateDate")}
                 />
-              </label>
+              </div>
             </div>
 
             <div className="space-y-1.5">
-              <span className="text-sm font-medium">{t("currencies.rate")}</span>
+              <label htmlFor="manual-rate-value" className="text-sm font-medium">
+                {t("currencies.rate")}
+              </label>
               <div className="grid grid-cols-[auto_auto_minmax(0,1fr)_auto] items-center gap-2 text-sm">
                 <span className="whitespace-nowrap font-medium">
                   1 {normalizedCurrency || "—"}
                 </span>
                 <span className="text-muted-foreground">=</span>
                 <Input
+                  id="manual-rate-value"
                   value={rate}
                   onChange={(event) => setRate(event.target.value)}
                   inputMode="decimal"

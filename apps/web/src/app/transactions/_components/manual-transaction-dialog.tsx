@@ -1,4 +1,3 @@
-/* eslint-disable react-hooks/set-state-in-effect -- reset the form for each opened record */
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -95,9 +94,11 @@ export function ManualTransactionDialog({
   const { t } = useT();
   const [form, setForm] = useState(() => formFromInitial(initialValue));
 
+  /* eslint-disable react-hooks/set-state-in-effect -- reset the form for each opened record */
   useEffect(() => {
     if (open) setForm(formFromInitial(initialValue));
   }, [initialValue, open]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const parsedAmount = useMemo(
     () => Number(form.amount.trim().replace(",", ".")),
@@ -146,8 +147,11 @@ export function ManualTransactionDialog({
 
         <div className="grid gap-4 py-1 sm:grid-cols-2">
           <div className="space-y-1.5">
-            <Label>{t("transactions.manual.date")}</Label>
+            <Label htmlFor="manual-transaction-date">
+              {t("transactions.manual.date")}
+            </Label>
             <DatePicker
+              id="manual-transaction-date"
               value={form.bookingDate}
               onChange={(bookingDate) =>
                 setForm((current) => ({ ...current, bookingDate }))
@@ -180,8 +184,11 @@ export function ManualTransactionDialog({
           </div>
 
           <div className="space-y-1.5">
-            <Label>{t("transactions.manual.direction")}</Label>
+            <Label htmlFor="manual-transaction-direction">
+              {t("transactions.manual.direction")}
+            </Label>
             <FilterSelect
+              id="manual-transaction-direction"
               value={form.direction}
               onValueChange={(value) => {
                 const direction = value as "debit" | "credit";
@@ -207,11 +214,15 @@ export function ManualTransactionDialog({
                   label: t("transactions.filterDirection.credit"),
                 },
               ]}
+              ariaLabel={t("transactions.manual.direction")}
             />
           </div>
           <div className="space-y-1.5">
-            <Label>{t("transactions.manual.type")}</Label>
+            <Label htmlFor="manual-transaction-type">
+              {t("transactions.manual.type")}
+            </Label>
             <TransactionTypeCombobox
+              id="manual-transaction-type"
               value={form.transactionType}
               onChange={(transactionType) =>
                 setForm((current) => ({
@@ -263,8 +274,11 @@ export function ManualTransactionDialog({
             />
           </div>
           <div className="space-y-1.5 sm:col-span-2">
-            <Label>{t("transactions.manual.category")}</Label>
+            <Label htmlFor="manual-transaction-category">
+              {t("transactions.manual.category")}
+            </Label>
             <CategorySelect
+              id="manual-transaction-category"
               value={form.category}
               onChange={(category) =>
                 setForm((current) => ({
@@ -276,6 +290,7 @@ export function ManualTransactionDialog({
                 }))
               }
               allLabel={t("subscriptions.fixed.noCategory")}
+              ariaLabel={t("transactions.manual.category")}
               className="w-full"
             />
           </div>

@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { CircleAlert } from "lucide-react";
 
 import { EmptyState } from "@/components/empty-state";
+import { ErrorState } from "@/components/error-state";
 import {
   CashflowChart,
   CategoryMoMChart,
@@ -13,7 +14,11 @@ import {
 import { PageHeader } from "@/components/page-header";
 import { api, type CashflowPoint } from "@/lib/api";
 import { useT } from "@/lib/i18n";
-import { useLocalStorageState } from "@/hooks/use-local-storage-state";
+import {
+  storedValueOneOf,
+  useLocalStorageState,
+} from "@/hooks/use-local-storage-state";
+import { queryKeys } from "@/lib/query-keys";
 import { AttentionPanel } from "./_components/dashboard-operational";
 import { MerchantRankingCard } from "./_components/dashboard-merchant-ranking";
 import { FinancialSnapshot } from "./_components/dashboard-snapshot";
@@ -26,15 +31,21 @@ import {
 import { DashboardToolbar } from "./_components/dashboard-toolbar";
 import {
   RANGE_MONTHS,
+  RANGE_OPTIONS,
+  LIMIT_OPTIONS,
   type DashboardLimit,
   type DashboardRange,
 } from "./_lib/dashboard-types";
+
+const isDashboardRange = storedValueOneOf(RANGE_OPTIONS);
+const isDashboardLimit = storedValueOneOf(LIMIT_OPTIONS);
 
 export default function DashboardPage() {
   const { t } = useT();
   const [range, setRange] = useLocalStorageState<DashboardRange>(
     "finance.dashboard.v2.range",
     "1m",
+    { validate: isDashboardRange },
   );
   const [includeTransfers, setIncludeTransfers] = useLocalStorageState(
     "finance.dashboard.v2.includeTransfers",
@@ -43,6 +54,7 @@ export default function DashboardPage() {
   const [chartLimit, setChartLimit] = useLocalStorageState<DashboardLimit>(
     "finance.dashboard.v2.chartLimit",
     8,
+    { validate: isDashboardLimit },
   );
 
   const allData = range === "all";
@@ -50,28 +62,24 @@ export default function DashboardPage() {
   const trendMonths = months;
   const comparisonMonths = allData ? months : Math.max(months, 2);
   const periodComparison = range !== "1m";
+  const rangeKey = { months, allData, includeTransfers };
+  const trendRangeKey = { months: trendMonths, allData, includeTransfers };
+  const rankingKey = { ...rangeKey, limit: chartLimit };
 
   const overview = useQuery({
-    queryKey: ["dashboard", "overview", months, allData, includeTransfers],
+    queryKey: queryKeys.dashboard.overview(rangeKey),
     queryFn: () => api.overview(months, allData, includeTransfers),
   });
   const currencyStatus = useQuery({
-    queryKey: ["dashboard", "currencyStatus"],
+    queryKey: queryKeys.dashboard.currencyStatus,
     queryFn: api.currencyStatus,
   });
   const cashflow = useQuery({
-    queryKey: ["dashboard", "cashflow", months, allData, includeTransfers],
+    queryKey: queryKeys.dashboard.cashflow(rangeKey),
     queryFn: () => api.cashflow(months, allData, includeTransfers),
   });
   const categoryBreakdown = useQuery({
-    queryKey: [
-      "dashboard",
-      "categoryBreakdown",
-      months,
-      allData,
-      includeTransfers,
-      chartLimit,
-    ],
+    queryKey: queryKeys.dashboard.categoryBreakdown(rankingKey),
     queryFn: () =>
       api.byCategory(
         months,
@@ -82,14 +90,7 @@ export default function DashboardPage() {
       ),
   });
   const transactionTypeBreakdown = useQuery({
-    queryKey: [
-      "dashboard",
-      "transactionTypeBreakdown",
-      months,
-      allData,
-      includeTransfers,
-      chartLimit,
-    ],
+    queryKey: queryKeys.dashboard.transactionTypeBreakdown(rankingKey),
     queryFn: () =>
       api.byTransactionType(
         months,
@@ -100,14 +101,10 @@ export default function DashboardPage() {
       ),
   });
   const categoryTrend = useQuery({
-    queryKey: [
-      "dashboard",
-      "categoryTrend",
-      trendMonths,
-      allData,
-      includeTransfers,
-      chartLimit,
-    ],
+    queryKey: queryKeys.dashboard.categoryTrend({
+      ...trendRangeKey,
+      limit: chartLimit,
+    }),
     queryFn: () =>
       api.categoryTrend(
         trendMonths,
@@ -118,14 +115,12 @@ export default function DashboardPage() {
       ),
   });
   const categoryDeltaTrend = useQuery({
-    queryKey: [
-      "dashboard",
-      "categoryDeltaTrend",
-      comparisonMonths,
+    queryKey: queryKeys.dashboard.categoryDeltaTrend({
+      months: comparisonMonths,
       allData,
       includeTransfers,
-      chartLimit,
-    ],
+      limit: chartLimit,
+    }),
     queryFn: () =>
       api.categoryTrend(
         comparisonMonths,
@@ -136,18 +131,11 @@ export default function DashboardPage() {
       ),
   });
   const networth = useQuery({
-    queryKey: ["dashboard", "networth", trendMonths, allData, includeTransfers],
+    queryKey: queryKeys.dashboard.netWorth(trendRangeKey),
     queryFn: () => api.networth(trendMonths, allData, includeTransfers),
   });
   const topMerchants = useQuery({
-    queryKey: [
-      "dashboard",
-      "topMerchants",
-      months,
-      allData,
-      includeTransfers,
-      chartLimit,
-    ],
+    queryKey: queryKeys.dashboard.topMerchants(rankingKey),
     queryFn: () =>
       api.topMerchants(
         months,
@@ -159,14 +147,7 @@ export default function DashboardPage() {
       ),
   });
   const incomeSources = useQuery({
-    queryKey: [
-      "dashboard",
-      "incomeSources",
-      months,
-      allData,
-      includeTransfers,
-      chartLimit,
-    ],
+    queryKey: queryKeys.dashboard.incomeSources(rankingKey),
     queryFn: () =>
       api.topMerchants(
         months,
@@ -178,11 +159,15 @@ export default function DashboardPage() {
       ),
   });
   const reviewQueue = useQuery({
-    queryKey: ["dashboard", "reviewQueue"],
+    queryKey: queryKeys.dashboard.reviewQueue(8),
     queryFn: () => api.reviewQueue(8),
   });
   const anomalies = useQuery({
-    queryKey: ["dashboard", "anomalies"],
+    queryKey: queryKeys.dashboard.anomalies({
+      direction: "all",
+      reviewState: "pending",
+      limit: 5,
+    }),
     queryFn: () =>
       api.anomalies({
         direction: "all",
@@ -191,7 +176,7 @@ export default function DashboardPage() {
       }),
   });
   const subscriptionsOverview = useQuery({
-    queryKey: ["dashboard", "subscriptionsOverview"],
+    queryKey: queryKeys.dashboard.subscriptionsOverview,
     queryFn: () => api.subscriptionsOverview(),
   });
 
@@ -217,6 +202,14 @@ export default function DashboardPage() {
         onChartLimitChange={setChartLimit}
       />
 
+      {currencyStatus.isError ? (
+        <ErrorState
+          variant="compact"
+          onRetry={() => void currencyStatus.refetch()}
+          className="mt-4"
+        />
+      ) : null}
+
       {unconvertedCount > 0 && (
         <div className="mt-4 flex items-center gap-2 rounded-lg border border-amber-300/70 bg-amber-50/60 px-3 py-2 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/25 dark:text-amber-200">
           <CircleAlert className="h-4 w-4 shrink-0" />
@@ -229,24 +222,36 @@ export default function DashboardPage() {
       )}
 
       <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
-        <main className="min-w-0 space-y-7">
+        <div className="min-w-0 space-y-7">
           <DashboardSection
             title={t("dashboard.overviewSectionTitle")}
             description={t("dashboard.overviewSectionDescription")}
           >
-            <FinancialSnapshot
-              income={totalIncome}
-              expenses={totalExpenses}
-              net={netCashflow}
-              savingsRate={savingsRate}
-              currency={baseCurrency}
-              isLoading={overview.isLoading}
-              isFetching={overview.isFetching}
-            />
+            {overview.isError ? (
+              <ErrorState
+                variant="compact"
+                onRetry={() => void overview.refetch()}
+              />
+            ) : (
+              <FinancialSnapshot
+                income={totalIncome}
+                expenses={totalExpenses}
+                net={netCashflow}
+                savingsRate={savingsRate}
+                currency={baseCurrency}
+                isLoading={overview.isLoading}
+                isFetching={overview.isFetching}
+              />
+            )}
 
             <ChartCard title={t("dashboard.cashflowTitle")}>
               {cashflow.isLoading ? (
                 <ChartSkeleton />
+              ) : cashflow.isError ? (
+                <ErrorState
+                  variant="compact"
+                  onRetry={() => void cashflow.refetch()}
+                />
               ) : cashflowData.length > 0 ? (
                 <CashflowChart data={cashflowData} currency={baseCurrency} />
               ) : (
@@ -258,12 +263,16 @@ export default function DashboardPage() {
               <SpendingBreakdownCard
                 data={categoryBreakdown.data}
                 isLoading={categoryBreakdown.isLoading}
+                isError={categoryBreakdown.isError}
+                onRetry={() => void categoryBreakdown.refetch()}
                 currency={baseCurrency}
                 direction="debit"
               />
               <MerchantRankingCard
                 data={topMerchants.data}
                 isLoading={topMerchants.isLoading}
+                isError={topMerchants.isError}
+                onRetry={() => void topMerchants.refetch()}
                 currency={baseCurrency}
                 direction="debit"
               />
@@ -279,12 +288,16 @@ export default function DashboardPage() {
               <SpendingBreakdownCard
                 data={transactionTypeBreakdown.data}
                 isLoading={transactionTypeBreakdown.isLoading}
+                isError={transactionTypeBreakdown.isError}
+                onRetry={() => void transactionTypeBreakdown.refetch()}
                 currency={baseCurrency}
                 direction="credit"
               />
               <MerchantRankingCard
                 data={incomeSources.data}
                 isLoading={incomeSources.isLoading}
+                isError={incomeSources.isError}
+                onRetry={() => void incomeSources.refetch()}
                 currency={baseCurrency}
                 direction="credit"
               />
@@ -299,6 +312,12 @@ export default function DashboardPage() {
               reviewLoading={reviewQueue.isLoading}
               anomaliesLoading={anomalies.isLoading}
               subscriptionsLoading={subscriptionsOverview.isLoading}
+              reviewError={reviewQueue.isError}
+              anomaliesError={anomalies.isError}
+              subscriptionsError={subscriptionsOverview.isError}
+              onReviewRetry={() => void reviewQueue.refetch()}
+              onAnomaliesRetry={() => void anomalies.refetch()}
+              onSubscriptionsRetry={() => void subscriptionsOverview.refetch()}
             />
           </div>
 
@@ -317,6 +336,11 @@ export default function DashboardPage() {
               >
                 {categoryDeltaTrend.isLoading ? (
                   <ChartSkeleton />
+                ) : categoryDeltaTrend.isError ? (
+                  <ErrorState
+                    variant="compact"
+                    onRetry={() => void categoryDeltaTrend.refetch()}
+                  />
                 ) : categoryDeltaTrend.data && categoryDeltaTrend.data.length > 0 ? (
                   <CategoryMoMChart
                     data={categoryDeltaTrend.data}
@@ -330,6 +354,11 @@ export default function DashboardPage() {
               <ChartCard title={t("dashboard.categoryTrendTitle")}>
                 {categoryTrend.isLoading ? (
                   <ChartSkeleton />
+                ) : categoryTrend.isError ? (
+                  <ErrorState
+                    variant="compact"
+                    onRetry={() => void categoryTrend.refetch()}
+                  />
                 ) : categoryTrend.data && categoryTrend.data.length > 0 ? (
                   <CategoryTrendChart
                     data={categoryTrend.data}
@@ -343,6 +372,11 @@ export default function DashboardPage() {
             <ChartCard title={t("dashboard.networthTitle")}>
               {networth.isLoading ? (
                 <ChartSkeleton />
+              ) : networth.isError ? (
+                <ErrorState
+                  variant="compact"
+                  onRetry={() => void networth.refetch()}
+                />
               ) : networth.data && networth.data.length > 0 ? (
                 <NetWorthChart data={networth.data} currency={baseCurrency} />
               ) : (
@@ -350,7 +384,7 @@ export default function DashboardPage() {
               )}
             </ChartCard>
           </DashboardSection>
-        </main>
+        </div>
 
         <aside className="hidden min-w-0 xl:block">
           <div className="sticky top-[4.5rem]">
@@ -361,6 +395,12 @@ export default function DashboardPage() {
               reviewLoading={reviewQueue.isLoading}
               anomaliesLoading={anomalies.isLoading}
               subscriptionsLoading={subscriptionsOverview.isLoading}
+              reviewError={reviewQueue.isError}
+              anomaliesError={anomalies.isError}
+              subscriptionsError={subscriptionsOverview.isError}
+              onReviewRetry={() => void reviewQueue.refetch()}
+              onAnomaliesRetry={() => void anomalies.refetch()}
+              onSubscriptionsRetry={() => void subscriptionsOverview.refetch()}
               layout="rail"
             />
           </div>

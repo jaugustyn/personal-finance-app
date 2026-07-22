@@ -12,7 +12,7 @@ import {
 } from "recharts";
 import { useMemo } from "react";
 import type { ForecastPoint } from "@/lib/api";
-import { formatCurrency, formatMonth } from "@/lib/utils";
+import { useFormatters, useT } from "@/lib/i18n";
 import { tooltipStyle } from "./chart-utils";
 
 export function ForecastChart({
@@ -24,6 +24,8 @@ export function ForecastChart({
   forecast: ForecastPoint[];
   currency: string;
 }) {
+  const { t } = useT();
+  const { formatCurrency, formatMonth } = useFormatters();
   const data = useMemo(
     () => [
       ...history.map((h) => ({
@@ -37,7 +39,7 @@ export function ForecastChart({
         prognoza: Number(f.amount),
       })),
     ],
-    [history, forecast],
+    [forecast, formatMonth, history],
   );
   return (
     <ResponsiveContainer width="100%" height={320}>
@@ -56,11 +58,11 @@ export function ForecastChart({
           }
         />
         <Legend wrapperStyle={{ fontSize: 12 }} />
-        <Line type="monotone" dataKey="historia" name="Historia" stroke="hsl(var(--chart-2))" strokeWidth={2} connectNulls />
+        <Line type="monotone" dataKey="historia" name={t("chart.history")} stroke="hsl(var(--chart-2))" strokeWidth={2} connectNulls />
         <Line
           type="monotone"
           dataKey="prognoza"
-          name="Prognoza"
+          name={t("chart.forecast")}
           stroke="hsl(var(--chart-4))"
           strokeWidth={2}
           strokeDasharray="5 5"

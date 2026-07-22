@@ -162,7 +162,9 @@ export function AliasGroupsPanel({
                     </div>
 
                     <div className="space-y-2">
-                      <Label>{t("merchants.savedVariants")}</Label>
+                      <p className="text-sm font-medium leading-none">
+                        {t("merchants.savedVariants")}
+                      </p>
                       <div className="divide-y overflow-hidden rounded-lg border bg-card">
                         {group.aliases.map((alias) => (
                           <div

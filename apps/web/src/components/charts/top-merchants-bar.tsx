@@ -14,7 +14,7 @@ import { useMemo } from "react";
 import { useTheme } from "next-themes";
 import { useCategories } from "@/hooks/use-categories";
 import { getCategoryChartStyle } from "@/lib/category-colors";
-import { formatCurrency } from "@/lib/utils";
+import { useFormatters, useT } from "@/lib/i18n";
 import {
   formatCompactAxisNumber,
   tooltipStyle,
@@ -33,6 +33,8 @@ export function TopMerchantsBar({
   }[];
   currency?: string;
 }) {
+  const { t } = useT();
+  const { formatCurrency } = useFormatters();
   const { resolvedTheme } = useTheme();
   const theme = resolvedTheme === "dark" ? "dark" : "light";
   const { data: categories = [] } = useCategories();
@@ -78,7 +80,7 @@ export function TopMerchantsBar({
           formatter={(value) => formatCurrency(Number(value), currency)}
           labelFormatter={(label) => String(label)}
         />
-        <Bar dataKey="amount" name="Wydatki" radius={[0, 4, 4, 0]}>
+        <Bar dataKey="amount" name={t("chart.expenses")} radius={[0, 4, 4, 0]}>
           {rows.map((row, i) => {
             const visual = row.category
               ? colorByCategory.get(row.category)

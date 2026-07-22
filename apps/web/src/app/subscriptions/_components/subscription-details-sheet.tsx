@@ -5,8 +5,7 @@ import type { ReactNode } from "react";
 import { Check, ChevronDown, RotateCcw, X } from "lucide-react";
 
 import type { Subscription, SubscriptionPreferenceInput } from "@/lib/api";
-import { useT } from "@/lib/i18n";
-import { formatCurrency, formatDate } from "@/lib/utils";
+import { useFormatters, useT } from "@/lib/i18n";
 import { transactionsHref } from "@/lib/transaction-links";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -46,6 +45,7 @@ export function SubscriptionDetailsSheet({
   onPreference: (payload: SubscriptionPreferenceInput) => void;
 }) {
   const { t } = useT();
+  const { formatCurrency, formatDate } = useFormatters();
   const isRejected = subscription?.user_decision === "rejected";
   const isHidden = isRejected || subscription?.status === "ignored";
   return (
@@ -59,7 +59,7 @@ export function SubscriptionDetailsSheet({
                 <Badge className={statusTone[subscription.status]}>
                   {isRejected
                     ? t("subscriptions.rejected")
-                    : statusLabels[subscription.status]}
+                    : t(statusLabels[subscription.status])}
                 </Badge>
                 {subscription.is_confirmed ? (
                   <Badge variant="outline">{t("subscriptions.confirmed")}</Badge>
@@ -102,7 +102,7 @@ export function SubscriptionDetailsSheet({
               <DetailsSection title={t("subscriptions.management")}>
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
                   <div className="w-full max-w-56 space-y-1.5">
-                    <Label className="text-xs font-medium text-muted-foreground">
+                    <Label htmlFor="subscription-cadence" className="text-xs font-medium text-muted-foreground">
                       {t("subscriptions.cadence")}
                     </Label>
                     <Select
@@ -115,13 +115,13 @@ export function SubscriptionDetailsSheet({
                         })
                       }
                     >
-                      <SelectTrigger className="w-full">
+                      <SelectTrigger id="subscription-cadence" className="w-full">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
                         {Object.entries(cadenceLabels).map(([value, label]) => (
                           <SelectItem key={value} value={value}>
-                            {label}
+                            {t(label)}
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -252,8 +252,9 @@ export function SubscriptionDetailsSheet({
                   <EvidenceRow
                     label={t("subscriptions.evidenceCadence")}
                     value={
-                      cadenceLabels[subscription.cadence] ??
-                      subscription.cadence
+                      cadenceLabels[subscription.cadence]
+                        ? t(cadenceLabels[subscription.cadence])
+                        : subscription.cadence
                     }
                   />
                   <EvidenceRow

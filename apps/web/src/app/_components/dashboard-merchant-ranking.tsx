@@ -5,26 +5,32 @@ import { ExternalLink } from "lucide-react";
 
 import type { MerchantStat } from "@/lib/api";
 import { EmptyState } from "@/components/empty-state";
+import { ErrorState } from "@/components/error-state";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { tCategory, useT } from "@/lib/i18n";
+import { tCategory, useFormatters, useT } from "@/lib/i18n";
 import { transactionsHref } from "@/lib/transaction-links";
-import { cn, formatCurrency } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import type { DashboardDirection } from "../_lib/dashboard-types";
 import { ChartSkeleton } from "./dashboard-section";
 
 export function MerchantRankingCard({
   data,
   isLoading,
+  isError,
+  onRetry,
   currency,
   direction,
 }: {
   data: MerchantStat[] | undefined;
   isLoading: boolean;
+  isError: boolean;
+  onRetry: () => void;
   currency: string;
   direction: DashboardDirection;
 }) {
   const { t } = useT();
+  const { formatCurrency } = useFormatters();
   const rows = data ?? [];
   const incomeMode = direction === "credit";
 
@@ -46,6 +52,8 @@ export function MerchantRankingCard({
       <CardContent>
         {isLoading ? (
           <ChartSkeleton />
+        ) : isError ? (
+          <ErrorState variant="compact" onRetry={onRetry} />
         ) : rows.length > 0 ? (
           <div className="divide-y">
             {rows.map((row, index) => {

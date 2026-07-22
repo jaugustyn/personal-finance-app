@@ -114,7 +114,7 @@ export function TransactionsTable({
                   <Checkbox
                     checked={allOnPageSelected}
                     onCheckedChange={onToggleAll}
-                    aria-label="select all"
+                    aria-label={t("transactions.selectAll")}
                   />
                 </TableHead>
                 {reviewMode ? (

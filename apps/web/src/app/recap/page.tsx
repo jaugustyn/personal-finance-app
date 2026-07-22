@@ -19,21 +19,30 @@ import { ErrorState } from "@/components/error-state";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { CardGridSkeleton } from "@/components/ui/skeleton";
-import { useLocalStorageState } from "@/hooks/use-local-storage-state";
+import {
+  storedValueOneOf,
+  useLocalStorageState,
+} from "@/hooks/use-local-storage-state";
 import { api, type Recap } from "@/lib/api";
-import { useT, tCategory } from "@/lib/i18n";
+import { useFormatters, useT, tCategory } from "@/lib/i18n";
+import type { Formatters } from "@/lib/formatters";
 import { transactionsHref } from "@/lib/transaction-links";
-import { cn, formatCurrency, formatDate, formatNumber } from "@/lib/utils";
+import { queryKeys } from "@/lib/query-keys";
+import { cn } from "@/lib/utils";
 
 type Period = "week" | "month" | "custom";
+const isPeriod = storedValueOneOf<Period>(["week", "month", "custom"]);
 type CategoryChangeRow = Recap["category_changes"][number];
 type MerchantChangeRow = Recap["merchant_changes"][number];
 
 export default function RecapPage() {
   const { t } = useT();
+  const formatters = useFormatters();
+  const { formatDate } = formatters;
   const [period, setPeriod] = useLocalStorageState<Period>(
     "finance.recap.period",
     "month",
+    { validate: isPeriod },
   );
   const [dateFrom, setDateFrom] = useLocalStorageState(
     "finance.recap.dateFrom",
@@ -47,12 +56,11 @@ export default function RecapPage() {
     period === "custom" && Boolean(dateFrom && dateTo && dateFrom <= dateTo);
 
   const query = useQuery({
-    queryKey: [
-      "recap",
+    queryKey: queryKeys.recap.detail({
       period,
-      period === "custom" ? dateFrom : null,
-      period === "custom" ? dateTo : null,
-    ],
+      dateFrom: period === "custom" ? dateFrom : null,
+      dateTo: period === "custom" ? dateTo : null,
+    }),
     queryFn: () =>
       period === "custom"
         ? api.recap("month", dateFrom, dateTo)
@@ -82,8 +90,8 @@ export default function RecapPage() {
         </Link>
       ),
     },
-    amountColumn("previous", t("recap.previous"), currency),
-    amountColumn("current", t("recap.current"), currency),
+    amountColumn("previous", t("recap.previous"), currency, formatters),
+    amountColumn("current", t("recap.current"), currency, formatters),
     {
       id: "count",
       header: t("recap.transactionsChange"),
@@ -92,7 +100,7 @@ export default function RecapPage() {
       sortValue: (row) => row.current_count - row.previous_count,
       cell: (row) => `${row.previous_count} → ${row.current_count}`,
     },
-    changeColumn(t, currency),
+    changeColumn(t, currency, formatters),
   ];
   const merchantColumns: DataTableColumn<MerchantChangeRow>[] = [
     {
@@ -113,8 +121,8 @@ export default function RecapPage() {
         </Link>
       ),
     },
-    amountColumn("previous", t("recap.previous"), currency),
-    amountColumn("current", t("recap.current"), currency),
+    amountColumn("previous", t("recap.previous"), currency, formatters),
+    amountColumn("current", t("recap.current"), currency, formatters),
     {
       id: "count",
       header: t("recap.transactionsChange"),
@@ -123,7 +131,7 @@ export default function RecapPage() {
       sortValue: (row) => row.current_count - row.previous_count,
       cell: (row) => `${row.previous_count} → ${row.current_count}`,
     },
-    changeColumn(t, currency),
+    changeColumn(t, currency, formatters),
   ];
 
   return (
@@ -225,6 +233,7 @@ function AnalysisContent({
   merchantColumns: DataTableColumn<MerchantChangeRow>[];
 }) {
   const { t } = useT();
+  const { formatCurrency } = useFormatters();
   const currency = data.base_currency;
   const noActivity =
     data.cashflow.income === 0 &&
@@ -284,7 +293,7 @@ function AnalysisContent({
           delta={data.cashflow.net_delta}
           currency={currency}
           positiveIncrease
-          details={cashflowDetails(data, t)}
+          details={cashflowDetails(data, t, formatCurrency)}
         />
       </div>
 
@@ -345,6 +354,7 @@ function MetricCard({
   details?: string;
 }) {
   const { t } = useT();
+  const { formatCurrency } = useFormatters();
   const previous = current - delta;
   const favorable = positiveIncrease ? delta >= 0 : delta <= 0;
   return (
@@ -373,7 +383,7 @@ function MetricCard({
                   : "text-negative",
             )}
           >
-            {signedCurrency(delta, currency)}
+            {signedCurrency(delta, currency, formatCurrency)}
           </span>
         </div>
         {details && <p className="text-xs text-muted-foreground">{details}</p>}
@@ -386,6 +396,7 @@ function amountColumn<T extends { previous: number; current: number }>(
   key: "previous" | "current",
   header: string,
   currency: string,
+  formatters: Formatters,
 ): DataTableColumn<T> {
   return {
     id: key,
@@ -393,7 +404,7 @@ function amountColumn<T extends { previous: number; current: number }>(
     align: "right",
     className: cn("tabular-nums", key === "previous" && "text-muted-foreground"),
     sortValue: (row) => row[key],
-    cell: (row) => formatCurrency(row[key], currency),
+    cell: (row) => formatters.formatCurrency(row[key], currency),
   };
 }
 
@@ -405,6 +416,7 @@ function changeColumn<T extends {
 }>(
   t: ReturnType<typeof useT>["t"],
   currency: string,
+  formatters: Formatters,
 ): DataTableColumn<T> {
   return {
     id: "delta",
@@ -415,10 +427,10 @@ function changeColumn<T extends {
     cell: (row) => (
       <div>
         <div className={cn("font-medium", deltaTone(row.delta))}>
-          {signedCurrency(row.delta, currency)}
+          {signedCurrency(row.delta, currency, formatters.formatCurrency)}
         </div>
         <div className="text-xs text-muted-foreground">
-          {changeDescription(row, t)}
+          {changeDescription(row, t, formatters.formatNumber)}
         </div>
       </div>
     ),
@@ -432,6 +444,7 @@ function changeDescription(
     change_percent: number | null;
   },
   t: ReturnType<typeof useT>["t"],
+  formatNumber: Formatters["formatNumber"],
 ): string {
   if (row.previous === 0 && row.current !== 0) return t("recap.changeNew");
   if (row.current === 0 && row.previous !== 0) return t("recap.changeAbsent");
@@ -440,7 +453,11 @@ function changeDescription(
   return `${sign}${formatNumber(row.change_percent, 1)}%`;
 }
 
-function cashflowDetails(data: Recap, t: ReturnType<typeof useT>["t"]): string | undefined {
+function cashflowDetails(
+  data: Recap,
+  t: ReturnType<typeof useT>["t"],
+  formatCurrency: Formatters["formatCurrency"],
+): string | undefined {
   const details: string[] = [];
   if (data.cashflow.debt_payments > 0) {
     details.push(
@@ -459,7 +476,11 @@ function cashflowDetails(data: Recap, t: ReturnType<typeof useT>["t"]): string |
   return details.length ? details.join(" · ") : undefined;
 }
 
-function signedCurrency(value: number, currency: string): string {
+function signedCurrency(
+  value: number,
+  currency: string,
+  formatCurrency: Formatters["formatCurrency"],
+): string {
   return `${value > 0 ? "+" : ""}${formatCurrency(value, currency)}`;
 }
 

@@ -40,8 +40,9 @@ export function AccentToggle() {
         {ACCENTS.map((a) => (
           <button
             key={a}
+            type="button"
             onClick={() => setAccent(a)}
-            className="flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm outline-none transition-colors hover:bg-accent hover:text-accent-foreground"
+            className="flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm outline-none transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring"
           >
             <span
               className={cn(

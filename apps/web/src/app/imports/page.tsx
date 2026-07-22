@@ -13,6 +13,7 @@ import { PageHeader } from "@/components/page-header";
 import { toast } from "sonner";
 import { useT } from "@/lib/i18n";
 import { showErrorToast } from "@/lib/toasts";
+import { invalidateImportData } from "@/lib/query-keys";
 import { Dropzone } from "./_components/dropzone";
 import { ImportPreviewDialog } from "./_components/import-preview-dialog";
 import { ImportsHistory } from "./_components/imports-history";
@@ -45,6 +46,7 @@ export default function ImportsPage() {
       }
       setMapping(seeded);
     },
+    onError: (error) => showErrorToast(error, t("toast.error")),
   });
 
   const mappingPreviewMut = useMutation({
@@ -62,6 +64,7 @@ export default function ImportsPage() {
         setPreview(p);
       }
     },
+    onError: (error) => showErrorToast(error, t("toast.error")),
   });
 
   const uploadMut = useMutation({
@@ -77,7 +80,7 @@ export default function ImportsPage() {
         skipCategories: args.skipCategories,
       }),
     onSuccess: () => {
-      qc.invalidateQueries();
+      void invalidateImportData(qc);
       toast.success(t("toast.imported"));
     },
     onError: (error) => showErrorToast(error, t("toast.error")),

@@ -5,10 +5,10 @@ import { useQuery } from "@tanstack/react-query";
 
 import type { MerchantAliasSuggestion } from "@/lib/api";
 import { api } from "@/lib/api";
-import { useT } from "@/lib/i18n";
-import { cn, formatCurrency } from "@/lib/utils";
+import { useFormatters, useT } from "@/lib/i18n";
+import { queryKeys } from "@/lib/query-keys";
+import { cn } from "@/lib/utils";
 import { ClearableInput } from "@/components/ui/clearable-input";
-import { MERCHANT_QUERY_KEYS } from "../_lib/query-keys";
 
 export function AliasSuggestionInput({
   id,
@@ -28,6 +28,7 @@ export function AliasSuggestionInput({
   placement?: "top" | "bottom";
 }) {
   const { t } = useT();
+  const { formatCurrency } = useFormatters();
   const generatedId = useId();
   const inputId = id ?? generatedId;
   const listId = `${inputId}-suggestions`;
@@ -42,7 +43,7 @@ export function AliasSuggestionInput({
   }, [query]);
 
   const suggestionsQuery = useQuery<MerchantAliasSuggestion[]>({
-    queryKey: MERCHANT_QUERY_KEYS.suggestions(debouncedQuery),
+    queryKey: queryKeys.merchants.suggestions(debouncedQuery),
     queryFn: () => api.merchantAliasSuggestions(debouncedQuery),
     enabled: debouncedQuery.length > 0,
   });

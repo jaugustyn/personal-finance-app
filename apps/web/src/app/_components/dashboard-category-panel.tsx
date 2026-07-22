@@ -2,24 +2,30 @@
 
 import type { CategoryBreakdown } from "@/lib/api";
 import { EmptyState } from "@/components/empty-state";
+import { ErrorState } from "@/components/error-state";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { tCategory, tTransactionType, useT } from "@/lib/i18n";
-import { cn, formatCurrency, formatPercent } from "@/lib/utils";
+import { tCategory, tTransactionType, useFormatters, useT } from "@/lib/i18n";
+import { cn } from "@/lib/utils";
 import type { DashboardDirection } from "../_lib/dashboard-types";
 import { ChartSkeleton } from "./dashboard-section";
 
 export function SpendingBreakdownCard({
   data,
   isLoading,
+  isError,
+  onRetry,
   currency,
   direction,
 }: {
   data: CategoryBreakdown[] | undefined;
   isLoading: boolean;
+  isError: boolean;
+  onRetry: () => void;
   currency: string;
   direction: DashboardDirection;
 }) {
   const { t } = useT();
+  const { formatCurrency, formatPercent } = useFormatters();
   const rows = data ?? [];
   const maxAmount = Math.max(...rows.map((row) => Number(row.amount)), 0);
   const incomeMode = direction === "credit";
@@ -36,6 +42,8 @@ export function SpendingBreakdownCard({
       <CardContent className="space-y-3">
         {isLoading ? (
           <ChartSkeleton />
+        ) : isError ? (
+          <ErrorState variant="compact" onRetry={onRetry} />
         ) : rows.length > 0 ? (
           <div className="space-y-4">
             {rows.map((row, index) => {

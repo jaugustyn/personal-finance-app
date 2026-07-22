@@ -27,6 +27,7 @@ import {
 import { cn } from "@/lib/utils";
 
 interface TransactionTypeComboboxProps {
+  id?: string;
   value: string;
   onChange: (value: string) => void;
   autoFocus?: boolean;
@@ -41,6 +42,7 @@ interface TransactionTypeComboboxProps {
 }
 
 export function TransactionTypeCombobox({
+  id,
   value,
   onChange,
   autoFocus,
@@ -107,11 +109,12 @@ export function TransactionTypeCombobox({
     <Popover open={open} onOpenChange={handleOpenChange}>
       <PopoverTrigger asChild>
         <Button
+          id={id}
           type="button"
           variant="outline"
           role="combobox"
           aria-expanded={open}
-          aria-label={ariaLabel}
+          aria-label={ariaLabel ?? t("transactions.filterType")}
           className={cn(
             "w-full justify-between gap-2 font-normal",
             heightCls,

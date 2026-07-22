@@ -36,12 +36,12 @@ import { PageHeader } from "@/components/page-header";
 import { useConfirm } from "@/components/confirm-dialog";
 import { ErrorState } from "@/components/error-state";
 import { CategoryAccent } from "@/components/category-accent";
-import { CATEGORIES_QUERY_KEY } from "@/hooks/use-categories";
 import { api, isApiError, type CategoryDef } from "@/lib/api";
 import {
   getReadableForeground,
 } from "@/lib/category-colors";
-import { useT, tCategory } from "@/lib/i18n";
+import { useFormatters, useT, tCategory } from "@/lib/i18n";
+import { queryKeys } from "@/lib/query-keys";
 import { showErrorToast } from "@/lib/toasts";
 import { transactionsHref } from "@/lib/transaction-links";
 
@@ -60,6 +60,7 @@ const DEFAULT_CATEGORY_COLOR = CATEGORY_COLORS[0];
 
 export default function CategoriesPage() {
   const { t, locale } = useT();
+  const { compare } = useFormatters();
   const qc = useQueryClient();
   const confirm = useConfirm();
   const {
@@ -68,7 +69,7 @@ export default function CategoriesPage() {
     isError,
     refetch,
   } = useQuery<CategoryDef[]>({
-    queryKey: CATEGORIES_QUERY_KEY,
+    queryKey: queryKeys.categories.list,
     queryFn: () => api.listCategories(),
   });
 
@@ -86,7 +87,7 @@ export default function CategoriesPage() {
       parent: string | null;
     }) => api.createCategory(payload),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: CATEGORIES_QUERY_KEY });
+      void qc.invalidateQueries({ queryKey: queryKeys.categories.all });
       setAddOpen(false);
       setNewName("");
       setNewColor(DEFAULT_CATEGORY_COLOR);
@@ -105,7 +106,7 @@ export default function CategoriesPage() {
   const deleteMut = useMutation({
     mutationFn: (id: number) => api.deleteCategory(id),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: CATEGORIES_QUERY_KEY });
+      void qc.invalidateQueries({ queryKey: queryKeys.categories.all });
       toast.success(t("toast.deleted"));
     },
     onError: (err) => {
@@ -121,7 +122,7 @@ export default function CategoriesPage() {
     mutationFn: ({ id, color }: { id: number; color: string }) =>
       api.patchCategoryDef(id, { color }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: CATEGORIES_QUERY_KEY });
+      void qc.invalidateQueries({ queryKey: queryKeys.categories.all });
       setColorTarget(null);
       toast.success(t("toast.saved"));
     },
@@ -142,9 +143,9 @@ export default function CategoriesPage() {
       categories
         .filter((category) => !category.parent)
         .sort((left, right) =>
-          tCategory(t, left.name).localeCompare(tCategory(t, right.name), locale),
+          compare(tCategory(t, left.name), tCategory(t, right.name)),
         ),
-    [categories, locale, t],
+    [categories, compare, t],
   );
   const systemCategories = parentCategories.filter(
     (category) => category.is_system,

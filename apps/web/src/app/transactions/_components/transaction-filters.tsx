@@ -24,8 +24,9 @@ import {
   type Direction,
   type FilterSummary,
 } from "@/lib/api";
-import { useT } from "@/lib/i18n";
-import { cn, formatCurrency } from "@/lib/utils";
+import { useFormatters, useT } from "@/lib/i18n";
+import { queryKeys } from "@/lib/query-keys";
+import { cn } from "@/lib/utils";
 import { Download, RotateCcw } from "lucide-react";
 
 interface TransactionFiltersProps {
@@ -86,8 +87,9 @@ export function TransactionFilters({
   onClearFilters,
 }: TransactionFiltersProps) {
   const { t } = useT();
+  const { formatCurrency } = useFormatters();
   const importsQuery = useQuery({
-    queryKey: ["imports", "history"],
+    queryKey: queryKeys.imports.history,
     queryFn: api.listImports,
     enabled: !reviewMode && importId !== undefined,
   });

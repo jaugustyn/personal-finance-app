@@ -1,12 +1,17 @@
 "use client";
 
 import * as React from "react";
+import {
+  storedValueOneOf,
+  useLocalStorageState,
+} from "@/hooks/use-local-storage-state";
 
 export const ACCENTS = ["emerald", "teal", "blue", "violet"] as const;
 export type Accent = (typeof ACCENTS)[number];
 
 const STORAGE_KEY = "finance-accent";
 const DEFAULT_ACCENT: Accent = "emerald";
+const isAccent = storedValueOneOf(ACCENTS);
 
 interface AccentContextValue {
   accent: Accent;
@@ -20,11 +25,11 @@ function applyAccent(accent: Accent) {
 }
 
 export function AccentProvider({ children }: { children: React.ReactNode }) {
-  const [accent, setAccentState] = React.useState<Accent>(() => {
-    if (typeof window === "undefined") return DEFAULT_ACCENT;
-    const stored = window.localStorage.getItem(STORAGE_KEY) as Accent | null;
-    return stored && ACCENTS.includes(stored) ? stored : DEFAULT_ACCENT;
-  });
+  const [accent, setAccentState] = useLocalStorageState<Accent>(
+    STORAGE_KEY,
+    DEFAULT_ACCENT,
+    { validate: isAccent },
+  );
 
   React.useEffect(() => {
     applyAccent(accent);
@@ -33,8 +38,7 @@ export function AccentProvider({ children }: { children: React.ReactNode }) {
   const setAccent = React.useCallback((next: Accent) => {
     setAccentState(next);
     applyAccent(next);
-    window.localStorage.setItem(STORAGE_KEY, next);
-  }, []);
+  }, [setAccentState]);
 
   const value = React.useMemo(
     () => ({ accent, setAccent }),

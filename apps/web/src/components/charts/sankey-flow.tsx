@@ -3,10 +3,12 @@
 import { ResponsiveContainer, Sankey, Tooltip } from "recharts";
 import { useMemo } from "react";
 import type { SankeyData } from "@/lib/api";
-import { formatCurrency } from "@/lib/utils";
+import { useFormatters, useT } from "@/lib/i18n";
 import { SankeyNodeProps, tooltipStyle } from "./chart-utils";
 
 export function SankeyFlow({ data }: { data: SankeyData }) {
+  const { t } = useT();
+  const { formatCurrency } = useFormatters();
   const formatted = useMemo(
     () => ({
       nodes: data.nodes.map((n) => ({ ...n, name: n.name })),
@@ -21,7 +23,7 @@ export function SankeyFlow({ data }: { data: SankeyData }) {
   if (formatted.nodes.length === 0 || formatted.links.length === 0) {
     return (
       <div className="flex h-60 items-center justify-center text-sm text-muted-foreground">
-        Brak danych do przepływu
+        {t("chart.flowEmpty")}
       </div>
     );
   }

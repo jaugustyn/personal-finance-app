@@ -13,7 +13,7 @@ import {
 } from "recharts";
 import { useMemo } from "react";
 import type { CashflowPoint } from "@/lib/api";
-import { formatCurrency, formatMonth } from "@/lib/utils";
+import { useFormatters, useT } from "@/lib/i18n";
 import { tooltipStyle } from "./chart-utils";
 
 export function CashflowChart({
@@ -23,6 +23,8 @@ export function CashflowChart({
   data: CashflowPoint[];
   currency?: string;
 }) {
+  const { t } = useT();
+  const { formatCurrency, formatMonth } = useFormatters();
   const formatted = useMemo(
     () =>
       data.map((d) => ({
@@ -31,7 +33,7 @@ export function CashflowChart({
         expenses: Number(d.expenses),
         net: Number(d.net),
       })),
-    [data],
+    [data, formatMonth],
   );
   return (
     <ResponsiveContainer width="100%" height={300}>
@@ -60,20 +62,20 @@ export function CashflowChart({
         <Legend wrapperStyle={{ fontSize: 12 }} />
         <Bar
           dataKey="income"
-          name="Przychody"
+          name={t("chart.income")}
           fill="hsl(var(--chart-positive))"
           radius={[4, 4, 0, 0]}
         />
         <Bar
           dataKey="expenses"
-          name="Wydatki"
+          name={t("chart.expenses")}
           fill="hsl(var(--chart-negative))"
           radius={[4, 4, 0, 0]}
         />
         <Line
           type="monotone"
           dataKey="net"
-          name="Saldo"
+          name={t("chart.balance")}
           stroke="hsl(var(--chart-4))"
           strokeWidth={2}
           dot={{ r: 3 }}

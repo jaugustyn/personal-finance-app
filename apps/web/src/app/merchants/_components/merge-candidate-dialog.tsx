@@ -4,8 +4,8 @@ import { useMemo, useState } from "react";
 import { Loader2, X } from "lucide-react";
 
 import type { MerchantAliasSuggestion, MerchantCandidate } from "@/lib/api";
-import { useT } from "@/lib/i18n";
-import { cn, formatCurrency } from "@/lib/utils";
+import { useFormatters, useT } from "@/lib/i18n";
+import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -71,6 +71,7 @@ function MergeCandidateForm({
   onSave: (payload: MerchantAliasPayload) => void;
 }) {
   const { t } = useT();
+  const { formatCurrency } = useFormatters();
   const [label, setLabel] = useState(() => candidate.canonical_label);
   const [selected, setSelected] = useState<Set<string>>(
     () => new Set(candidateVariants(candidate).map((variant) => variant.alias_key)),
@@ -128,8 +129,14 @@ function MergeCandidateForm({
       </div>
 
       <div className="space-y-2">
-        <Label>{t("merchants.mergeVariantsLabel")}</Label>
-        <div className="select-scrollbar max-h-80 divide-y overflow-y-auto rounded-lg border">
+        <Label id="merchant-merge-variants">
+          {t("merchants.mergeVariantsLabel")}
+        </Label>
+        <div
+          role="group"
+          aria-labelledby="merchant-merge-variants"
+          className="select-scrollbar max-h-80 divide-y overflow-y-auto rounded-lg border"
+        >
           {variants.map((variant) => {
             const checked = selected.has(variant.alias_key);
             return (

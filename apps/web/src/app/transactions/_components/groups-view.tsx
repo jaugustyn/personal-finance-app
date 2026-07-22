@@ -23,12 +23,13 @@ import {
   type MerchantGroupSortBy,
   type TransactionSortDirection,
 } from "@/lib/api";
-import { useT } from "@/lib/i18n";
-import { formatCurrency } from "@/lib/utils";
-import { transactionQueryKeys } from "../_lib/query-keys";
+import { useFormatters, useT } from "@/lib/i18n";
+import { invalidateTransactionData, queryKeys } from "@/lib/query-keys";
+import { showErrorToast } from "@/lib/toasts";
 
 export function GroupsView() {
   const { t } = useT();
+  const { formatCurrency } = useFormatters();
   const qc = useQueryClient();
   const [onlyUncat, setOnlyUncat] = useState(true);
   const [sort, setSort] = useState<Exclude<DataTableSortState, null>>({
@@ -38,8 +39,9 @@ export function GroupsView() {
   const [pickers, setPickers] = useState<Record<string, string | null>>({});
 
   const query = useQuery<MerchantGroup[]>({
-    queryKey: transactionQueryKeys.groups({
+    queryKey: queryKeys.transactions.groups({
       onlyUncategorized: onlyUncat,
+      minCount: 2,
       sortBy: sort.id,
       sortDirection: sort.dir,
     }),
@@ -63,13 +65,14 @@ export function GroupsView() {
         category: vars.category,
       }),
     onSuccess: (_data, vars) => {
-      qc.invalidateQueries({ queryKey: transactionQueryKeys.all });
+      void invalidateTransactionData(qc);
       setPickers((p) => {
         const next = { ...p };
         delete next[vars.merchantCanonicalKey];
         return next;
       });
     },
+    onError: (error) => showErrorToast(error, t("toast.error")),
   });
   const groupNet = (g: MerchantGroup) => {
     const debit = Math.abs(Number(g.total_debit) || 0);
@@ -223,6 +226,14 @@ export function GroupsView() {
         <div className="rounded-lg border bg-card p-3">
           <TableSkeleton rows={6} />
         </div>
+      ) : query.isError ? (
+        <DataTable
+          columns={columns}
+          data={undefined}
+          rowKey={(g) => g.merchant_canonical_key}
+          isError
+          onRetry={() => void query.refetch()}
+        />
       ) : (query.data ?? []).length === 0 ? (
         <div className="flex h-40 items-center justify-center rounded-lg border bg-card text-sm text-muted-foreground">
           <p>

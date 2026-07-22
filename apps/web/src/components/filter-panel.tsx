@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useId, type ReactNode } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
@@ -54,9 +54,18 @@ export function FilterField({
   className?: string;
   children: ReactNode;
 }) {
+  const labelId = useId();
+
   return (
-    <div className={cn("space-y-1.5", className)}>
-      <Label className="block text-xs font-medium text-muted-foreground">
+    <div
+      role="group"
+      aria-labelledby={labelId}
+      className={cn("space-y-1.5", className)}
+    >
+      <Label
+        id={labelId}
+        className="block text-xs font-medium text-muted-foreground"
+      >
         {label}
       </Label>
       {children}

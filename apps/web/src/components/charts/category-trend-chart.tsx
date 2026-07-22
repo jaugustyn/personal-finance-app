@@ -14,8 +14,7 @@ import { useMemo } from "react";
 import { useTheme } from "next-themes";
 import type { CategoryTrendPoint } from "@/lib/api";
 import { getCategoryChartStyle } from "@/lib/category-colors";
-import { useT, tCategory } from "@/lib/i18n";
-import { formatCurrency, formatMonth } from "@/lib/utils";
+import { useFormatters, useT, tCategory } from "@/lib/i18n";
 import { useCategories } from "@/hooks/use-categories";
 import { PIE_COLORS, tooltipStyle } from "./chart-utils";
 
@@ -32,6 +31,7 @@ export function CategoryTrendChart({
   currency?: string;
 }) {
   const { t } = useT();
+  const { formatCurrency, formatMonth } = useFormatters();
   const { resolvedTheme } = useTheme();
   const theme = resolvedTheme === "dark" ? "dark" : "light";
   const { data: categories = [] } = useCategories();

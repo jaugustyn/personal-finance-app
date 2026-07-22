@@ -82,8 +82,9 @@ export function ManualAliasDialog({
           </div>
 
           <div className="space-y-2">
-            <Label>{t("merchants.groupLabel")}</Label>
+            <Label htmlFor="merchant-group">{t("merchants.groupLabel")}</Label>
             <FilterSelect
+              id="merchant-group"
               value={groupKey}
               onValueChange={setGroupKey}
               ariaLabel={t("merchants.groupLabel")}

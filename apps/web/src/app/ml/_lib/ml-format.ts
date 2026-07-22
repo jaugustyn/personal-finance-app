@@ -1,22 +1,22 @@
 import type { MlDashboard } from "@/lib/api";
 import type { TranslationKey } from "@/lib/i18n";
-import { formatPercent } from "@/lib/utils";
+import type { Formatters } from "@/lib/formatters";
 
 type TFn = (key: TranslationKey, vars?: Record<string, string | number>) => string;
 
-export function formatDateTime(value: string | null): string {
+export function formatDateTime(
+  value: string | null,
+  formatter: Formatters["formatDateTime"],
+): string {
   if (!value) return "—";
-  return new Intl.DateTimeFormat("pl-PL", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(new Date(value));
+  return formatter(value);
 }
 
-export function percent(value: number | null | undefined): string {
-  return typeof value === "number" ? formatPercent(value) : "—";
+export function percent(
+  value: number | null | undefined,
+  formatter: Formatters["formatPercent"],
+): string {
+  return typeof value === "number" ? formatter(value) : "—";
 }
 
 export function estimatorName(value: string | null | undefined): string {

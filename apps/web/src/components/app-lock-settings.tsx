@@ -161,7 +161,9 @@ export function AppLockSettings() {
         {showForm && (
           <div className="grid max-w-3xl gap-4 border-t pt-5 md:grid-cols-2">
             <div className="space-y-2">
-              <Label>{t("settings.appLockTimeout")}</Label>
+              <Label htmlFor="app-lock-timeout">
+                {t("settings.appLockTimeout")}
+              </Label>
               <Select
                 value={String(timeout)}
                 onValueChange={(value) =>
@@ -169,7 +171,7 @@ export function AppLockSettings() {
                 }
                 disabled={!enabled || pending}
               >
-                <SelectTrigger>
+                <SelectTrigger id="app-lock-timeout">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>

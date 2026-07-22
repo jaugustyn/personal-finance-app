@@ -4,8 +4,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Check, ChevronsUpDown, Plus, X } from "lucide-react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
-import { useCategories, CATEGORIES_QUERY_KEY } from "@/hooks/use-categories";
-import { useT, tCategory } from "@/lib/i18n";
+import { useCategories } from "@/hooks/use-categories";
+import { useFormatters, useT, tCategory } from "@/lib/i18n";
+import { queryKeys } from "@/lib/query-keys";
+import { showErrorToast } from "@/lib/toasts";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { CategoryAccent } from "@/components/category-accent";
@@ -24,6 +26,7 @@ import {
 } from "@/components/ui/command";
 
 interface Props {
+  id?: string;
   /** Selected category group name (the ML category), or null. */
   value: string | null;
   /** Selected subcategory name, currently hidden in the UI. */
@@ -32,6 +35,7 @@ interface Props {
   autoFocus?: boolean;
   size?: "sm" | "md";
   className?: string;
+  ariaLabel?: string;
   /** When true, only category groups are selectable (e.g. bulk operations). */
   groupsOnly?: boolean;
 }
@@ -60,16 +64,23 @@ export function CategoryColorDot({
  * subcategories, but the UI currently exposes only top-level ML categories.
  */
 export function CategoryCombobox({
+  id,
   value,
   subValue = null,
   onChange,
   autoFocus,
   size = "sm",
   className,
+  ariaLabel,
   groupsOnly = false,
 }: Props) {
   const { t } = useT();
-  const { data: categories = [] } = useCategories();
+  const { compare } = useFormatters();
+  const {
+    data: categories = [],
+    isError: categoriesError,
+    refetch: refetchCategories,
+  } = useCategories();
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
@@ -85,11 +96,12 @@ export function CategoryCombobox({
   const createMut = useMutation({
     mutationFn: (name: string) => api.createCategory({ name }),
     onSuccess: (cat) => {
-      qc.invalidateQueries({ queryKey: CATEGORIES_QUERY_KEY });
+      void qc.invalidateQueries({ queryKey: queryKeys.categories.all });
       onChange({ category: cat.name, subcategory: null });
       setSearch("");
       setOpen(false);
     },
+    onError: (error) => showErrorToast(error, t("toast.error")),
   });
 
   const catLabel = (name: string, isSystem: boolean) =>
@@ -102,17 +114,17 @@ export function CategoryCombobox({
       .filter((c) => !c.parent)
       .sort((a, b) => {
         if (a.is_system !== b.is_system) return a.is_system ? -1 : 1;
-        return a.name.localeCompare(b.name);
+        return compare(a.name, b.name);
       });
     return parents.map((parent) => ({
       parent,
       children: SHOW_SUBCATEGORIES
         ? categories
             .filter((c) => c.parent === parent.name)
-            .sort((a, b) => a.name.localeCompare(b.name))
+            .sort((a, b) => compare(a.name, b.name))
         : [],
     }));
-  }, [categories]);
+  }, [categories, compare]);
 
   const current = useMemo(
     () => categories.find((c) => c.name === value) ?? null,
@@ -148,10 +160,12 @@ export function CategoryCombobox({
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <Button
+          id={id}
           type="button"
           variant="outline"
           role="combobox"
           aria-expanded={open}
+          aria-label={ariaLabel ?? t("transactions.column.category")}
           className={cn(
             "w-full justify-between gap-2 font-normal",
             heightCls,
@@ -185,8 +199,20 @@ export function CategoryCombobox({
             clearLabel={t("common.clear")}
           />
           <CommandList>
+            {categoriesError ? (
+              <div className="px-3 py-2 text-center text-xs text-destructive">
+                {t("common.error")} ·{" "}
+                <button
+                  type="button"
+                  onClick={() => void refetchCategories()}
+                  className="underline underline-offset-4"
+                >
+                  {t("common.retry")}
+                </button>
+              </div>
+            ) : null}
             <CommandEmpty>
-              {trimmed ? (
+              {categoriesError ? null : trimmed ? (
                 <button
                   type="button"
                   onClick={() => createMut.mutate(trimmed)}

@@ -19,11 +19,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { DataTable, type DataTableColumn } from "@/components/data-table";
+import { ErrorState } from "@/components/error-state";
 import { KpiCard } from "@/components/kpi-card";
 import { PortfolioHistoryChart } from "@/components/charts";
-import { formatCurrency, formatDate, formatPercent } from "@/lib/utils";
 import { Loader2, RefreshCw, Trash2, Plus } from "lucide-react";
-import { useT } from "@/lib/i18n";
+import { useFormatters, useT, type TranslationKey } from "@/lib/i18n";
+import { queryKeys } from "@/lib/query-keys";
 import { showErrorToast } from "@/lib/toasts";
 
 /** Currencies offered when adding a position (kept simple, no live FX list). */
@@ -38,29 +39,36 @@ const CURRENCIES = [
   "AUD",
 ] as const;
 
+const ASSET_CLASS_LABELS: Record<string, TranslationKey> = {
+  equity: "assets.class.equity",
+  etf: "assets.class.etf",
+  crypto: "assets.class.crypto",
+  bond: "assets.class.bond",
+  cash: "assets.class.cash",
+};
+
 export default function AssetsPage() {
   const { t } = useT();
+  const { formatCurrency, formatDate, formatPercent } = useFormatters();
   const qc = useQueryClient();
   const confirm = useConfirm();
   const assets = useQuery({
-    queryKey: ["assets"],
+    queryKey: queryKeys.assets.list,
     queryFn: () => api.assets(),
   });
   const summary = useQuery({
-    queryKey: ["portfolioSummary"],
+    queryKey: queryKeys.assets.summary,
     queryFn: () => api.portfolioSummary(),
   });
   const history = useQuery({
-    queryKey: ["assetHistory"],
+    queryKey: queryKeys.assets.history(180),
     queryFn: () => api.assetHistory(180),
   });
 
   const refresh = useMutation({
     mutationFn: () => api.refreshAssets(),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["assets"] });
-      qc.invalidateQueries({ queryKey: ["portfolioSummary"] });
-      qc.invalidateQueries({ queryKey: ["assetHistory"] });
+      void qc.invalidateQueries({ queryKey: queryKeys.assets.all });
       toast.success(t("toast.refreshed"));
     },
     onError: (error) => showErrorToast(error, t("toast.error")),
@@ -69,8 +77,7 @@ export default function AssetsPage() {
   const create = useMutation({
     mutationFn: (payload: AssetInput) => api.createAsset(payload),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["assets"] });
-      qc.invalidateQueries({ queryKey: ["portfolioSummary"] });
+      void qc.invalidateQueries({ queryKey: queryKeys.assets.all });
       setForm({
         symbol: "",
         name: "",
@@ -87,8 +94,7 @@ export default function AssetsPage() {
   const remove = useMutation({
     mutationFn: (id: number) => api.deleteAsset(id),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["assets"] });
-      qc.invalidateQueries({ queryKey: ["portfolioSummary"] });
+      void qc.invalidateQueries({ queryKey: queryKeys.assets.all });
       toast.success(t("toast.deleted"));
     },
     onError: (error) => showErrorToast(error, t("toast.error")),
@@ -124,7 +130,13 @@ export default function AssetsPage() {
       id: "asset_class",
       header: t("assets.column.class"),
       sortValue: (a) => a.asset_class,
-      cell: (a) => <Badge variant="outline">{a.asset_class}</Badge>,
+      cell: (a) => (
+        <Badge variant="outline">
+          {ASSET_CLASS_LABELS[a.asset_class]
+            ? t(ASSET_CLASS_LABELS[a.asset_class])
+            : a.asset_class}
+        </Badge>
+      ),
     },
     {
       id: "quantity",
@@ -209,6 +221,12 @@ export default function AssetsPage() {
         }
       />
 
+      {summary.isError ? (
+        <ErrorState
+          variant="compact"
+          onRetry={() => void summary.refetch()}
+        />
+      ) : (
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <KpiCard
           label={t("assets.kpi.value")}
@@ -236,6 +254,7 @@ export default function AssetsPage() {
           value={s ? String(s.asset_count) : "—"}
         />
       </div>
+      )}
 
       <div className="grid gap-4 lg:grid-cols-3">
         <Card className="lg:col-span-2">
@@ -247,6 +266,11 @@ export default function AssetsPage() {
           <CardContent>
             {history.isLoading ? (
               <ChartSkeleton />
+            ) : history.isError ? (
+              <ErrorState
+                variant="compact"
+                onRetry={() => void history.refetch()}
+              />
             ) : history.data && history.data.length > 0 ? (
               <PortfolioHistoryChart data={history.data} />
             ) : (
@@ -295,10 +319,11 @@ export default function AssetsPage() {
             >
               {!isCash && (
                 <div className="space-y-1">
-                  <label className="text-xs text-muted-foreground">
+                  <label htmlFor="asset-symbol" className="text-xs text-muted-foreground">
                     {t("assets.field.symbol")}
                   </label>
                   <Input
+                    id="asset-symbol"
                     value={form.symbol}
                     onChange={(e) =>
                       setForm({ ...form, symbol: e.target.value })
@@ -309,10 +334,11 @@ export default function AssetsPage() {
               )}
               {!isCash && (
                 <div className="space-y-1">
-                  <label className="text-xs text-muted-foreground">
+                  <label htmlFor="asset-name" className="text-xs text-muted-foreground">
                     {t("assets.field.name")}
                   </label>
                   <Input
+                    id="asset-name"
                     value={form.name}
                     onChange={(e) => setForm({ ...form, name: e.target.value })}
                     placeholder="Apple Inc."
@@ -321,14 +347,14 @@ export default function AssetsPage() {
               )}
               <div className="grid grid-cols-2 gap-2">
                 <div className="space-y-1">
-                  <label className="text-xs text-muted-foreground">
+                  <label htmlFor="asset-class" className="text-xs text-muted-foreground">
                     {t("assets.field.class")}
                   </label>
                   <Select
                     value={form.asset_class}
                     onValueChange={(v) => setForm({ ...form, asset_class: v })}
                   >
-                    <SelectTrigger className="w-full">
+                    <SelectTrigger id="asset-class" className="w-full">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -351,14 +377,14 @@ export default function AssetsPage() {
                   </Select>
                 </div>
                 <div className="space-y-1">
-                  <label className="text-xs text-muted-foreground">
+                  <label htmlFor="asset-currency" className="text-xs text-muted-foreground">
                     {t("assets.field.currency")}
                   </label>
                   <Select
                     value={form.currency}
                     onValueChange={(v) => setForm({ ...form, currency: v })}
                   >
-                    <SelectTrigger className="w-full">
+                    <SelectTrigger id="asset-currency" className="w-full">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -373,12 +399,13 @@ export default function AssetsPage() {
               </div>
               <div className="grid grid-cols-2 gap-2">
                 <div className="space-y-1">
-                  <label className="text-xs text-muted-foreground">
+                  <label htmlFor="asset-quantity" className="text-xs text-muted-foreground">
                     {isCash
                       ? t("assets.field.amount")
                       : t("assets.field.quantity")}
                   </label>
                   <Input
+                    id="asset-quantity"
                     type="number"
                     step="0.00000001"
                     value={form.quantity}
@@ -389,10 +416,11 @@ export default function AssetsPage() {
                 </div>
                 {!isCash && (
                   <div className="space-y-1">
-                    <label className="text-xs text-muted-foreground">
+                    <label htmlFor="asset-cost" className="text-xs text-muted-foreground">
                       {t("assets.field.cost")}
                     </label>
                     <Input
+                      id="asset-cost"
                       type="number"
                       step="0.01"
                       value={form.cost_basis}
@@ -437,6 +465,8 @@ export default function AssetsPage() {
             data={assets.data}
             rowKey={(a) => a.id}
             isLoading={assets.isLoading}
+            isError={assets.isError}
+            onRetry={() => void assets.refetch()}
             emptyTitle={t("assets.empty")}
             initialSort={{ id: "value", dir: "desc" }}
           />

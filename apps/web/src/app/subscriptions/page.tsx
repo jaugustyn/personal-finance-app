@@ -13,16 +13,16 @@ import {
 import { PageHeader } from "@/components/page-header";
 import { EmptyState } from "@/components/empty-state";
 import { ErrorState } from "@/components/error-state";
-import { cn, formatCurrency } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import { showErrorToast } from "@/lib/toasts";
 import { CardGridSkeleton } from "@/components/ui/skeleton";
-import { useT, type TranslationKey } from "@/lib/i18n";
+import { useFormatters, useT, type TranslationKey } from "@/lib/i18n";
+import { invalidateSubscriptionData, queryKeys } from "@/lib/query-keys";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { SubscriptionCard } from "./_components/subscription-card";
 import { SubscriptionDetailsSheet } from "./_components/subscription-details-sheet";
 import { FixedChargesTab } from "./_components/fixed-charges-tab";
-import { SUBSCRIPTION_QUERY_KEYS } from "./_lib/query-keys";
 import type { SubscriptionScope } from "./_lib/subscription-format";
 
 type RecurringPaymentsTab = "subscriptions" | "fixed";
@@ -108,19 +108,19 @@ export default function SubscriptionsPage() {
   const includeRejected = true;
 
   const query = useQuery({
-    queryKey: SUBSCRIPTION_QUERY_KEYS.list(includeRejected),
+    queryKey: queryKeys.subscriptions.list(0, includeRejected),
     queryFn: () => api.subscriptions(0, includeRejected),
   });
   const overviewQuery = useQuery({
-    queryKey: SUBSCRIPTION_QUERY_KEYS.overview,
+    queryKey: queryKeys.subscriptions.overview,
     queryFn: () => api.subscriptionsOverview(),
   });
 
   const preference = useMutation({
     mutationFn: api.saveSubscriptionPreference,
     onMutate: async (variables) => {
-      const visibleListKey = SUBSCRIPTION_QUERY_KEYS.list(false);
-      const fullListKey = SUBSCRIPTION_QUERY_KEYS.list(true);
+      const visibleListKey = queryKeys.subscriptions.list(0, false);
+      const fullListKey = queryKeys.subscriptions.list(0, true);
       await Promise.all([
         queryClient.cancelQueries({ queryKey: visibleListKey }),
         queryClient.cancelQueries({ queryKey: fullListKey }),
@@ -137,9 +137,6 @@ export default function SubscriptionsPage() {
       return { previousVisible, previousFull };
     },
     onSuccess: (_data, variables) => {
-      void queryClient.invalidateQueries({
-        queryKey: SUBSCRIPTION_QUERY_KEYS.overview,
-      });
       if (variables.action === "reject") {
         toast.success(t("subscriptions.rejectedSaved"));
       } else if (variables.action === "restore") {
@@ -151,22 +148,20 @@ export default function SubscriptionsPage() {
     onError: (error, _variables, context) => {
       if (context?.previousVisible !== undefined) {
         queryClient.setQueryData(
-          SUBSCRIPTION_QUERY_KEYS.list(false),
+          queryKeys.subscriptions.list(0, false),
           context.previousVisible,
         );
       }
       if (context?.previousFull !== undefined) {
         queryClient.setQueryData(
-          SUBSCRIPTION_QUERY_KEYS.list(true),
+          queryKeys.subscriptions.list(0, true),
           context.previousFull,
         );
       }
       showErrorToast(error, t("toast.error"));
     },
     onSettled: () => {
-      void queryClient.invalidateQueries({
-        queryKey: SUBSCRIPTION_QUERY_KEYS.allLists,
-      });
+      void invalidateSubscriptionData(queryClient);
     },
   });
 
@@ -257,11 +252,18 @@ export default function SubscriptionsPage() {
         </TabsList>
 
         <TabsContent value="subscriptions" className="space-y-5">
-          <SubscriptionSummary
-            overview={overview}
-            attentionCount={attentionCount}
-            isLoading={overviewQuery.isLoading || query.isLoading}
-          />
+          {overviewQuery.isError ? (
+            <ErrorState
+              variant="compact"
+              onRetry={() => void overviewQuery.refetch()}
+            />
+          ) : (
+            <SubscriptionSummary
+              overview={overview}
+              attentionCount={attentionCount}
+              isLoading={overviewQuery.isLoading || query.isLoading}
+            />
+          )}
 
           <SubscriptionScopeFilter
             value={scope}
@@ -345,6 +347,7 @@ function SubscriptionSummary({
   isLoading: boolean;
 }) {
   const { t } = useT();
+  const { formatCurrency } = useFormatters();
   const currency = overview?.base_currency ?? "PLN";
   const items = [
     {

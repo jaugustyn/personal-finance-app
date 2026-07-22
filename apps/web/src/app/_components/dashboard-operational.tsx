@@ -18,10 +18,11 @@ import type {
   SubscriptionOverview,
   SubscriptionUpcomingPayment,
 } from "@/lib/api";
-import { tCategory, useT } from "@/lib/i18n";
-import { cn, formatCurrency, formatDate } from "@/lib/utils";
+import { tCategory, useFormatters, useT } from "@/lib/i18n";
+import { cn } from "@/lib/utils";
 import { transactionsHref } from "@/lib/transaction-links";
 import { Button } from "@/components/ui/button";
+import { ErrorState } from "@/components/error-state";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 type AttentionTone = "info" | "negative" | "warning";
@@ -33,6 +34,12 @@ export function AttentionPanel({
   reviewLoading,
   anomaliesLoading,
   subscriptionsLoading,
+  reviewError,
+  anomaliesError,
+  subscriptionsError,
+  onReviewRetry,
+  onAnomaliesRetry,
+  onSubscriptionsRetry,
   layout = "grid",
 }: {
   reviewRows: ReviewQueueItem[] | undefined;
@@ -41,9 +48,16 @@ export function AttentionPanel({
   reviewLoading: boolean;
   anomaliesLoading: boolean;
   subscriptionsLoading: boolean;
+  reviewError: boolean;
+  anomaliesError: boolean;
+  subscriptionsError: boolean;
+  onReviewRetry: () => void;
+  onAnomaliesRetry: () => void;
+  onSubscriptionsRetry: () => void;
   layout?: "grid" | "rail";
 }) {
   const { t } = useT();
+  const { formatCurrency } = useFormatters();
   const upcoming = subscriptions?.upcoming ?? [];
 
   return (
@@ -70,6 +84,8 @@ export function AttentionPanel({
           href={transactionsHref({ view: "review" })}
           footer={t("dashboard.operational.openReview")}
           loading={reviewLoading}
+          isError={reviewError}
+          onRetry={onReviewRetry}
         >
           {reviewRows?.slice(0, 2).map((row) => (
             <AttentionItem
@@ -107,6 +123,8 @@ export function AttentionPanel({
           href="/anomalies"
           footer={t("dashboard.operational.openAnomalies")}
           loading={anomaliesLoading}
+          isError={anomaliesError}
+          onRetry={onAnomaliesRetry}
         >
           {anomalies?.items.slice(0, 2).map((row) => (
             <AttentionItem
@@ -143,6 +161,8 @@ export function AttentionPanel({
           href="/subscriptions"
           footer={t("dashboard.operational.openSubscriptions")}
           loading={subscriptionsLoading}
+          isError={subscriptionsError}
+          onRetry={onSubscriptionsRetry}
         >
           {upcoming.slice(0, 2).map((row) => (
             <UpcomingRow key={row.subscription_key} row={row} tone="warning" />
@@ -161,6 +181,8 @@ function AttentionSection({
   href,
   footer,
   loading,
+  isError,
+  onRetry,
   children,
 }: {
   icon: LucideIcon;
@@ -170,6 +192,8 @@ function AttentionSection({
   href: string;
   footer: string;
   loading: boolean;
+  isError: boolean;
+  onRetry: () => void;
   children: ReactNode;
 }) {
   return (
@@ -193,7 +217,19 @@ function AttentionSection({
       </div>
 
       <div className="mt-4 flex-1 overflow-hidden rounded-md border border-border/70 bg-background divide-y">
-        {loading ? <ListLoading /> : count > 0 ? children : <ListEmpty />}
+        {loading ? (
+          <ListLoading />
+        ) : isError ? (
+          <ErrorState
+            variant="compact"
+            onRetry={onRetry}
+            className="rounded-none border-0"
+          />
+        ) : count > 0 ? (
+          children
+        ) : (
+          <ListEmpty />
+        )}
       </div>
 
       <Button
@@ -245,6 +281,7 @@ function UpcomingRow({
   row: SubscriptionUpcomingPayment;
   tone: AttentionTone;
 }) {
+  const { formatCurrency, formatDate } = useFormatters();
   return (
     <AttentionItem href="/subscriptions" tone={tone}>
       <div className="flex items-center justify-between gap-3">

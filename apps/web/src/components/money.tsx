@@ -1,5 +1,5 @@
 import { cn } from "@/lib/utils";
-import { formatCurrency } from "@/lib/utils";
+import { useFormatters } from "@/lib/i18n";
 
 export type MoneyDirection = "debit" | "credit";
 
@@ -24,6 +24,7 @@ export function Money({
   signed,
   className,
 }: MoneyProps) {
+  const { formatCurrency } = useFormatters();
   const abs = Math.abs(amount);
   let sign = "";
   let color = "";

@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { cookies } from "next/headers";
 import { Geist } from "next/font/google";
 import "./globals.css";
 import { ThemeProvider } from "@/components/theme-provider";
@@ -12,23 +13,31 @@ import { ConfirmProvider } from "@/components/confirm-dialog";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AppLockProvider } from "@/components/app-lock-provider";
+import { SkipLink } from "@/components/skip-link";
+import type { Locale } from "@/lib/i18n";
+import { DICT } from "@/lib/i18n/locales";
 
 const geist = Geist({ subsets: ["latin"], variable: "--font-geist-sans" });
 
-export const metadata: Metadata = {
-  title: "Finanse — Pulpit",
-  description: "Self-hosted personal finance dashboard",
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const locale = await localeFromCookie();
+  return {
+    title: DICT[locale]["metadata.title"],
+    description: DICT[locale]["metadata.description"],
+  };
+}
 
 // Set the saved accent before paint to avoid a flash of the default theme.
 const accentScript = `(function(){try{var a=localStorage.getItem('finance-accent');document.documentElement.setAttribute('data-accent',(a==='teal'||a==='blue'||a==='violet')?a:'emerald');}catch(e){document.documentElement.setAttribute('data-accent','emerald');}})();`;
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
+  const initialLocale = await localeFromCookie();
+
   return (
     <html
-      lang="pl"
+      lang={initialLocale}
       suppressHydrationWarning
       className={`${geist.variable} h-full antialiased`}
       data-accent="emerald"
@@ -39,16 +48,17 @@ export default function RootLayout({
       <body className="min-h-full">
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
           <AccentProvider>
-            <I18nProvider>
+            <I18nProvider initialLocale={initialLocale}>
               <QueryProvider>
                 <TooltipProvider delayDuration={200}>
                   <ConfirmProvider>
                     <AppLockProvider>
+                      <SkipLink />
                       <div className="flex h-screen">
                         <Sidebar />
                         <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
                           <AppHeader />
-                          <main className="min-w-0 flex-1 overflow-y-auto [scrollbar-gutter:stable] p-4 sm:p-6">
+                          <main id="main-content" tabIndex={-1} className="min-w-0 flex-1 overflow-y-auto [scrollbar-gutter:stable] p-4 sm:p-6">
                             <ErrorBoundary>{children}</ErrorBoundary>
                           </main>
                         </div>
@@ -64,4 +74,9 @@ export default function RootLayout({
       </body>
     </html>
   );
+}
+
+async function localeFromCookie(): Promise<Locale> {
+  const value = (await cookies()).get("finance-locale")?.value;
+  return value === "en" ? "en" : "pl";
 }

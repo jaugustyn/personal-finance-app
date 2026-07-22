@@ -50,7 +50,9 @@ export function AppHeader() {
       </Sheet>
 
       <button
+        type="button"
         onClick={() => setPaletteOpen(true)}
+        aria-label={t("header.command")}
         className="flex h-9 w-full max-w-xs items-center gap-2 rounded-md border border-input bg-background px-3 text-sm text-muted-foreground shadow-sm transition-colors hover:bg-accent"
       >
         <Search className="h-4 w-4" />

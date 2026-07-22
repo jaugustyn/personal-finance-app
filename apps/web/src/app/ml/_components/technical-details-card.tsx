@@ -1,8 +1,7 @@
 import { ChevronDown, Settings2 } from "lucide-react";
 
 import type { MlDashboard } from "@/lib/api";
-import { tCategory, useT } from "@/lib/i18n";
-import { formatNumber } from "@/lib/utils";
+import { tCategory, useFormatters, useT } from "@/lib/i18n";
 import { Badge } from "@/components/ui/badge";
 import {
   estimatorName,
@@ -18,6 +17,7 @@ function asRecord(value: unknown): Record<string, unknown> {
 
 export function TechnicalDetailsCard({ data }: { data: MlDashboard }) {
   const { t } = useT();
+  const { formatNumber } = useFormatters();
   const training = data.latest_training;
   if (!training.exists || Object.keys(training.metrics).length === 0) return null;
 
@@ -145,6 +145,7 @@ function ValidationSlice({
   metrics: Record<string, unknown>;
 }) {
   const { t } = useT();
+  const { formatNumber, formatPercent } = useFormatters();
   return (
     <div className="rounded-md border bg-muted/10 p-3">
       <div className="flex items-center justify-between gap-3">
@@ -156,19 +157,22 @@ function ValidationSlice({
       <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-4">
         <SliceMetric
           label={t("ml.comparison.macro")}
-          value={percent(numberFromRecord(metrics, "macro_f1"))}
+          value={percent(numberFromRecord(metrics, "macro_f1"), formatPercent)}
         />
         <SliceMetric
           label={t("ml.comparison.weighted")}
-          value={percent(numberFromRecord(metrics, "weighted_f1"))}
+          value={percent(numberFromRecord(metrics, "weighted_f1"), formatPercent)}
         />
         <SliceMetric
           label={t("ml.comparison.coverage")}
-          value={percent(numberFromRecord(metrics, "coverage"))}
+          value={percent(numberFromRecord(metrics, "coverage"), formatPercent)}
         />
         <SliceMetric
           label={t("ml.comparison.accuracy")}
-          value={percent(numberFromRecord(metrics, "accuracy_on_covered"))}
+          value={percent(
+            numberFromRecord(metrics, "accuracy_on_covered"),
+            formatPercent,
+          )}
         />
       </div>
     </div>

@@ -13,24 +13,24 @@ export const statusTone: Record<Subscription["status"], string> = {
   ignored: "border-muted bg-muted text-muted-foreground",
 };
 
-export const statusLabels: Record<Subscription["status"], string> = {
-  active: "Aktywna",
-  new: "Nowa",
-  price_increased: "Podwyżka",
-  price_decreased: "Obniżka",
-  probably_cancelled: "Prawdopodobnie anulowana",
-  paused_or_missing: "Brak płatności",
-  annual_renewal: "Roczne odnowienie",
-  needs_review: "Wymaga decyzji",
-  ignored: "Ukryta",
+export const statusLabels: Record<Subscription["status"], TranslationKey> = {
+  active: "subscriptions.status.active",
+  new: "subscriptions.status.new",
+  price_increased: "subscriptions.status.priceIncreased",
+  price_decreased: "subscriptions.status.priceDecreased",
+  probably_cancelled: "subscriptions.status.probablyCancelled",
+  paused_or_missing: "subscriptions.status.pausedOrMissing",
+  annual_renewal: "subscriptions.status.annualRenewal",
+  needs_review: "subscriptions.status.needsReview",
+  ignored: "subscriptions.status.ignored",
 };
 
-export const cadenceLabels: Record<string, string> = {
-  weekly: "Co tydzień",
-  biweekly: "Co 2 tygodnie",
-  monthly: "Co miesiąc",
-  yearly: "Co rok",
-  unknown: "Nieznany",
+export const cadenceLabels: Record<string, TranslationKey> = {
+  weekly: "subscriptions.cadence.weekly",
+  biweekly: "subscriptions.cadence.biweekly",
+  monthly: "subscriptions.cadence.monthly",
+  yearly: "subscriptions.cadence.yearly",
+  unknown: "subscriptions.cadence.unknown",
 };
 
 export type SubscriptionScope = "all" | "attention" | "active" | "hidden";

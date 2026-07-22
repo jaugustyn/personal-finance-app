@@ -45,14 +45,13 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { AppLockSettings } from "@/components/app-lock-settings";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-
-const RULES_KEY = ["personalRules"] as const;
+import { queryKeys } from "@/lib/query-keys";
 
 export default function SettingsPage() {
   const { t } = useT();
   const qc = useQueryClient();
   const rulesQuery = useQuery<PersonalRule[]>({
-    queryKey: RULES_KEY,
+    queryKey: queryKeys.profile.rules,
     queryFn: () => api.personalRules(),
   });
 
@@ -78,7 +77,7 @@ export default function SettingsPage() {
         confidence: ruleMode === "auto_apply" ? 1.0 : 0.95,
       }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: RULES_KEY });
+      void qc.invalidateQueries({ queryKey: queryKeys.profile.all });
       setPattern("");
       setRuleCategory("");
       setRuleType("");
@@ -91,14 +90,15 @@ export default function SettingsPage() {
   const patchRule = useMutation({
     mutationFn: ({ id, patch }: { id: number; patch: Partial<PersonalRule> }) =>
       api.patchPersonalRule(id, patch),
-    onSuccess: () => qc.invalidateQueries({ queryKey: RULES_KEY }),
+    onSuccess: () =>
+      void qc.invalidateQueries({ queryKey: queryKeys.profile.all }),
     onError: (error) => showErrorToast(error, t("toast.error")),
   });
 
   const deleteRule = useMutation({
     mutationFn: (id: number) => api.deletePersonalRule(id),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: RULES_KEY });
+      void qc.invalidateQueries({ queryKey: queryKeys.profile.all });
       toast.success(t("toast.deleted"));
     },
     onError: (error) => showErrorToast(error, t("toast.error")),
@@ -319,8 +319,11 @@ export default function SettingsPage() {
                     </Select>
                   </div>
                   <div className="space-y-2 xl:col-span-2">
-                    <Label>{t("transactions.column.category")}</Label>
+                    <Label htmlFor="rule-category">
+                      {t("transactions.column.category")}
+                    </Label>
                     <CategorySelect
+                      id="rule-category"
                       value={ruleCategory}
                       onChange={setRuleCategory}
                       allLabel={t("settings.noCategory")}
@@ -329,8 +332,11 @@ export default function SettingsPage() {
                     />
                   </div>
                   <div className="space-y-2 xl:col-span-2">
-                    <Label>{t("transactions.filterType")}</Label>
+                    <Label htmlFor="rule-transaction-type">
+                      {t("transactions.filterType")}
+                    </Label>
                     <TransactionTypeFilterSelect
+                      id="rule-transaction-type"
                       value={ruleType}
                       onChange={setRuleType}
                       allLabel={t("settings.noType")}

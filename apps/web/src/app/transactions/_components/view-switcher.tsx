@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
 import { api } from "@/lib/api";
 import { useT } from "@/lib/i18n";
+import { queryKeys } from "@/lib/query-keys";
 import { cn } from "@/lib/utils";
 import type { TransactionsMode } from "../_lib/constants";
 
@@ -15,7 +16,7 @@ interface ViewSwitcherProps {
 export function ViewSwitcher({ value, onChange }: ViewSwitcherProps) {
   const { t } = useT();
   const summary = useQuery({
-    queryKey: ["review-summary"],
+    queryKey: queryKeys.transactions.reviewSummary,
     queryFn: () => api.reviewSummary(),
   });
   const categoryReviewCount = summary.data
@@ -43,10 +44,11 @@ export function ViewSwitcher({ value, onChange }: ViewSwitcherProps) {
   ];
 
   return (
-    <nav
-      className="flex max-w-full overflow-x-auto border-b"
-      aria-label={t("transactions.title")}
-    >
+    <div>
+      <nav
+        className="flex max-w-full overflow-x-auto border-b"
+        aria-label={t("transactions.title")}
+      >
       {items.map((item) => {
         const active = value === item.value;
         return (
@@ -77,6 +79,16 @@ export function ViewSwitcher({ value, onChange }: ViewSwitcherProps) {
           </button>
         );
       })}
-    </nav>
+      </nav>
+      {summary.isError ? (
+        <button
+          type="button"
+          onClick={() => void summary.refetch()}
+          className="mt-2 text-xs text-destructive underline-offset-4 hover:underline"
+        >
+          {t("common.error")} · {t("common.retry")}
+        </button>
+      ) : null}
+    </div>
   );
 }

@@ -1,7 +1,6 @@
 import { ChevronDown, MessageSquareCheck } from "lucide-react";
 
-import { tCategory, useT } from "@/lib/i18n";
-import { formatNumber } from "@/lib/utils";
+import { tCategory, useFormatters, useT } from "@/lib/i18n";
 import { Badge } from "@/components/ui/badge";
 import { numberFromRecord, percent } from "../_lib/ml-format";
 
@@ -15,6 +14,7 @@ export function FeedbackQualityCard({
   confirmedLabels: number;
 }) {
   const { t } = useT();
+  const { formatNumber, formatPercent } = useFormatters();
   const accepted = numberFromRecord(quality, "accepted_suggestions") ?? 0;
   const rejected = numberFromRecord(quality, "rejected_suggestions") ?? 0;
   const suggestionTotal = numberFromRecord(quality, "suggestion_feedback_total") ?? 0;
@@ -46,7 +46,7 @@ export function FeedbackQualityCard({
                 <span aria-hidden="true">·</span>
                 <span>
                   {t("ml.feedback.acceptanceShare", {
-                    value: percent(acceptanceRate),
+                    value: percent(acceptanceRate, formatPercent),
                   })}
                 </span>
               </>

@@ -11,7 +11,7 @@ import {
 } from "recharts";
 import { useMemo } from "react";
 import type { NetWorthPoint } from "@/lib/api";
-import { formatCurrency, formatMonth } from "@/lib/utils";
+import { useFormatters, useT } from "@/lib/i18n";
 import { tooltipStyle } from "./chart-utils";
 
 export function NetWorthChart({
@@ -21,9 +21,11 @@ export function NetWorthChart({
   data: NetWorthPoint[];
   currency?: string;
 }) {
+  const { t } = useT();
+  const { formatCurrency, formatMonth } = useFormatters();
   const formatted = useMemo(
     () => data.map((d) => ({ label: formatMonth(d.month), balance: Number(d.balance) })),
-    [data],
+    [data, formatMonth],
   );
   return (
     <ResponsiveContainer width="100%" height={300}>
@@ -48,7 +50,7 @@ export function NetWorthChart({
         <Area
           type="monotone"
           dataKey="balance"
-          name="Skumulowane saldo"
+          name={t("chart.cumulativeBalance")}
           stroke="hsl(var(--chart-2))"
           fill="url(#nw)"
           strokeWidth={2}

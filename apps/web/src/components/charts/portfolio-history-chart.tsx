@@ -1,7 +1,7 @@
 "use client";
 
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { formatCurrency } from "@/lib/utils";
+import { useFormatters, useT } from "@/lib/i18n";
 import { tooltipStyle } from "./chart-utils";
 
 export function PortfolioHistoryChart({
@@ -9,7 +9,9 @@ export function PortfolioHistoryChart({
 }: {
   data: { snapshot_date: string; value_pln: number | string }[];
 }) {
-  const rows = data.map((d) => ({ label: d.snapshot_date.slice(5), value: Number(d.value_pln) }));
+  const { t } = useT();
+  const { formatCurrency, formatDate } = useFormatters();
+  const rows = data.map((d) => ({ label: formatDate(d.snapshot_date), value: Number(d.value_pln) }));
   return (
     <ResponsiveContainer width="100%" height={260}>
       <AreaChart data={rows} margin={{ top: 10, right: 10, bottom: 0, left: 0 }}>
@@ -30,7 +32,7 @@ export function PortfolioHistoryChart({
         <Area
           type="monotone"
           dataKey="value"
-          name="Wartość"
+          name={t("chart.value")}
           stroke="hsl(var(--chart-4))"
           fill="url(#pnl)"
           strokeWidth={2}

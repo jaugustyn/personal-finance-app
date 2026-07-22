@@ -2,12 +2,14 @@
 
 import { Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 import type { CategoryBreakdown } from "@/lib/api";
-import { formatCurrency } from "@/lib/utils";
+import { tCategory, useFormatters, useT } from "@/lib/i18n";
 import { PIE_COLORS, tooltipStyle } from "./chart-utils";
 
 export function CategoryDonut({ data }: { data: CategoryBreakdown[] }) {
+  const { t } = useT();
+  const { formatCurrency } = useFormatters();
   const top = data.slice(0, 8).map((d) => ({
-    category: d.category ?? "(brak)",
+    category: d.category ? tCategory(t, d.category) : t("common.unknown"),
     amount: Number(d.amount),
   }));
   return (

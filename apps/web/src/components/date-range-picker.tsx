@@ -1,4 +1,3 @@
-/* eslint-disable react-hooks/set-state-in-effect -- reset transient selection after controlled props commit */
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -17,7 +16,8 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
-import { useT } from "@/lib/i18n";
+import { useFormatters, useT } from "@/lib/i18n";
+import type { Formatters } from "@/lib/formatters";
 
 interface DateRangePickerProps {
   from: string;
@@ -38,7 +38,8 @@ export function DateRangePicker({
   onClear,
   ariaLabel,
 }: DateRangePickerProps) {
-  const { t, locale } = useT();
+  const { t } = useT();
+  const { formatDate, localeTag } = useFormatters();
   const [open, setOpen] = useState(false);
   const [calendarMode, setCalendarMode] = useState<CalendarMode>("days");
   const [draftFrom, setDraftFrom] = useState<Date | null>(null);
@@ -56,9 +57,10 @@ export function DateRangePicker({
   const activeFrom = draftFrom ?? selectedFrom;
   const activeTo = draftFrom ? null : selectedTo;
   const monthDays = useMemo(() => buildMonthDays(visibleMonth), [visibleMonth]);
-  const label = rangeLabel(displayFrom, displayTo, t);
+  const label = rangeLabel(displayFrom, displayTo, t, formatDate);
   const canClear = displayFrom !== "" || displayTo !== "" || draftFrom !== null;
 
+  /* eslint-disable react-hooks/set-state-in-effect -- reset transient selection after controlled props commit */
   useEffect(() => {
     if (draftRange && draftRange.from === from && draftRange.to === to) {
       setDraftRange(null);
@@ -71,6 +73,7 @@ export function DateRangePicker({
       setDraftRange(null);
     }
   }, [from, to]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const handleOpenChange = (nextOpen: boolean) => {
     setOpen(nextOpen);
@@ -197,7 +200,7 @@ export function DateRangePicker({
             <CalendarHeader
               mode={calendarMode}
               month={visibleMonth}
-              locale={locale}
+              localeTag={localeTag}
               selectMonthLabel={t("transactions.dateRange.selectMonth")}
               selectYearLabel={t("transactions.dateRange.selectYear")}
               onModeChange={setCalendarMode}
@@ -225,7 +228,7 @@ export function DateRangePicker({
           {calendarMode === "days" && (
             <>
               <div className="grid grid-cols-7 gap-1 text-center text-[11px] font-medium text-muted-foreground">
-                {weekdayLabels(locale).map((day) => (
+                {weekdayLabels(localeTag).map((day) => (
                   <div key={day} className="py-1">
                     {day}
                   </div>
@@ -252,7 +255,7 @@ export function DateRangePicker({
           {calendarMode === "months" && (
             <MonthGrid
               month={visibleMonth}
-              locale={locale}
+              localeTag={localeTag}
               onSelect={(month) => {
                 setVisibleMonth(
                   new Date(visibleMonth.getFullYear(), month, 1),
@@ -279,15 +282,18 @@ export function DateRangePicker({
 }
 
 export function DatePicker({
+  id,
   value,
   onChange,
   ariaLabel,
 }: {
+  id?: string;
   value: string;
   onChange: (value: string) => void;
   ariaLabel: string;
 }) {
-  const { t, locale } = useT();
+  const { t } = useT();
+  const { formatDate, localeTag } = useFormatters();
   const [open, setOpen] = useState(false);
   const [calendarMode, setCalendarMode] = useState<CalendarMode>("days");
   const selectedDate = parseDateValue(value);
@@ -308,6 +314,7 @@ export function DatePicker({
     <Popover modal open={open} onOpenChange={handleOpenChange}>
       <PopoverTrigger asChild>
         <Button
+          id={id}
           type="button"
           variant="outline"
           className="relative w-full justify-center bg-transparent px-9 text-[15px] font-normal"
@@ -315,7 +322,7 @@ export function DatePicker({
         >
           <CalendarDays className="absolute left-3 h-4 w-4 text-muted-foreground" />
           <span className="truncate">
-            {value ? formatDateValue(value) : ariaLabel}
+            {value ? formatDate(value) : ariaLabel}
           </span>
         </Button>
       </PopoverTrigger>
@@ -343,7 +350,7 @@ export function DatePicker({
             <CalendarHeader
               mode={calendarMode}
               month={visibleMonth}
-              locale={locale}
+              localeTag={localeTag}
               selectMonthLabel={t("transactions.dateRange.selectMonth")}
               selectYearLabel={t("transactions.dateRange.selectYear")}
               onModeChange={setCalendarMode}
@@ -371,7 +378,7 @@ export function DatePicker({
           {calendarMode === "days" ? (
             <>
               <div className="grid grid-cols-7 gap-1 text-center text-[11px] font-medium text-muted-foreground">
-                {weekdayLabels(locale).map((day) => (
+                {weekdayLabels(localeTag).map((day) => (
                   <div key={day} className="py-1">
                     {day}
                   </div>
@@ -401,7 +408,7 @@ export function DatePicker({
           {calendarMode === "months" ? (
             <MonthGrid
               month={visibleMonth}
-              locale={locale}
+              localeTag={localeTag}
               onSelect={(month) => {
                 setVisibleMonth(
                   new Date(visibleMonth.getFullYear(), month, 1),
@@ -447,14 +454,14 @@ function PresetButton({
 function CalendarHeader({
   mode,
   month,
-  locale,
+  localeTag,
   selectMonthLabel,
   selectYearLabel,
   onModeChange,
 }: {
   mode: CalendarMode;
   month: Date;
-  locale: "pl" | "en";
+  localeTag: string;
   selectMonthLabel: string;
   selectYearLabel: string;
   onModeChange: (mode: CalendarMode) => void;
@@ -488,7 +495,7 @@ function CalendarHeader({
         aria-label={selectMonthLabel}
         onClick={() => onModeChange("months")}
       >
-        {formatMonthName(month, locale)}
+        {formatMonthName(month, localeTag)}
       </button>
       <button
         type="button"
@@ -504,17 +511,17 @@ function CalendarHeader({
 
 function MonthGrid({
   month,
-  locale,
+  localeTag,
   onSelect,
 }: {
   month: Date;
-  locale: "pl" | "en";
+  localeTag: string;
   onSelect: (month: number) => void;
 }) {
   const activeMonth = month.getMonth();
   return (
     <div className="grid grid-cols-3 gap-1">
-      {monthLabels(locale).map((label, index) => (
+      {monthLabels(localeTag).map((label, index) => (
         <button
           key={label}
           type="button"
@@ -596,16 +603,21 @@ function CalendarDay({
   );
 }
 
-function rangeLabel(from: string, to: string, t: ReturnType<typeof useT>["t"]) {
-  if (from && to) return `${formatDateValue(from)} - ${formatDateValue(to)}`;
+function rangeLabel(
+  from: string,
+  to: string,
+  t: ReturnType<typeof useT>["t"],
+  formatDate: Formatters["formatDate"],
+) {
+  if (from && to) return `${formatDate(from)} - ${formatDate(to)}`;
   if (from) {
     return t("transactions.dateRange.from", {
-      value: formatDateValue(from),
+      value: formatDate(from),
     });
   }
   if (to) {
     return t("transactions.dateRange.to", {
-      value: formatDateValue(to),
+      value: formatDate(to),
     });
   }
   return t("transactions.dateRange.any");
@@ -627,12 +639,6 @@ function toDateValue(date: Date) {
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
-}
-
-function formatDateValue(value: string) {
-  const [year, month, day] = value.split("-");
-  if (!year || !month || !day) return value;
-  return `${day}.${month}.${year}`;
 }
 
 function startOfMonth(date: Date) {
@@ -673,15 +679,15 @@ function sameDay(left: Date, right: Date) {
   );
 }
 
-function formatMonthName(date: Date, locale: "pl" | "en") {
-  return new Intl.DateTimeFormat(locale === "pl" ? "pl-PL" : "en-US", {
+function formatMonthName(date: Date, localeTag: string) {
+  return new Intl.DateTimeFormat(localeTag, {
     month: "long",
   }).format(date);
 }
 
-function monthLabels(locale: "pl" | "en") {
+function monthLabels(localeTag: string) {
   return Array.from({ length: 12 }, (_, month) =>
-    new Intl.DateTimeFormat(locale === "pl" ? "pl-PL" : "en-US", {
+    new Intl.DateTimeFormat(localeTag, {
       month: "short",
     }).format(new Date(2026, month, 1)),
   );
@@ -696,8 +702,10 @@ function yearRangeLabel(month: Date) {
   return `${start} - ${start + 11}`;
 }
 
-function weekdayLabels(locale: "pl" | "en") {
-  return locale === "pl"
-    ? ["Pn", "Wt", "Sr", "Cz", "Pt", "So", "Nd"]
-    : ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+function weekdayLabels(localeTag: string) {
+  return Array.from({ length: 7 }, (_, day) =>
+    new Intl.DateTimeFormat(localeTag, { weekday: "short" }).format(
+      new Date(2026, 0, 5 + day),
+    ),
+  );
 }

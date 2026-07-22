@@ -1,4 +1,3 @@
-/* eslint-disable react-hooks/set-state-in-effect */
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -15,13 +14,16 @@ import {
 import { useT } from "@/lib/i18n";
 import { useConfirm } from "@/components/confirm-dialog";
 import { ErrorState } from "@/components/error-state";
-import { useLocalStorageState } from "@/hooks/use-local-storage-state";
+import {
+  storedValueOneOf,
+  useLocalStorageState,
+} from "@/hooks/use-local-storage-state";
+import { queryKeys } from "@/lib/query-keys";
 import {
   PAGE_SIZE,
   hasCategorySuggestion,
   hasRejectedCategorySuggestion,
 } from "../_lib/constants";
-import { transactionQueryKeys } from "../_lib/query-keys";
 import { useTransactionMutations } from "../_lib/use-transaction-mutations";
 import { BulkActionsBar } from "./bulk-actions-bar";
 import { TransactionFilters } from "./transaction-filters";
@@ -64,6 +66,7 @@ const URL_FILTER_KEYS = [
   "category_state",
   "include_transfers",
 ] as const;
+const isDirection = storedValueOneOf<Direction>(["all", "debit", "credit"]);
 
 function updateUrlFilter(key: (typeof URL_FILTER_KEYS)[number], value?: string) {
   const url = new URL(window.location.href);
@@ -93,6 +96,7 @@ export function ListView({
   const [direction, setDirection] = useLocalStorageState<Direction>(
     `${commonStoragePrefix}.direction`,
     "all",
+    { validate: isDirection },
   );
   const [category, setCategory] = useLocalStorageState(
     `${commonStoragePrefix}.category`,
@@ -145,6 +149,7 @@ export function ListView({
   const minAmountFilter = amountFilterValue(minAmount);
   const maxAmountFilter = amountFilterValue(maxAmount);
 
+  /* eslint-disable react-hooks/set-state-in-effect -- apply URL filters after the client location becomes available */
   useEffect(() => {
     if (!initialFilters?.key) return;
     if (reviewMode) {
@@ -191,6 +196,7 @@ export function ListView({
     setSearch,
     setTransactionType,
   ]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const filterParams: TransactionFilterParams = reviewMode
     ? {
@@ -220,20 +226,20 @@ export function ListView({
         sort_by: sort.id,
         sort_direction: sort.dir,
       };
+  const queryParams = {
+    limit: PAGE_SIZE,
+    offset: page * PAGE_SIZE,
+    ...listParams,
+  };
 
   const query = useQuery({
-    queryKey: transactionQueryKeys.list(page, listParams),
-    queryFn: () =>
-      api.transactions({
-        limit: PAGE_SIZE,
-        offset: page * PAGE_SIZE,
-        ...listParams,
-      }),
+    queryKey: queryKeys.transactions.list(queryParams),
+    queryFn: () => api.transactions(queryParams),
     placeholderData: keepPreviousData,
   });
 
   const summaryQuery = useQuery<FilterSummary>({
-    queryKey: transactionQueryKeys.filterSummary(filterParams),
+    queryKey: queryKeys.transactions.filterSummary(filterParams),
     queryFn: () => api.filterSummary(filterParams),
     placeholderData: keepPreviousData,
   });
@@ -485,6 +491,14 @@ export function ListView({
           setBulkType("");
         }}
       />
+
+      {summaryQuery.isError ? (
+        <ErrorState
+          variant="compact"
+          description={apiErrorMessage(summaryQuery.error)}
+          onRetry={() => void summaryQuery.refetch()}
+        />
+      ) : null}
 
       {query.isError ? (
         <ErrorState

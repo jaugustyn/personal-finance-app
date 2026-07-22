@@ -30,9 +30,10 @@ import {
   type FixedChargeCreateInput,
   type FixedChargeSummary as FixedChargeSummaryType,
 } from "@/lib/api";
-import { tCategory, useT, type TranslationKey } from "@/lib/i18n";
+import { tCategory, useFormatters, useT, type TranslationKey } from "@/lib/i18n";
 import { showErrorToast } from "@/lib/toasts";
-import { cn, formatCurrency } from "@/lib/utils";
+import { invalidateSubscriptionData, queryKeys } from "@/lib/query-keys";
+import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -61,7 +62,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { CardGridSkeleton } from "@/components/ui/skeleton";
-import { SUBSCRIPTION_QUERY_KEYS } from "../_lib/query-keys";
 import { FixedChargeTransactionsDialog } from "./fixed-charge-transactions-dialog";
 
 const CADENCES: FixedChargeCadence[] = [
@@ -107,15 +107,15 @@ function localDate(value: string): Date {
   return new Date(year, month - 1, day);
 }
 
-function formatDueDate(value: string, locale: "pl" | "en"): string {
-  return new Intl.DateTimeFormat(locale === "pl" ? "pl-PL" : "en-US", {
+function formatDueDate(value: string, localeTag: string): string {
+  return new Intl.DateTimeFormat(localeTag, {
     day: "numeric",
     month: "long",
     year: "numeric",
   }).format(localDate(value));
 }
 
-function formatRelativeDueDate(value: string, locale: "pl" | "en"): string {
+function formatRelativeDueDate(value: string, localeTag: string): string {
   const due = localDate(value);
   const today = new Date();
   const difference = Math.round(
@@ -123,7 +123,7 @@ function formatRelativeDueDate(value: string, locale: "pl" | "en"): string {
       Date.UTC(today.getFullYear(), today.getMonth(), today.getDate())) /
       86_400_000,
   );
-  return new Intl.RelativeTimeFormat(locale === "pl" ? "pl-PL" : "en-US", {
+  return new Intl.RelativeTimeFormat(localeTag, {
     numeric: "auto",
   }).format(difference, "day");
 }
@@ -149,14 +149,11 @@ export function FixedChargesTab() {
   const [form, setForm] = useState<FormState>(emptyForm);
 
   const query = useQuery({
-    queryKey: SUBSCRIPTION_QUERY_KEYS.fixedCharges,
+    queryKey: queryKeys.fixedCharges.list,
     queryFn: api.fixedCharges,
   });
 
-  const refresh = () =>
-    queryClient.invalidateQueries({
-      queryKey: SUBSCRIPTION_QUERY_KEYS.fixedCharges,
-    });
+  const refresh = () => invalidateSubscriptionData(queryClient);
 
   const saveMutation = useMutation({
     mutationFn: (payload: FixedChargeCreateInput) =>
@@ -324,6 +321,7 @@ function FixedChargeSummary({
   summary: FixedChargeSummaryType;
 }) {
   const { t } = useT();
+  const { formatCurrency } = useFormatters();
   const items = [
     {
       label: t("subscriptions.fixed.monthly"),
@@ -450,7 +448,8 @@ function FixedChargeCard({
   onDelete: () => void;
   onTransactions: () => void;
 }) {
-  const { t, locale } = useT();
+  const { t } = useT();
+  const { formatCurrency, localeTag } = useFormatters();
   const { data: categories = [] } = useCategories();
   const category = categories.find((item) => item.name === charge.category);
   const actionLabel =
@@ -544,7 +543,7 @@ function FixedChargeCard({
           <div className="min-w-0 text-right">
             <div className="truncate text-base font-semibold">
               {charge.current_due_date
-                ? formatDueDate(charge.current_due_date, locale)
+                ? formatDueDate(charge.current_due_date, localeTag)
                 : t("subscriptions.fixed.pausedLabel")}
             </div>
             <div className="mt-1 text-xs text-muted-foreground">
@@ -552,7 +551,7 @@ function FixedChargeCard({
                 ? t("subscriptions.fixed.relativeDue", {
                     relative: formatRelativeDueDate(
                       charge.current_due_date,
-                      locale,
+                      localeTag,
                     ),
                   })
                 : t("subscriptions.fixed.noActiveDue")}
@@ -684,7 +683,9 @@ function FixedChargeDialog({
               </div>
             </div>
             <div className="grid gap-2">
-              <Label>{t("subscriptions.fixed.cadence")}</Label>
+              <Label htmlFor="fixed-charge-cadence">
+                {t("subscriptions.fixed.cadence")}
+              </Label>
               <Select
                 value={form.cadence}
                 onValueChange={(value) =>
@@ -694,7 +695,7 @@ function FixedChargeDialog({
                   })
                 }
               >
-                <SelectTrigger>
+                <SelectTrigger id="fixed-charge-cadence">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -713,8 +714,11 @@ function FixedChargeDialog({
           </div>
 
           <div className="grid gap-2">
-            <Label>{t("subscriptions.fixed.anchorDate")}</Label>
+            <Label htmlFor="fixed-charge-anchor-date">
+              {t("subscriptions.fixed.anchorDate")}
+            </Label>
             <DatePicker
+              id="fixed-charge-anchor-date"
               value={form.anchorDate}
               onChange={(anchorDate) => onFormChange({ ...form, anchorDate })}
               ariaLabel={t("subscriptions.fixed.anchorDate")}
@@ -722,8 +726,11 @@ function FixedChargeDialog({
           </div>
 
           <div className="grid gap-2">
-            <Label>{t("subscriptions.fixed.category")}</Label>
+            <Label htmlFor="fixed-charge-category">
+              {t("subscriptions.fixed.category")}
+            </Label>
             <CategorySelect
+              id="fixed-charge-category"
               value={form.category}
               onChange={(category) => onFormChange({ ...form, category })}
               allLabel={t("subscriptions.fixed.noCategory")}

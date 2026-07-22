@@ -11,8 +11,9 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { EmptyState } from "@/components/empty-state";
+import { ErrorState } from "@/components/error-state";
 import { cn } from "@/lib/utils";
-import { useT } from "@/lib/i18n";
+import { useFormatters, useT } from "@/lib/i18n";
 
 export interface DataTableColumn<T> {
   id: string;
@@ -32,6 +33,8 @@ interface DataTableProps<T> {
   data: T[] | undefined;
   rowKey: (row: T) => string | number;
   isLoading?: boolean;
+  isError?: boolean;
+  onRetry?: () => void;
   initialSort?: SortState;
   sort?: SortState;
   onSortChange?: (sort: Exclude<SortState, null>) => void;
@@ -67,6 +70,8 @@ export function DataTable<T>({
   data,
   rowKey,
   isLoading,
+  isError,
+  onRetry,
   initialSort = null,
   sort: controlledSort,
   onSortChange,
@@ -82,6 +87,7 @@ export function DataTable<T>({
   rowCountLabel,
 }: DataTableProps<T>) {
   const { t } = useT();
+  const { compare } = useFormatters();
   const [internalSort, setInternalSort] = React.useState<SortState>(initialSort);
   const activeSort = onSortChange ? (controlledSort ?? null) : internalSort;
 
@@ -99,12 +105,9 @@ export function DataTable<T>({
       if (typeof av === "number" && typeof bv === "number") {
         return (av - bv) * factor;
       }
-      return (
-        String(av).localeCompare(String(bv), "pl", { sensitivity: "base" }) *
-        factor
-      );
+      return compare(String(av), String(bv)) * factor;
     });
-  }, [data, activeSort, columns, onSortChange]);
+  }, [activeSort, columns, compare, data, onSortChange]);
 
   const toggleSort = (id: string) => {
     if (onSortChange) {
@@ -142,6 +145,16 @@ export function DataTable<T>({
         {toolbar}
       </div>
     ) : null;
+
+  if (isError) {
+    return (
+      <ErrorState
+        variant="compact"
+        onRetry={onRetry}
+        className={cn("min-h-40", className)}
+      />
+    );
+  }
 
   if (!sorted || sorted.length === 0) {
     if (tableToolbar) {

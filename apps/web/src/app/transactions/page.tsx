@@ -1,4 +1,3 @@
-/* eslint-disable react-hooks/set-state-in-effect */
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -15,8 +14,12 @@ import {
 } from "@/lib/api";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
-import { useLocalStorageState } from "@/hooks/use-local-storage-state";
+import {
+  storedValueOneOf,
+  useLocalStorageState,
+} from "@/hooks/use-local-storage-state";
 import { showErrorToast } from "@/lib/toasts";
+import { invalidateTransactionData } from "@/lib/query-keys";
 import { ManualTransactionDialog } from "./_components/manual-transaction-dialog";
 import { GroupsView } from "./_components/groups-view";
 import { ListView, type TransactionInitialFilters } from "./_components/list-view";
@@ -27,7 +30,16 @@ import type {
   TransactionsSubject,
   TransactionsView,
 } from "./_lib/constants";
-import { transactionMutationInvalidationKeys } from "./_lib/query-keys";
+
+const isTransactionsView = storedValueOneOf<TransactionsView>([
+  "list",
+  "review",
+  "groups",
+]);
+const isTransactionsSubject = storedValueOneOf<TransactionsSubject>([
+  "category",
+  "transaction_type",
+]);
 
 export default function TransactionsPage() {
   const { t } = useT();
@@ -35,10 +47,12 @@ export default function TransactionsPage() {
   const [view, setView] = useLocalStorageState<TransactionsView>(
     "finance.transactions.view",
     "list",
+    { validate: isTransactionsView },
   );
   const [subject, setSubject] = useLocalStorageState<TransactionsSubject>(
     "finance.transactions.subject",
     "category",
+    { validate: isTransactionsSubject },
   );
   const [initialFilters, setInitialFilters] =
     useState<TransactionInitialFilters>({ key: "" });
@@ -46,6 +60,7 @@ export default function TransactionsPage() {
   const [editedTransaction, setEditedTransaction] =
     useState<Transaction | null>(null);
 
+  /* eslint-disable react-hooks/set-state-in-effect -- initialize filters from the client URL after hydration */
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const urlView = parseView(params.get("view"));
@@ -71,6 +86,7 @@ export default function TransactionsPage() {
       includeTransfers: parseIncludeTransfers(params.get("include_transfers")),
     });
   }, [setSubject, setView]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const activeMode: TransactionsMode =
     view === "review"
@@ -113,18 +129,7 @@ export default function TransactionsPage() {
         ? api.createTransaction(payload)
         : api.updateManualTransaction(id, payload),
     onSuccess: (_result, variables) => {
-      transactionMutationInvalidationKeys.forEach((queryKey) => {
-        void queryClient.invalidateQueries({ queryKey });
-      });
-      [
-        ["recap"],
-        ["anomalies"],
-        ["subscriptions"],
-        ["fixed-charge-transactions"],
-        ["dashboard"],
-      ].forEach((queryKey) => {
-        void queryClient.invalidateQueries({ queryKey });
-      });
+      void invalidateTransactionData(queryClient);
       toast.success(
         t(
           variables.id === null

@@ -5,6 +5,7 @@ import { Command as CommandPrimitive } from "cmdk";
 import { Search, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { useT } from "@/lib/i18n";
 
 export const Command = React.forwardRef<
   React.ComponentRef<typeof CommandPrimitive>,
@@ -52,9 +53,10 @@ export const CommandInput = React.forwardRef<
   CommandInputProps
 >(
   (
-    { className, value, onValueChange, disabled, clearLabel = "Clear", ...props },
+    { className, value, onValueChange, disabled, clearLabel, ...props },
     ref,
   ) => {
+    const { t } = useT();
     const [internalValue, setInternalValue] = React.useState("");
     const inputValue = String(value ?? internalValue);
 
@@ -64,7 +66,10 @@ export const CommandInput = React.forwardRef<
     };
 
     return (
-      <div className="flex items-center border-b px-3" cmdk-input-wrapper="">
+      <div
+        className="flex items-center border-b px-3 focus-within:ring-2 focus-within:ring-inset focus-within:ring-ring"
+        cmdk-input-wrapper=""
+      >
         <Search className="mr-2 h-4 w-4 shrink-0 opacity-50" />
         <CommandPrimitive.Input
           ref={ref}
@@ -82,7 +87,7 @@ export const CommandInput = React.forwardRef<
             type="button"
             className="ml-2 rounded-sm p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
             onClick={() => setValue("")}
-            aria-label={clearLabel}
+            aria-label={clearLabel ?? t("common.clear")}
           >
             <X className="h-4 w-4" />
           </button>

@@ -2,10 +2,11 @@
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { useConfirm } from "@/components/confirm-dialog";
 import { api, isApiError } from "@/lib/api";
 import { useT } from "@/lib/i18n";
+import { invalidateTransactionData } from "@/lib/query-keys";
 import { showErrorToast } from "@/lib/toasts";
-import { transactionMutationInvalidationKeys } from "./query-keys";
 
 interface UseTransactionMutationsOptions {
   clearSelection: () => void;
@@ -20,12 +21,8 @@ export function useTransactionMutations({
 }: UseTransactionMutationsOptions) {
   const { t } = useT();
   const qc = useQueryClient();
-
-  const invalidateAll = () => {
-    transactionMutationInvalidationKeys.forEach((queryKey) => {
-      qc.invalidateQueries({ queryKey });
-    });
-  };
+  const confirm = useConfirm();
+  const invalidateAll = () => void invalidateTransactionData(qc);
 
   const patchCategory = useMutation({
     mutationFn: ({
@@ -64,7 +61,7 @@ export function useTransactionMutations({
         if (
           isApiError(error) &&
           error.code === "transaction_type_direction_mismatch" &&
-          window.confirm(t("transactions.typeDirectionWarning"))
+          (await confirm({ title: t("transactions.typeDirectionWarning") }))
         ) {
           return api.patchType(id, value, true);
         }
@@ -128,7 +125,7 @@ export function useTransactionMutations({
         if (
           isApiError(error) &&
           error.code === "transaction_type_direction_mismatch" &&
-          window.confirm(t("transactions.typeDirectionWarning"))
+          (await confirm({ title: t("transactions.typeDirectionWarning") }))
         ) {
           return api.bulkCategorize({
             ...payload,

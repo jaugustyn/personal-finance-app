@@ -2,8 +2,7 @@ import { Download, FileText } from "lucide-react";
 
 import type { MlDashboard } from "@/lib/api";
 import { api } from "@/lib/api";
-import { useT } from "@/lib/i18n";
-import { formatNumber } from "@/lib/utils";
+import { useFormatters, useT } from "@/lib/i18n";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -21,6 +20,11 @@ export function TrainingSummaryCard({
   onOpenPanel: () => void;
 }) {
   const { t } = useT();
+  const {
+    formatDateTime: formatTimestamp,
+    formatNumber,
+    formatPercent,
+  } = useFormatters();
   const training = data.latest_training;
   const candidate =
     data.model_comparison.find((row) => row.is_recommended) ??
@@ -91,20 +95,20 @@ export function TrainingSummaryCard({
               {t("ml.report.weakestMacro")}
             </div>
             <div className="mt-0.5 text-2xl font-semibold tabular-nums text-primary">
-              {percent(candidate?.stability_score)}
+              {percent(candidate?.stability_score, formatPercent)}
             </div>
           </div>
           <SummaryMetric
             label={t("ml.report.meanMacro")}
-            value={percent(candidate?.macro_f1)}
+            value={percent(candidate?.macro_f1, formatPercent)}
           />
           <SummaryMetric
             label={t("ml.report.coverage")}
-            value={percent(candidate?.coverage_at_055)}
+            value={percent(candidate?.coverage_at_055, formatPercent)}
           />
           <SummaryMetric
             label={t("ml.report.accuracy")}
-            value={percent(candidate?.accuracy_at_055)}
+            value={percent(candidate?.accuracy_at_055, formatPercent)}
           />
         </div>
 
@@ -121,7 +125,7 @@ export function TrainingSummaryCard({
             })}
           </span>
           <span aria-hidden="true">·</span>
-          <span>{formatDateTime(training.finished_at)}</span>
+          <span>{formatDateTime(training.finished_at, formatTimestamp)}</span>
         </div>
       </CardContent>
     </Card>

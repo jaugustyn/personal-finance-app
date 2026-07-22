@@ -24,11 +24,15 @@ import {
   type FixedChargeTransaction,
   type ManualTransactionInput,
 } from "@/lib/api";
-import { useT } from "@/lib/i18n";
+import { useFormatters, useT } from "@/lib/i18n";
 import { showErrorToast } from "@/lib/toasts";
-import { cn, formatCurrency, formatDate } from "@/lib/utils";
+import {
+  invalidateSubscriptionData,
+  invalidateTransactionData,
+  queryKeys,
+} from "@/lib/query-keys";
+import { cn } from "@/lib/utils";
 
-import { SUBSCRIPTION_QUERY_KEYS } from "../_lib/query-keys";
 
 export function FixedChargeTransactionsDialog({
   charge,
@@ -40,26 +44,18 @@ export function FixedChargeTransactionsDialog({
   onOpenChange: (open: boolean) => void;
 }) {
   const { t } = useT();
+  const { formatCurrency, formatDate } = useFormatters();
   const queryClient = useQueryClient();
   const [selected, setSelected] = useState<number[]>([]);
   const [manualOpen, setManualOpen] = useState(false);
-  const detailsKey = SUBSCRIPTION_QUERY_KEYS.fixedChargeTransactions(
-    charge?.id ?? null,
-  );
+  const detailsKey = queryKeys.fixedCharges.transactions(charge?.id ?? null);
   const query = useQuery({
     queryKey: detailsKey,
     queryFn: () => api.fixedChargeTransactions(charge!.id),
     enabled: open && charge !== null,
   });
 
-  const refresh = async () => {
-    await Promise.all([
-      queryClient.invalidateQueries({
-        queryKey: SUBSCRIPTION_QUERY_KEYS.fixedCharges,
-      }),
-      queryClient.invalidateQueries({ queryKey: detailsKey }),
-    ]);
-  };
+  const refresh = () => invalidateSubscriptionData(queryClient);
 
   const linkMutation = useMutation({
     mutationFn: () =>
@@ -112,9 +108,7 @@ export function FixedChargeTransactionsDialog({
       }),
     onSuccess: () => {
       setManualOpen(false);
-      void refresh();
-      void queryClient.invalidateQueries({ queryKey: ["transactions"] });
-      void queryClient.invalidateQueries({ queryKey: ["overview"] });
+      void invalidateTransactionData(queryClient);
       toast.success(t("subscriptions.fixed.transactions.linked"));
     },
     onError: (error) => showErrorToast(error, t("toast.error")),
@@ -345,6 +339,7 @@ function TransactionIdentity({
   transaction: FixedChargeTransaction;
 }) {
   const { t } = useT();
+  const { formatDate } = useFormatters();
   const label = transaction.merchant || transaction.title;
   return (
     <div className="min-w-0">

@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Search } from "lucide-react";
 import type { MerchantCandidate } from "@/lib/api";
-import { useT } from "@/lib/i18n";
+import { useFormatters, useT } from "@/lib/i18n";
 import { ErrorState } from "@/components/error-state";
 import { FilterField, FilterPanel } from "@/components/filter-panel";
 import { ClearableInput } from "@/components/ui/clearable-input";
@@ -27,10 +27,8 @@ function updateSearchUrl(value: string) {
 
 export default function MerchantsPage() {
   const { t } = useT();
-  const [search, setSearch] = useState(() => {
-    if (typeof window === "undefined") return "";
-    return new URLSearchParams(window.location.search).get("search") ?? "";
-  });
+  const { compare } = useFormatters();
+  const [search, setSearch] = useState("");
   const [candidateSearch, setCandidateSearch] = useState(search.trim());
   const [candidateSort, setCandidateSort] = useState<MerchantCandidateSort>({
     id: "count",
@@ -40,6 +38,14 @@ export default function MerchantsPage() {
     null,
   );
   const [manualAliasOpen, setManualAliasOpen] = useState(false);
+
+  useEffect(() => {
+    const initialSearch =
+      new URLSearchParams(window.location.search).get("search") ?? "";
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- URL state is client-only and must not affect hydration
+    setSearch(initialSearch);
+    setCandidateSearch(initialSearch.trim());
+  }, []);
 
   useEffect(() => {
     const timeoutId = window.setTimeout(
@@ -66,8 +72,8 @@ export default function MerchantsPage() {
   });
 
   const groups = useMemo(
-    () => groupAliases(aliasesQuery.data ?? []),
-    [aliasesQuery.data],
+    () => groupAliases(aliasesQuery.data ?? [], compare),
+    [aliasesQuery.data, compare],
   );
   const normalizedSearch = search.trim().toLowerCase();
   const filteredGroups = useMemo(() => {

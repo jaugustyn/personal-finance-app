@@ -6,32 +6,35 @@ import { toast } from "sonner";
 import { History, Receipt, Trash2 } from "lucide-react";
 
 import { api, type ImportHistoryRow } from "@/lib/api";
-import { useT } from "@/lib/i18n";
+import { useFormatters, useT } from "@/lib/i18n";
 import { showErrorToast } from "@/lib/toasts";
+import { invalidateImportData, queryKeys } from "@/lib/query-keys";
 import { transactionsHref } from "@/lib/transaction-links";
 import { useConfirm } from "@/components/confirm-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DataTable, type DataTableColumn } from "@/components/data-table";
-import { IMPORT_QUERY_KEYS } from "../_lib/query-keys";
 
 export function ImportsHistory() {
   const { t } = useT();
+  const { formatDateTime } = useFormatters();
   const qc = useQueryClient();
   const confirm = useConfirm();
-  const { data: imports = [], isLoading } = useQuery<ImportHistoryRow[]>({
-    queryKey: IMPORT_QUERY_KEYS.history,
+  const {
+    data: imports = [],
+    isLoading,
+    isError,
+    refetch,
+  } = useQuery<ImportHistoryRow[]>({
+    queryKey: queryKeys.imports.history,
     queryFn: () => api.listImports(),
   });
 
   const deleteMut = useMutation({
     mutationFn: (id: number) => api.deleteImport(id),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: IMPORT_QUERY_KEYS.history });
-      qc.invalidateQueries({ queryKey: ["transactions"] });
-      qc.invalidateQueries({ queryKey: ["overview"] });
-      qc.invalidateQueries({ queryKey: ["byCategory"] });
+      void invalidateImportData(qc);
       toast.success(t("toast.deleted"));
     },
     onError: (error) => showErrorToast(error, t("toast.error")),
@@ -53,7 +56,7 @@ export function ImportsHistory() {
       header: t("imports.history.created"),
       sortValue: (row) => new Date(row.created_at).getTime(),
       className: "text-xs whitespace-nowrap text-muted-foreground",
-      cell: (row) => new Date(row.created_at).toLocaleString(),
+      cell: (row) => formatDateTime(row.created_at),
     },
     {
       id: "filename",
@@ -137,6 +140,8 @@ export function ImportsHistory() {
           data={imports}
           rowKey={(row) => row.id}
           isLoading={isLoading}
+          isError={isError}
+          onRetry={() => void refetch()}
           emptyTitle={t("imports.history.empty")}
           initialSort={{ id: "created_at", dir: "desc" }}
           className="rounded-none border-0"

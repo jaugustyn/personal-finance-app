@@ -24,10 +24,13 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { formatCurrency, formatMonth } from "@/lib/utils";
 import { CalendarClock, Info, Loader2 } from "lucide-react";
-import { useT, type TranslationKey } from "@/lib/i18n";
-import { useLocalStorageState } from "@/hooks/use-local-storage-state";
+import { useFormatters, useT, type TranslationKey } from "@/lib/i18n";
+import { queryKeys } from "@/lib/query-keys";
+import {
+  storedNumberBetween,
+  useLocalStorageState,
+} from "@/hooks/use-local-storage-state";
 
 const FORECAST_MODEL_LABELS: Record<string, TranslationKey> = {
   naive: "forecast.model.naive",
@@ -36,6 +39,7 @@ const FORECAST_MODEL_LABELS: Record<string, TranslationKey> = {
   holt_damped: "forecast.model.holtDamped",
   seasonal_naive: "forecast.model.seasonalNaive",
 };
+const isForecastHorizon = storedNumberBetween(1, 12);
 
 interface ForecastReadinessDetail {
   historyMonths: number;
@@ -90,6 +94,7 @@ function forecastReadinessDetail(error: unknown): ForecastReadinessDetail | null
 
 export default function ForecastPage() {
   const { t } = useT();
+  const { formatCurrency, formatMonth } = useFormatters();
   const [category, setCategory] = useLocalStorageState(
     "finance.forecast.category",
     "",
@@ -97,6 +102,7 @@ export default function ForecastPage() {
   const [horizon, setHorizon] = useLocalStorageState(
     "finance.forecast.horizon",
     3,
+    { validate: isForecastHorizon },
   );
   const [submitted, setSubmitted] = useState<{
     category: string | null;
@@ -104,7 +110,7 @@ export default function ForecastPage() {
   }>({ category: category || null, horizon });
 
   const query = useQuery({
-    queryKey: ["forecast", submitted],
+    queryKey: queryKeys.forecast.detail(submitted),
     queryFn: () => api.forecast(submitted.category, submitted.horizon),
   });
   const readiness = forecastReadinessDetail(query.error);
@@ -148,10 +154,11 @@ export default function ForecastPage() {
             }}
           >
             <div className="grid gap-1.5 sm:grid-rows-[1rem_2.25rem]">
-              <Label className="text-xs font-medium text-muted-foreground">
+              <Label htmlFor="forecast-category" className="text-xs font-medium text-muted-foreground">
                 {t("forecast.category")}
               </Label>
               <CategorySelect
+                id="forecast-category"
                 value={category}
                 onChange={setCategory}
                 allLabel={t("forecast.allCategories")}
@@ -160,10 +167,11 @@ export default function ForecastPage() {
               />
             </div>
             <div className="grid gap-1.5 sm:grid-rows-[1rem_2.25rem]">
-              <Label className="text-xs font-medium text-muted-foreground">
+              <Label htmlFor="forecast-horizon" className="text-xs font-medium text-muted-foreground">
                 {t("forecast.horizon")}
               </Label>
               <Input
+                id="forecast-horizon"
                 type="number"
                 min={1}
                 max={12}

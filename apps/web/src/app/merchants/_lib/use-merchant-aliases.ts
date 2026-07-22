@@ -11,11 +11,8 @@ import { toast } from "sonner";
 import { api, type MerchantAlias, type MerchantCandidate } from "@/lib/api";
 import { useT } from "@/lib/i18n";
 import { showErrorToast } from "@/lib/toasts";
+import { invalidateMerchantData, queryKeys } from "@/lib/query-keys";
 import { useConfirm } from "@/components/confirm-dialog";
-import {
-  invalidateMerchantQueries,
-  MERCHANT_QUERY_KEYS,
-} from "./query-keys";
 import type { MerchantAliasPayload } from "./merchant-aliases";
 
 export function useMerchantAliases({
@@ -35,15 +32,15 @@ export function useMerchantAliases({
   const confirm = useConfirm();
 
   const aliasesQuery = useQuery<MerchantAlias[]>({
-    queryKey: MERCHANT_QUERY_KEYS.aliases,
+    queryKey: queryKeys.merchants.aliases,
     queryFn: () => api.merchantAliases(),
   });
   const candidatesQuery = useQuery<MerchantCandidate[]>({
-    queryKey: MERCHANT_QUERY_KEYS.candidates(
-      candidateSearch,
-      candidateSort.id,
-      candidateSort.dir,
-    ),
+    queryKey: queryKeys.merchants.candidates({
+      query: candidateSearch,
+      sortBy: candidateSort.id,
+      sortDir: candidateSort.dir,
+    }),
     queryFn: () =>
       api.merchantAliasCandidates({
         q: candidateSearch,
@@ -56,7 +53,7 @@ export function useMerchantAliases({
   const createAliases = useMutation({
     mutationFn: (payload: MerchantAliasPayload) => api.createMerchantAliases(payload),
     onSuccess: () => {
-      invalidateMerchantQueries(queryClient);
+      void invalidateMerchantData(queryClient);
       toast.success(t("toast.saved"));
       onCreateSuccess?.();
     },
@@ -67,7 +64,7 @@ export function useMerchantAliases({
     mutationFn: (payload: { canonical_key: string; canonical_label: string }) =>
       api.updateMerchantAliasGroupLabel(payload),
     onSuccess: () => {
-      invalidateMerchantQueries(queryClient);
+      void invalidateMerchantData(queryClient);
       toast.success(t("toast.saved"));
     },
     onError: (error) => showErrorToast(error, t("toast.error")),
@@ -76,7 +73,7 @@ export function useMerchantAliases({
   const deleteAlias = useMutation({
     mutationFn: (id: number) => api.deleteMerchantAlias(id),
     onSuccess: () => {
-      invalidateMerchantQueries(queryClient);
+      void invalidateMerchantData(queryClient);
       toast.success(t("merchants.aliasDetached"));
     },
     onError: (error) => showErrorToast(error, t("toast.error")),

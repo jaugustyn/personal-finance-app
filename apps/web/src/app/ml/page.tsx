@@ -4,8 +4,9 @@ import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
-import { useT } from "@/lib/i18n";
+import { useFormatters, useT } from "@/lib/i18n";
 import { showErrorToast } from "@/lib/toasts";
+import { invalidateTransactionData, queryKeys } from "@/lib/query-keys";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -38,15 +39,16 @@ const RETRAIN_TOAST_ID = "ml-retrain-status";
 
 export default function MlPage() {
   const { t } = useT();
+  const { formatDateTime: formatTimestamp, formatPercent } = useFormatters();
   const [activeTab, setActiveTab] = useState("overview");
   const qc = useQueryClient();
   const lastRetrainStatusRef = useRef<string | null>(null);
   const query = useQuery({
-    queryKey: ["mlDashboard"],
+    queryKey: queryKeys.ml.dashboard,
     queryFn: () => api.mlDashboard(),
   });
   const retrainStatus = useQuery({
-    queryKey: ["mlRetrainStatus"],
+    queryKey: queryKeys.ml.retrainStatus,
     queryFn: () => api.retrainStatus(),
     refetchInterval: (query) =>
       ["queued", "running"].includes(query.state.data?.status ?? "")
@@ -70,8 +72,7 @@ export default function MlPage() {
     if (previousStatus && ["queued", "running"].includes(previousStatus)) {
       if (currentRetrainStatus === "completed") {
         toast.success(t("ml.retrainDone"), { id: RETRAIN_TOAST_ID });
-        void qc.invalidateQueries({ queryKey: ["mlDashboard"] });
-        void qc.invalidateQueries({ queryKey: ["mlModelVersions"] });
+        void qc.invalidateQueries({ queryKey: queryKeys.ml.all });
       } else if (["aborted", "interrupted"].includes(currentRetrainStatus)) {
         toast.error(message ?? t("ml.retrainAborted"), { id: RETRAIN_TOAST_ID });
       } else if (currentRetrainStatus === "failed") {
@@ -102,8 +103,7 @@ export default function MlPage() {
     onSuccess: () => {
       lastRetrainStatusRef.current = "running";
       toast.loading(t("ml.retrainRunning"), { id: RETRAIN_TOAST_ID });
-      void qc.invalidateQueries({ queryKey: ["mlRetrainStatus"] });
-      void qc.invalidateQueries({ queryKey: ["mlDashboard"] });
+      void qc.invalidateQueries({ queryKey: queryKeys.ml.all });
     },
     onError: (error) => showErrorToast(error, t("toast.error")),
   });
@@ -111,8 +111,7 @@ export default function MlPage() {
   const reclassify = useMutation({
     mutationFn: () => api.reclassifyTransactions(),
     onSuccess: (result) => {
-      qc.invalidateQueries({ queryKey: ["mlDashboard"] });
-      qc.invalidateQueries({ queryKey: ["transactions"] });
+      void invalidateTransactionData(qc);
       toast.success(t("ml.reclassifyDone", { n: result.updated }));
     },
     onError: (error) => showErrorToast(error, t("toast.error")),
@@ -122,8 +121,7 @@ export default function MlPage() {
     mutationFn: (modelId: string) => api.activateModelVersion(modelId),
     onSuccess: () => {
       toast.success(t("ml.next.activateDone"));
-      void qc.invalidateQueries({ queryKey: ["mlDashboard"] });
-      void qc.invalidateQueries({ queryKey: ["mlModelVersions"] });
+      void qc.invalidateQueries({ queryKey: queryKeys.ml.all });
     },
     onError: (error) => showErrorToast(error, t("ml.next.activateFailed")),
   });
@@ -146,6 +144,13 @@ export default function MlPage() {
   return (
     <div className="space-y-5">
       <PageHeader title={t("ml.title")} description={t("ml.subtitle")} />
+
+      {retrainStatus.isError ? (
+        <ErrorState
+          variant="compact"
+          onRetry={() => void retrainStatus.refetch()}
+        />
+      ) : null}
 
       {query.isLoading ? (
         <CardGridSkeleton />
@@ -199,11 +204,11 @@ export default function MlPage() {
                     />
                     <MetricCard
                       label={t("ml.meta.updated")}
-                      value={formatDateTime(status.updated_at)}
+                      value={formatDateTime(status.updated_at, formatTimestamp)}
                     />
                     <MetricCard
                       label={t("ml.kpi.macro")}
-                      value={percent(best?.macro_f1)}
+                      value={percent(best?.macro_f1, formatPercent)}
                       hint={best?.model ?? undefined}
                     />
                   </div>

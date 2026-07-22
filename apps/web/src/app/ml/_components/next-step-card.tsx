@@ -13,9 +13,8 @@ import {
 } from "lucide-react";
 
 import type { MlDashboard } from "@/lib/api";
-import { tCategory, useT } from "@/lib/i18n";
+import { tCategory, useFormatters, useT } from "@/lib/i18n";
 import { transactionsHref } from "@/lib/transaction-links";
-import { formatNumber } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -52,6 +51,7 @@ export function NextStepCard({
   onActivate: (modelId: string) => void;
 }) {
   const { t } = useT();
+  const { formatNumber, formatPercent } = useFormatters();
   const { readiness, recommendation, retrain_signal: signal, status } = data;
   const kind = nextStepKind(data, isRetraining);
   const unsupportedClasses = Object.entries(readiness.unsupported_classes);
@@ -191,7 +191,10 @@ export function NextStepCard({
                   <DetailMetric
                     label={t("ml.retrainSignal.newLabels")}
                     value={formatNumber(signal.new_labels_since_training)}
-                    hint={percent(signal.new_labels_since_training_ratio)}
+                    hint={percent(
+                      signal.new_labels_since_training_ratio,
+                      formatPercent,
+                    )}
                   />
                   <DetailMetric
                     label={t("ml.retrainSignal.feedback")}
@@ -199,7 +202,7 @@ export function NextStepCard({
                   />
                   <DetailMetric
                     label={t("ml.retrainSignal.rejectionRate")}
-                    value={percent(signal.rejection_rate)}
+                    value={percent(signal.rejection_rate, formatPercent)}
                   />
                 </div>
                 {signal.reason_codes.length ? (

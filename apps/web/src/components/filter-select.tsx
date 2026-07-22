@@ -19,23 +19,31 @@ export interface FilterSelectOption {
 }
 
 export function FilterSelect({
+  id,
   value,
   onValueChange,
   options,
   ariaLabel,
   className,
   contentClassName,
+  disabled,
 }: {
+  id?: string;
   value: string;
   onValueChange: (value: string) => void;
   options: FilterSelectOption[];
   ariaLabel?: string;
   className?: string;
   contentClassName?: string;
+  disabled?: boolean;
 }) {
   return (
-    <Select value={value} onValueChange={onValueChange}>
-      <SelectTrigger className={cn("w-full", className)} aria-label={ariaLabel}>
+    <Select value={value} onValueChange={onValueChange} disabled={disabled}>
+      <SelectTrigger
+        id={id}
+        className={cn("w-full", className)}
+        aria-label={ariaLabel}
+      >
         <SelectValue />
       </SelectTrigger>
       <SelectContent className={contentClassName}>

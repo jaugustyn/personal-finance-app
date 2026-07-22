@@ -10,12 +10,14 @@ import {
 const ALL = "__all__";
 
 export function TransactionTypeFilterSelect({
+  id,
   value,
   onChange,
   allLabel,
   ariaLabel,
   className,
 }: {
+  id?: string;
   value: string;
   onChange: (value: string) => void;
   allLabel: string;
@@ -39,6 +41,7 @@ export function TransactionTypeFilterSelect({
 
   return (
     <FilterSelect
+      id={id}
       value={value || ALL}
       onValueChange={(nextValue) => onChange(nextValue === ALL ? "" : nextValue)}
       options={options}

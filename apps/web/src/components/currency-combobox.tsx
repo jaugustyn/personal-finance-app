@@ -49,12 +49,14 @@ function supportedCurrencies(): string[] {
 }
 
 export function CurrencyCombobox({
+  id,
   value,
   onChange,
   baseCurrency,
   autoFocus,
   className,
 }: {
+  id?: string;
   value: string;
   onChange: (value: string) => void;
   baseCurrency?: string;
@@ -87,6 +89,7 @@ export function CurrencyCombobox({
     <Popover modal open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <Button
+          id={id}
           type="button"
           variant="outline"
           role="combobox"

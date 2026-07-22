@@ -1,4 +1,3 @@
-/* eslint-disable react-hooks/refs -- the ref intentionally preserves the last settled tone while fetching */
 "use client";
 
 import type { ComponentType } from "react";
@@ -12,7 +11,8 @@ import {
 
 import { Card, CardContent } from "@/components/ui/card";
 import { useT } from "@/lib/i18n";
-import { cn, formatCurrency, formatPercent } from "@/lib/utils";
+import { useFormatters } from "@/lib/i18n";
+import { cn } from "@/lib/utils";
 
 export function FinancialSnapshot({
   income,
@@ -31,6 +31,7 @@ export function FinancialSnapshot({
   isLoading: boolean;
   isFetching: boolean;
 }) {
+  const { formatCurrency, formatPercent } = useFormatters();
   const { t } = useT();
   const netTone = netToneForValue(net);
   const savingsTone = savingsRateTone(savingsRate);
@@ -129,5 +130,6 @@ function useStableTone(tone: SnapshotTone, isPending: boolean) {
     if (!isPending) stableTone.current = tone;
   }, [isPending, tone]);
 
+  // eslint-disable-next-line react-hooks/refs -- preserve the last settled tone while fetching
   return isPending ? stableTone.current : tone;
 }

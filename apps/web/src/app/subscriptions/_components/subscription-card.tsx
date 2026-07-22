@@ -4,8 +4,7 @@ import Link from "next/link";
 import { Check, ChevronRight, RotateCcw, X } from "lucide-react";
 
 import type { Subscription } from "@/lib/api";
-import { useT } from "@/lib/i18n";
-import { formatCurrency, formatDate } from "@/lib/utils";
+import { useFormatters, useT } from "@/lib/i18n";
 import { transactionsHref } from "@/lib/transaction-links";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -28,6 +27,7 @@ export function SubscriptionCard({
   onDetails: () => void;
 }) {
   const { t } = useT();
+  const { formatCurrency, formatDate } = useFormatters();
   const isRejected = subscription.user_decision === "rejected";
   const isHidden = isRejected || subscription.status === "ignored";
   const needsDecision = !isHidden && !subscription.is_confirmed;
@@ -47,7 +47,7 @@ export function SubscriptionCard({
           <Badge className={statusTone[subscription.status]}>
             {isRejected
               ? t("subscriptions.rejected")
-              : statusLabels[subscription.status]}
+              : t(statusLabels[subscription.status])}
           </Badge>
         </div>
 
@@ -63,7 +63,9 @@ export function SubscriptionCard({
               </span>
             </div>
             <div className="mt-1 text-xs text-muted-foreground">
-              {cadenceLabels[subscription.cadence] ?? subscription.cadence}
+              {cadenceLabels[subscription.cadence]
+                ? t(cadenceLabels[subscription.cadence])
+                : subscription.cadence}
             </div>
           </div>
           <div className="min-w-0 text-right">

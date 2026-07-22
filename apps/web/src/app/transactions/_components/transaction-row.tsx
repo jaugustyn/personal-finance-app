@@ -17,8 +17,8 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { TableCell, TableRow } from "@/components/ui/table";
 import type { Transaction } from "@/lib/api";
-import { tTransactionType, useT } from "@/lib/i18n";
-import { cn, formatCurrency, formatDate } from "@/lib/utils";
+import { tTransactionType, useFormatters, useT } from "@/lib/i18n";
+import { cn } from "@/lib/utils";
 import {
   ArrowLeftRight,
   Check,
@@ -91,6 +91,7 @@ export function TransactionRow({
   onEditTransaction,
 }: TransactionRowProps) {
   const { t } = useT();
+  const { formatCurrency, formatDate } = useFormatters();
   const canEditCategory = isCategoryCandidate(tx) || Boolean(tx.category);
   const merchantDisplay = tx.merchant_display || tx.merchant || tx.title;
   const rawMerchant = tx.merchant_raw || tx.merchant;
@@ -123,7 +124,7 @@ export function TransactionRow({
         <Checkbox
           checked={selected}
           onCheckedChange={onToggle}
-          aria-label={`select ${tx.id}`}
+          aria-label={t("transactions.selectRow", { id: tx.id })}
         />
       </TableCell>
       <TableCell className="text-muted-foreground">

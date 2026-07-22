@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Lightweight i18n (PL/EN) with localStorage persistence.
+ * Lightweight i18n (PL/EN) with cookie persistence and SSR locale support.
  *
  * Why not next-intl? — Adds router-level prefixes (/pl, /en) and a server
  * components story we don't need for a 4-page admin app. This module keeps
@@ -21,6 +21,8 @@ import {
   useState,
 } from "react";
 import { DICT } from "./locales";
+import { createFormatters } from "@/lib/formatters";
+import type { Formatters } from "@/lib/formatters";
 
 export type Locale = "pl" | "en";
 
@@ -34,19 +36,33 @@ interface I18nContextValue {
 
 const I18nContext = createContext<I18nContextValue | null>(null);
 
-const LS_KEY = "locale";
+const LEGACY_STORAGE_KEY = "locale";
+const LOCALE_COOKIE = "finance-locale";
 
-export function I18nProvider({ children }: { children: React.ReactNode }) {
-  const [locale, setLocaleState] = useState<Locale>(() => {
-    if (typeof window === "undefined") return "pl";
+export function I18nProvider({
+  children,
+  initialLocale,
+}: {
+  children: React.ReactNode;
+  initialLocale: Locale;
+}) {
+  const [locale, setLocaleState] = useState<Locale>(initialLocale);
+
+  useEffect(() => {
+    const cookieLocale = readCookieLocale();
     try {
-      const stored = window.localStorage.getItem(LS_KEY);
-      if (stored === "pl" || stored === "en") return stored;
+      const stored = window.localStorage.getItem(LEGACY_STORAGE_KEY);
+      if (!cookieLocale && (stored === "pl" || stored === "en")) {
+        writeLocaleCookie(stored);
+        document.documentElement.lang = stored;
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time migration after hydration
+        setLocaleState(stored);
+      }
+      window.localStorage.removeItem(LEGACY_STORAGE_KEY);
     } catch {
       /* ignore */
     }
-    return "pl";
-  });
+  }, []);
 
   // Sync <html lang> on locale change.
   useEffect(() => {
@@ -60,7 +76,7 @@ export function I18nProvider({ children }: { children: React.ReactNode }) {
   const setLocale = useCallback((l: Locale) => {
     setLocaleState(l);
     try {
-      window.localStorage.setItem(LS_KEY, l);
+      writeLocaleCookie(l);
       document.documentElement.lang = l;
     } catch {
       /* noop */
@@ -101,6 +117,23 @@ export function tCategory(
   const key = `category.${category}` as TranslationKey;
   if (key in DICT.pl) return t(key);
   return category.charAt(0).toLocaleUpperCase() + category.slice(1);
+}
+
+export function useFormatters(): Formatters {
+  const { locale } = useT();
+  return useMemo(() => createFormatters(locale), [locale]);
+}
+
+function readCookieLocale(): Locale | null {
+  const value = document.cookie
+    .split("; ")
+    .find((part) => part.startsWith(`${LOCALE_COOKIE}=`))
+    ?.split("=")[1];
+  return value === "pl" || value === "en" ? value : null;
+}
+
+function writeLocaleCookie(locale: Locale) {
+  document.cookie = `${LOCALE_COOKIE}=${locale}; Path=/; SameSite=Lax; Max-Age=31536000`;
 }
 
 export function tTransactionType(
