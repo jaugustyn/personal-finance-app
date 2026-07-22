@@ -20,6 +20,7 @@ from apps.api.routers import (
     categories,
     chat,
     currencies,
+    fixed_charges,
     forecast,
     imports,
     merchants,
@@ -128,6 +129,7 @@ app.include_router(imports.router, dependencies=_protected)
 app.include_router(transactions.router, dependencies=_protected)
 app.include_router(merchants.router, dependencies=_protected)
 app.include_router(currencies.router, dependencies=_protected)
+app.include_router(fixed_charges.router, dependencies=_protected)
 app.include_router(ml.router, dependencies=_protected)
 app.include_router(forecast.router, dependencies=_protected)
 app.include_router(anomalies.router, dependencies=_protected)

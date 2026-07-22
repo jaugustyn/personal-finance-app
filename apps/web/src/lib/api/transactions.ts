@@ -34,6 +34,17 @@ export type TransactionSortBy = "date" | "merchant" | "amount";
 export type TransactionSortDirection = "asc" | "desc";
 export type MerchantGroupSortBy = "merchant" | "amount" | "count";
 
+export interface ManualTransactionInput {
+  booking_date: string;
+  amount: number;
+  direction: "debit" | "credit";
+  merchant: string;
+  title: string;
+  transaction_type: string | null;
+  category: string | null;
+  notes: string | null;
+}
+
 export type TransactionListParams = TransactionFilterParams & {
   limit?: number;
   offset?: number;
@@ -77,6 +88,16 @@ export function transactionFiltersQuery(params: TransactionFilterParams = {}): s
 }
 
 export const transactionsApi = {
+  createTransaction: (payload: ManualTransactionInput) =>
+    request<Transaction>("/transactions", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  updateManualTransaction: (id: number, payload: ManualTransactionInput) =>
+    request<Transaction>(`/transactions/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }),
   transactions: (params: TransactionListParams = {}) =>
     request<Transaction[]>(
       withQuery("/transactions", {

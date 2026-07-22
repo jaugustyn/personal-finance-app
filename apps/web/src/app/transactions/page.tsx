@@ -1,11 +1,23 @@
 /* eslint-disable react-hooks/set-state-in-effect */
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { Plus } from "lucide-react";
+import { toast } from "sonner";
 import { useT } from "@/lib/i18n";
-import type { CategoryState, Direction } from "@/lib/api";
+import {
+  api,
+  type CategoryState,
+  type Direction,
+  type ManualTransactionInput,
+  type Transaction,
+} from "@/lib/api";
 import { PageHeader } from "@/components/page-header";
+import { Button } from "@/components/ui/button";
 import { useLocalStorageState } from "@/hooks/use-local-storage-state";
+import { showErrorToast } from "@/lib/toasts";
+import { ManualTransactionDialog } from "./_components/manual-transaction-dialog";
 import { GroupsView } from "./_components/groups-view";
 import { ListView, type TransactionInitialFilters } from "./_components/list-view";
 import { TypeReviewView } from "./_components/type-review-view";
@@ -15,9 +27,11 @@ import type {
   TransactionsSubject,
   TransactionsView,
 } from "./_lib/constants";
+import { transactionMutationInvalidationKeys } from "./_lib/query-keys";
 
 export default function TransactionsPage() {
   const { t } = useT();
+  const queryClient = useQueryClient();
   const [view, setView] = useLocalStorageState<TransactionsView>(
     "finance.transactions.view",
     "list",
@@ -28,6 +42,9 @@ export default function TransactionsPage() {
   );
   const [initialFilters, setInitialFilters] =
     useState<TransactionInitialFilters>({ key: "" });
+  const [manualDialogOpen, setManualDialogOpen] = useState(false);
+  const [editedTransaction, setEditedTransaction] =
+    useState<Transaction | null>(null);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -62,6 +79,75 @@ export default function TransactionsPage() {
         : "category_review"
       : view;
 
+  const manualInitialValue = useMemo<
+    Partial<ManualTransactionInput> | undefined
+  >(
+    () =>
+      editedTransaction
+        ? {
+            booking_date: editedTransaction.booking_date,
+            amount: Math.abs(Number(editedTransaction.amount)),
+            direction: editedTransaction.direction,
+            merchant: editedTransaction.merchant,
+            title: editedTransaction.title,
+            transaction_type:
+              editedTransaction.transaction_type_confirmation_method === "manual"
+                ? editedTransaction.transaction_type
+                : null,
+            category: editedTransaction.category,
+            notes: editedTransaction.notes ?? null,
+          }
+        : undefined,
+    [editedTransaction],
+  );
+
+  const manualMutation = useMutation({
+    mutationFn: ({
+      id,
+      payload,
+    }: {
+      id: number | null;
+      payload: ManualTransactionInput;
+    }) =>
+      id === null
+        ? api.createTransaction(payload)
+        : api.updateManualTransaction(id, payload),
+    onSuccess: (_result, variables) => {
+      transactionMutationInvalidationKeys.forEach((queryKey) => {
+        void queryClient.invalidateQueries({ queryKey });
+      });
+      [
+        ["recap"],
+        ["anomalies"],
+        ["subscriptions"],
+        ["fixed-charge-transactions"],
+        ["dashboard"],
+      ].forEach((queryKey) => {
+        void queryClient.invalidateQueries({ queryKey });
+      });
+      toast.success(
+        t(
+          variables.id === null
+            ? "transactions.manual.created"
+            : "transactions.manual.updated",
+        ),
+      );
+      setManualDialogOpen(false);
+      setEditedTransaction(null);
+    },
+    onError: (error) => showErrorToast(error, t("toast.error")),
+  });
+
+  const openCreate = () => {
+    setEditedTransaction(null);
+    setManualDialogOpen(true);
+  };
+
+  const openEdit = (transaction: Transaction) => {
+    setEditedTransaction(transaction);
+    setManualDialogOpen(true);
+  };
+
   const handleModeChange = (nextMode: TransactionsMode) => {
     if (nextMode === "transaction_type_review") {
       setSubject("transaction_type");
@@ -77,7 +163,17 @@ export default function TransactionsPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title={t("transactions.title")} />
+      <PageHeader
+        title={t("transactions.title")}
+        actions={
+          activeMode === "list" ? (
+            <Button type="button" onClick={openCreate}>
+              <Plus className="h-4 w-4" />
+              {t("transactions.manual.add")}
+            </Button>
+          ) : null
+        }
+      />
       <ViewSwitcher value={activeMode} onChange={handleModeChange} />
 
       {view === "groups" ? (
@@ -89,8 +185,23 @@ export default function TransactionsPage() {
           key={`${view}:${initialFilters.key}`}
           reviewMode={view === "review"}
           initialFilters={initialFilters}
+          onEditManualTransaction={openEdit}
         />
       )}
+
+      <ManualTransactionDialog
+        open={manualDialogOpen}
+        mode={editedTransaction ? "edit" : "create"}
+        initialValue={manualInitialValue}
+        pending={manualMutation.isPending}
+        onOpenChange={(open) => {
+          setManualDialogOpen(open);
+          if (!open) setEditedTransaction(null);
+        }}
+        onSubmit={(payload) =>
+          manualMutation.mutate({ id: editedTransaction?.id ?? null, payload })
+        }
+      />
     </div>
   );
 }

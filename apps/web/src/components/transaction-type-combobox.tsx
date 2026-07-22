@@ -37,6 +37,7 @@ interface TransactionTypeComboboxProps {
   includeEmpty?: boolean;
   emptyValue?: string;
   emptyLabel?: string;
+  allowedValues?: readonly string[];
 }
 
 export function TransactionTypeCombobox({
@@ -50,6 +51,7 @@ export function TransactionTypeCombobox({
   includeEmpty = false,
   emptyValue = "",
   emptyLabel,
+  allowedValues,
 }: TransactionTypeComboboxProps) {
   const { t } = useT();
   const [open, setOpen] = useState(false);
@@ -73,12 +75,14 @@ export function TransactionTypeCombobox({
 
   const options = useMemo(
     () =>
-      TRANSACTION_TYPE_OPTIONS.map((type) => ({
+      TRANSACTION_TYPE_OPTIONS.filter(
+        (type) => !allowedValues || allowedValues.includes(type),
+      ).map((type) => ({
         value: type,
         label: tTransactionType(t, type),
         Icon: TRANSACTION_TYPE_ICONS[type],
       })),
-    [t],
+    [allowedValues, t],
   );
 
   const handleOpenChange = (next: boolean) => {

@@ -233,6 +233,32 @@ class TransactionTypeService:
         )
         self.apply_manual_type(tx, value)
 
+    def clear_manual_type(self, tx: Transaction) -> None:
+        """Return a transaction to the provisional direction-based fallback."""
+        previous = str(tx.transaction_type) if tx.transaction_type else None
+        predicted = (
+            str(tx.transaction_type_predicted) if tx.transaction_type_predicted else None
+        )
+        if previous is None and predicted is None:
+            return
+        tx_model = cast(Any, tx)
+        tx_model.transaction_type = None
+        tx_model.transaction_type_source = None
+        tx_model.transaction_type_confirmation_method = None
+        tx_model.transaction_type_confirmed_at = None
+        tx_model.transaction_type_origin_ref = None
+        tx_model.is_transfer = False
+        self._clear_suggestion(tx)
+        self._record(
+            tx,
+            event_type=EVENT_MANUAL_CLEAR,
+            previous=previous,
+            predicted=predicted,
+            final=None,
+            source=CategorySource.MANUAL.value,
+            confirmation_method=TYPE_CONFIRMATION_MANUAL,
+        )
+
     def confirm_from_category(
         self,
         tx: Transaction,

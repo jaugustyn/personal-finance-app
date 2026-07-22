@@ -61,6 +61,7 @@ interface TransactionRowProps {
   onAnnotate: () => void;
   onCancelAnnotate: () => void;
   onSaveAnnotations: (notes: string | null, tags: string[]) => void;
+  onEditTransaction: () => void;
 }
 
 export function TransactionRow({
@@ -87,6 +88,7 @@ export function TransactionRow({
   onAnnotate,
   onCancelAnnotate,
   onSaveAnnotations,
+  onEditTransaction,
 }: TransactionRowProps) {
   const { t } = useT();
   const canEditCategory = isCategoryCandidate(tx) || Boolean(tx.category);
@@ -259,6 +261,12 @@ export function TransactionRow({
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-52">
+              {tx.source === "manual" ? (
+                <DropdownMenuItem onClick={onEditTransaction}>
+                  <Pencil className="h-4 w-4" />
+                  {t("transactions.manual.editTitle")}
+                </DropdownMenuItem>
+              ) : null}
               {canEditCategory && (
                 <DropdownMenuItem onClick={onEdit}>
                   <Pencil className="h-4 w-4" />

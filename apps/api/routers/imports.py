@@ -47,7 +47,7 @@ from finance.domain.models import Import, Transaction
 from finance.ingestion import BankParser, ParseError
 from finance.ingestion.generic import GenericCsvParser, preview_csv
 from finance.ingestion.quality import ImportQualityReport, assess_import_quality
-from finance.ingestion.registry import detect_source, get_parser
+from finance.ingestion.registry import available_sources, detect_source, get_parser
 from finance.ingestion.schema import (
     clean_column_map,
     import_field_specs_payload,
@@ -232,6 +232,8 @@ def upload_import(
             chosen_source = BankSource(src_lower)
         except ValueError as exc:
             raise validation_error(f"Unknown source: {source!r}") from exc
+        if chosen_source not in available_sources():
+            raise validation_error(f"Unknown source: {source!r}")
 
     try:
         summary = ingest_file(

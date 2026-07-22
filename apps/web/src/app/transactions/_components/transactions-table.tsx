@@ -56,6 +56,7 @@ interface TransactionsTableProps {
     notes: string | null,
     tags: string[],
   ) => void;
+  onEditManualTransaction?: (transaction: Transaction) => void;
   onSort: (id: TransactionSortBy) => void;
   onPreviousPage: () => void;
   onNextPage: () => void;
@@ -82,6 +83,7 @@ export function TransactionsTable({
   onRestoreSuggestion,
   onDeleteOne,
   onPatchAnnotations,
+  onEditManualTransaction,
   onSort,
   onPreviousPage,
   onNextPage,
@@ -200,6 +202,7 @@ export function TransactionsTable({
                     onPatchAnnotations(tx.id, notes, tags);
                     setAnnotating(null);
                   }}
+                  onEditTransaction={() => onEditManualTransaction?.(tx)}
                 />
               ))}
             </TableBody>

@@ -7,7 +7,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from finance.domain.enums import TransactionType
+from finance.domain.enums import TransactionDirection, TransactionType
 
 
 class ClassificationDecisionResponse(BaseModel):
@@ -69,6 +69,17 @@ class TransactionRow(BaseModel):
     classification_decision: ClassificationDecisionResponse | None = None
 
     model_config = {"from_attributes": True}
+
+
+class ManualTransactionWrite(BaseModel):
+    booking_date: date
+    amount: Decimal = Field(gt=0, max_digits=14, decimal_places=2)
+    direction: TransactionDirection
+    merchant: str = Field(default="", max_length=256)
+    title: str = Field(default="", max_length=512)
+    transaction_type: TransactionType | None = None
+    category: str | None = Field(default=None, max_length=64)
+    notes: str | None = Field(default=None, max_length=1024)
 
 
 class CategorySum(BaseModel):

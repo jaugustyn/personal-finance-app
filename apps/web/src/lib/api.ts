@@ -6,6 +6,7 @@ import { appLockApi } from "./api/app-lock";
 import { categoriesApi } from "./api/categories";
 import { chatApi } from "./api/chat";
 import { currenciesApi } from "./api/currencies";
+import { fixedChargesApi } from "./api/fixed-charges";
 import { importsApi } from "./api/imports";
 import { merchantsApi } from "./api/merchants";
 import { mlApi } from "./api/ml";
@@ -16,6 +17,7 @@ import { transactionsApi } from "./api/transactions";
 export type * from "./api/types";
 export type {
   MerchantGroupSortBy,
+  ManualTransactionInput,
   TransactionFilterParams,
   TransactionListParams,
   TransactionSortBy,
@@ -29,6 +31,7 @@ export const api = {
   ...transactionsApi,
   ...categoriesApi,
   ...currenciesApi,
+  ...fixedChargesApi,
   ...importsApi,
   ...merchantsApi,
   ...mlApi,

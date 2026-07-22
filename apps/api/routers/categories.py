@@ -12,7 +12,7 @@ from finance.domain.category_mapping import (
     SYSTEM_CATEGORY_COLORS,
     SYSTEM_SUBCATEGORIES,
 )
-from finance.domain.models import CategoryDef, PersonalRule, Transaction
+from finance.domain.models import CategoryDef, FixedCharge, PersonalRule, Transaction
 
 router = APIRouter(prefix="/categories", tags=["categories"])
 
@@ -200,15 +200,24 @@ def delete_category(
         )
         or 0
     )
-    if transaction_count or rule_count or child_count:
+    fixed_charge_count = int(
+        session.scalar(
+            select(func.count(FixedCharge.id)).where(FixedCharge.category == cat.name)
+        )
+        or 0
+    )
+    if transaction_count or rule_count or child_count or fixed_charge_count:
+        detail = {
+            "code": "category_in_use",
+            "message": "Category is in use and cannot be deleted.",
+            "transaction_count": transaction_count,
+            "rule_count": rule_count,
+            "subcategory_count": child_count,
+        }
+        if fixed_charge_count:
+            detail["fixed_charge_count"] = fixed_charge_count
         raise conflict(
-            {
-                "code": "category_in_use",
-                "message": "Category is in use and cannot be deleted.",
-                "transaction_count": transaction_count,
-                "rule_count": rule_count,
-                "subcategory_count": child_count,
-            }
+            detail
         )
     session.delete(cat)
     session.commit()

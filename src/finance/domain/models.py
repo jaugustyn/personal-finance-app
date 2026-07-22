@@ -455,6 +455,63 @@ class SubscriptionPreference(Base):
     )
 
 
+class FixedCharge(Base):
+    """User-maintained schedule of planned recurring charges in PLN."""
+
+    __tablename__ = "fixed_charges"
+    __table_args__ = (
+        CheckConstraint("amount > 0", name="ck_fixed_charges_amount_positive"),
+        CheckConstraint(
+            "cadence IN ('monthly', 'quarterly', 'semiannual', 'yearly')",
+            name="ck_fixed_charges_cadence",
+        ),
+        Index("ix_fixed_charges_active_anchor", "active", "anchor_date"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    cadence: Mapped[str] = mapped_column(String(16), nullable=False)
+    anchor_date: Mapped[date] = mapped_column(nullable=False)
+    category: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    active: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class FixedChargeTransaction(Base):
+    """Manual link between a scheduled charge occurrence and a transaction."""
+
+    __tablename__ = "fixed_charge_transactions"
+    __table_args__ = (
+        UniqueConstraint(
+            "transaction_id",
+            name="uq_fixed_charge_transactions_transaction",
+        ),
+        Index(
+            "ix_fixed_charge_transactions_charge_due",
+            "fixed_charge_id",
+            "scheduled_due_date",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    fixed_charge_id: Mapped[int] = mapped_column(
+        ForeignKey("fixed_charges.id", ondelete="CASCADE"), nullable=False
+    )
+    transaction_id: Mapped[int] = mapped_column(
+        ForeignKey("transactions.id", ondelete="CASCADE"), nullable=False
+    )
+    scheduled_due_date: Mapped[date] = mapped_column(nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
 class Asset(Base):
     """User-tracked asset (stock, ETF, crypto, cash position)."""
 

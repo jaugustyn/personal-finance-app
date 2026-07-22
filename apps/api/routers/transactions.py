@@ -18,6 +18,7 @@ from apps.api.schemas.transactions import (
     CategoryUpdate,
     ClassificationDecisionResponse,
     FilterSummaryResponse,
+    ManualTransactionWrite,
     MerchantGroup,
     RareClass,
     RecurringMerchant,
@@ -99,6 +100,57 @@ def _transaction_response(session: Session, tx: Any) -> TransactionRow:
     policy = _classification_policy(session)
     alias_map, label_map = load_merchant_alias_maps(session)
     return _transaction_row(tx, policy, alias_map=alias_map, label_map=label_map)
+
+
+def _write_manual_transaction(
+    session: Session,
+    payload: ManualTransactionWrite,
+    *,
+    tx_id: int | None = None,
+) -> TransactionRow:
+    from finance.transactions import manual as manual_transactions
+
+    values = payload.model_dump()
+    try:
+        tx = (
+            manual_transactions.create_manual_transaction(session, **values)
+            if tx_id is None
+            else manual_transactions.update_manual_transaction(session, tx_id, **values)
+        )
+    except manual_transactions.ManualTransactionEditForbidden as exc:
+        raise conflict(
+            {"code": "manual_transaction_required", "message": str(exc)}
+        ) from exc
+    except tx_service.TransactionTypeDirectionMismatch as exc:
+        raise conflict(
+            {"code": "transaction_type_direction_mismatch", "message": str(exc)}
+        ) from exc
+    except (
+        manual_transactions.ManualTransactionValidationError,
+        tx_service.InvalidCategoryAssignment,
+        ValueError,
+    ) as exc:
+        raise validation_error(str(exc)) from exc
+    if tx is None:
+        raise not_found("Transaction not found")
+    return _transaction_response(session, tx)
+
+
+@router.post("", response_model=TransactionRow, status_code=201)
+def create_manual_transaction(
+    payload: ManualTransactionWrite,
+    session: Session = Depends(get_session),
+) -> TransactionRow:
+    return _write_manual_transaction(session, payload)
+
+
+@router.patch("/{tx_id}", response_model=TransactionRow)
+def patch_manual_transaction(
+    tx_id: int,
+    payload: ManualTransactionWrite,
+    session: Session = Depends(get_session),
+) -> TransactionRow:
+    return _write_manual_transaction(session, payload, tx_id=tx_id)
 
 
 @router.get("", response_model=list[TransactionRow])

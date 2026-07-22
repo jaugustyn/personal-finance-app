@@ -57,6 +57,7 @@ class BankSource(StrEnum):
     REVOLUT = "revolut"
     MBANK = "mbank"
     ING = "ing"
+    MANUAL = "manual"
     UNKNOWN = "unknown"
 
 

@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ReceiptText, Repeat } from "lucide-react";
+import { Repeat } from "lucide-react";
 import {
   api,
   type Subscription,
@@ -21,6 +21,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { SubscriptionCard } from "./_components/subscription-card";
 import { SubscriptionDetailsSheet } from "./_components/subscription-details-sheet";
+import { FixedChargesTab } from "./_components/fixed-charges-tab";
 import { SUBSCRIPTION_QUERY_KEYS } from "./_lib/query-keys";
 import type { SubscriptionScope } from "./_lib/subscription-format";
 
@@ -317,12 +318,7 @@ export default function SubscriptionsPage() {
         </TabsContent>
 
         <TabsContent value="fixed">
-          <EmptyState
-            title={t("subscriptions.fixed.empty")}
-            description={t("subscriptions.fixed.description")}
-            icon={ReceiptText}
-            className="min-h-64"
-          />
+          <FixedChargesTab />
         </TabsContent>
       </Tabs>
 

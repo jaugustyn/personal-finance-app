@@ -46,6 +46,25 @@ class CategoryAssignmentService:
         tx = self.session.get(Transaction, tx_id)
         if tx is None:
             return None
+        self.apply_manual_decision(
+            tx,
+            category,
+            subcategory=subcategory,
+            remember_rule=remember_rule,
+        )
+        self.session.commit()
+        self.session.refresh(tx)
+        return tx
+
+    def apply_manual_decision(
+        self,
+        tx: Transaction,
+        category: str | None,
+        *,
+        subcategory: str | None = None,
+        remember_rule: bool = False,
+    ) -> None:
+        """Apply and audit a manual category decision without committing."""
         category, subcategory = resolve_category_assignment(
             self.session, category, subcategory
         )
@@ -62,11 +81,21 @@ class CategoryAssignmentService:
         previous_prediction = tx.category_predicted
         previous_category = tx.category
         previous_category_value = str(previous_category) if previous_category else None
+        decision_changed = (
+            previous_category_value != category
+            or tx.subcategory != subcategory
+            or (
+                category is not None
+                and tx.category_confirmation_method
+                != CategoryConfirmationMethod.MANUAL.value
+            )
+        )
         if previous_category_value != category:
             invalidate_for_label_change(self.session, tx.id)
-        self.apply_manual_category(tx, category, subcategory=subcategory)
+        if decision_changed:
+            self.apply_manual_category(tx, category, subcategory=subcategory)
 
-        if category is not None:
+        if category is not None and decision_changed:
             record_transaction_feedback(
                 self.session,
                 tx,
@@ -80,7 +109,9 @@ class CategoryAssignmentService:
                 remember_merchant_category(
                     self.session, merchant=tx.merchant, category=category
                 )
-        elif previous_prediction is not None or previous_category is not None:
+        elif category is None and (
+            previous_prediction is not None or previous_category is not None
+        ):
             record_transaction_feedback(
                 self.session,
                 tx,
@@ -89,10 +120,6 @@ class CategoryAssignmentService:
                 previous_category=str(previous_category) if previous_category else None,
             )
         clear_suggestion(tx)
-
-        self.session.commit()
-        self.session.refresh(tx)
-        return tx
 
     def bulk_categorize(
         self,

@@ -33,6 +33,7 @@ import {
 interface ListViewProps {
   reviewMode: boolean;
   initialFilters?: TransactionInitialFilters;
+  onEditManualTransaction?: (transaction: Transaction) => void;
 }
 
 export interface TransactionInitialFilters {
@@ -77,7 +78,11 @@ function clearUrlFilters() {
   window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
 }
 
-export function ListView({ reviewMode, initialFilters }: ListViewProps) {
+export function ListView({
+  reviewMode,
+  initialFilters,
+  onEditManualTransaction,
+}: ListViewProps) {
   const { t } = useT();
   const confirm = useConfirm();
   const commonStoragePrefix = "finance.transactions.filters";
@@ -518,6 +523,7 @@ export function ListView({ reviewMode, initialFilters }: ListViewProps) {
           onPatchAnnotations={(id, notes, tags) =>
             patchAnnotations.mutate({ id, notes, tags })
           }
+          onEditManualTransaction={onEditManualTransaction}
           onSort={(id) => {
             setSort((current) => ({
               id,

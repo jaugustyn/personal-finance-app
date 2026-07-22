@@ -451,6 +451,76 @@ export interface SubscriptionPreferenceInput {
   cadence_override?: "weekly" | "biweekly" | "monthly" | "yearly" | "unknown" | null;
 }
 
+export type FixedChargeCadence =
+  | "monthly"
+  | "quarterly"
+  | "semiannual"
+  | "yearly";
+
+export interface FixedCharge {
+  id: number;
+  name: string;
+  amount: number;
+  currency: "PLN";
+  cadence: FixedChargeCadence;
+  anchor_date: string;
+  category: string | null;
+  active: boolean;
+  next_due_date: string | null;
+  current_due_date: string | null;
+  payment_status: "pending" | "paid" | "overdue" | "paused";
+  current_paid_amount: number;
+  linked_transaction_count: number;
+  last_payment_date: string | null;
+  monthly_equivalent: number;
+  yearly_cost: number;
+}
+
+export interface FixedChargeSummary {
+  active_count: number;
+  monthly_total: number;
+  yearly_total: number;
+  next_30_days_count: number;
+  next_30_days_total: number;
+  base_currency: "PLN";
+}
+
+export interface FixedChargeListResponse {
+  items: FixedCharge[];
+  summary: FixedChargeSummary;
+}
+
+export interface FixedChargeCreateInput {
+  name: string;
+  amount: number;
+  cadence: FixedChargeCadence;
+  anchor_date: string;
+  category?: string | null;
+}
+
+export type FixedChargeUpdateInput = Partial<FixedChargeCreateInput> & {
+  active?: boolean;
+};
+
+export interface FixedChargeTransaction {
+  transaction_id: number;
+  scheduled_due_date: string | null;
+  booking_date: string;
+  merchant: string;
+  title: string;
+  amount: number;
+  currency: string;
+  amount_base: number;
+  base_currency: "PLN";
+}
+
+export interface FixedChargeTransactionsResponse {
+  fixed_charge_id: number;
+  current_due_date: string;
+  linked: FixedChargeTransaction[];
+  candidates: FixedChargeTransaction[];
+}
+
 export interface Asset {
   id: number;
   symbol: string;
