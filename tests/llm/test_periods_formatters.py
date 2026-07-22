@@ -64,14 +64,19 @@ def test_format_answer_cashflow_overview_is_deterministic() -> None:
         {
             "period": {"start": "2026-04-01", "end": "2026-04-30"},
             "income": 1000.0,
-            "expenses": 300.0,
-            "net": 700.0,
-            "savings_rate": 0.7,
+            "gross_expenses": 300.0,
+            "refunds": 50.0,
+            "expenses": 250.0,
+            "debt_payments": 100.0,
+            "asset_allocations": 200.0,
+            "net": 450.0,
+            "savings_rate": 0.65,
             "transactions": 2,
         },
     )
     assert "wpływy" in answer
-    assert "700,00 zł" in answer
+    assert "450,00 zł" in answer
+    assert "zwroty 50,00 zł" in answer
 
 
 def test_format_answer_recommend_savings_is_deterministic() -> None:

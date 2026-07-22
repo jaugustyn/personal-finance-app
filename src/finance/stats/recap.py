@@ -209,6 +209,17 @@ def _cashflow(
     }
 
 
+def cashflow_totals(
+    session: Session,
+    *,
+    date_from: date,
+    date_to: date,
+) -> dict[str, Decimal]:
+    """Return the shared economic cash-flow contract for an explicit period."""
+
+    return _cashflow(session, PeriodBounds(date_from, date_to))
+
+
 def _merchant_totals(
     session: Session,
     bounds: PeriodBounds,

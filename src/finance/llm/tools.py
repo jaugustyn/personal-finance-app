@@ -73,7 +73,7 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
     _schema(
         "cashflow_overview",
         CashflowOverviewArgs,
-        "Przychody, wydatki, saldo netto i stopa oszczędności w okresie.",
+        "Przychody, wydatki netto, zwroty, dług, alokacje i przepływ netto w okresie.",
     ),
     _schema(
         "list_subscriptions",

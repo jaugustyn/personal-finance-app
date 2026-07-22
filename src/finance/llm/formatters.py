@@ -161,11 +161,22 @@ def _format_cashflow_overview(result: ToolResult) -> str:
     period = result["period"]
     currency = result.get("currency")
     savings_rate = float(result.get("savings_rate") or 0.0) * 100.0
+    details: list[str] = []
+    refunds = float(result.get("refunds") or 0.0)
+    debt = float(result.get("debt_payments") or 0.0)
+    allocations = float(result.get("asset_allocations") or 0.0)
+    if refunds:
+        details.append(f"zwroty {fmt_money(refunds, currency)}")
+    if debt:
+        details.append(f"spłaty zobowiązań {fmt_money(debt, currency)}")
+    if allocations:
+        details.append(f"alokacje środków {fmt_money(allocations, currency)}")
+    breakdown = f" W tym: {', '.join(details)}." if details else ""
     return (
         f"W okresie {_format_period(period)} wpływy wyniosły "
-        f"{fmt_money(result.get('income', 0.0), currency)}, odpływy "
-        f"{fmt_money(result.get('expenses', 0.0), currency)}, a bilans "
-        f"{fmt_money(result.get('net', 0.0), currency)}. "
+        f"{fmt_money(result.get('income', 0.0), currency)}, wydatki netto "
+        f"{fmt_money(result.get('expenses', 0.0), currency)}, a przepływ netto "
+        f"{fmt_money(result.get('net', 0.0), currency)}.{breakdown} "
         f"Stopa oszczędności: {savings_rate:.1f}% "
         f"({_transaction_count(result.get('transactions', 0))})."
     )

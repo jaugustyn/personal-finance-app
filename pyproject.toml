@@ -63,8 +63,11 @@ ignore = ["B008"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-q --cov=src/finance --cov=apps --cov-report=term-missing --cov-report=xml --cov-fail-under=60"
+addopts = "-q -m 'not postgres_integration' --cov=src/finance --cov=apps --cov-report=term-missing --cov-report=xml --cov-fail-under=60"
 pythonpath = ["src"]
+markers = [
+    "postgres_integration: tests requiring a dedicated PostgreSQL database",
+]
 
 [tool.mypy]
 python_version = "3.12"

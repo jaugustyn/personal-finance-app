@@ -92,6 +92,20 @@ uv run mypy src apps scripts
 uv run python scripts\check_data_integrity.py
 ```
 
+The fast reference financial scenario is part of the regular test suite.
+PostgreSQL integration tests are excluded from a plain `pytest` run. Their real
+import and deduplication path requires a dedicated database whose name ends
+with `_test`:
+
+```powershell
+$env:TEST_DATABASE_URL="postgresql+psycopg://finance:finance@localhost:5432/finance_test"
+$env:DATABASE_URL=$env:TEST_DATABASE_URL
+uv run pytest tests\integration\test_reference_financial_scenario_postgres.py -m postgres_integration --no-cov
+```
+
+The integration fixture applies Alembic migrations and clears that test
+database. It refuses to run against a database without the `_test` suffix.
+
 Frontend:
 
 ```powershell

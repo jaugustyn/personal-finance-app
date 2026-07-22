@@ -61,7 +61,11 @@ class CashflowOverviewResult(BaseModel):
     period: PeriodRange
     currency: str
     income: float
+    gross_expenses: float
+    refunds: float
     expenses: float
+    debt_payments: float
+    asset_allocations: float
     net: float
     savings_rate: float
     transactions: int

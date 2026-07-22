@@ -66,11 +66,20 @@ def test_get_spending_filters_period_and_category(session):
         category_predicted="food",
         dedup_hash="llm-predicted-food",
     )
+    _add_tx(
+        session,
+        booking_date=date(2026, 4, 6),
+        amount=Decimal("20"),
+        direction="credit",
+        category="food",
+        transaction_type="refund",
+        dedup_hash="llm-refund-food",
+    )
     session.commit()
 
     res = get_spending(session, {"period": "2026-04", "category": "food"})
-    assert res["transactions"] == 2
-    assert res["total"] == pytest.approx(150.0)
+    assert res["transactions"] == 3
+    assert res["total"] == pytest.approx(130.0)
 
 
 def test_top_merchants_orders_by_total(session):
@@ -215,27 +224,68 @@ def test_cashflow_overview_excludes_transfers(session):
         is_transfer=True,
         dedup_hash="llm-cashflow-transfer",
     )
+    _add_tx(
+        session,
+        booking_date=date(2026, 4, 4),
+        amount=Decimal("50"),
+        direction="credit",
+        transaction_type="refund",
+        dedup_hash="llm-cashflow-refund",
+    )
+    _add_tx(
+        session,
+        booking_date=date(2026, 4, 5),
+        amount=Decimal("-100"),
+        transaction_type="debt_payment",
+        dedup_hash="llm-cashflow-debt",
+    )
+    _add_tx(
+        session,
+        booking_date=date(2026, 4, 6),
+        amount=Decimal("-200"),
+        transaction_type="asset_allocation",
+        dedup_hash="llm-cashflow-allocation",
+    )
+    _add_tx(
+        session,
+        booking_date=date(2026, 4, 7),
+        amount=Decimal("-80"),
+        transaction_type="cash_withdrawal",
+        dedup_hash="llm-cashflow-cash",
+    )
     session.commit()
 
     res = cashflow_overview(session, {"period": "2026-04"})
 
     assert res["income"] == pytest.approx(1000.0)
-    assert res["expenses"] == pytest.approx(300.0)
-    assert res["net"] == pytest.approx(700.0)
-    assert res["savings_rate"] == pytest.approx(0.7)
-    assert res["transactions"] == 2
+    assert res["gross_expenses"] == pytest.approx(300.0)
+    assert res["refunds"] == pytest.approx(50.0)
+    assert res["expenses"] == pytest.approx(250.0)
+    assert res["debt_payments"] == pytest.approx(100.0)
+    assert res["asset_allocations"] == pytest.approx(200.0)
+    assert res["net"] == pytest.approx(450.0)
+    assert res["savings_rate"] == pytest.approx(0.65)
+    assert res["transactions"] == 6
 
 
 def test_compare_periods_delta(session):
     _add_tx(session, booking_date=date(2026, 3, 5), amount=Decimal("-100"))
     _add_tx(session, booking_date=date(2026, 4, 5), amount=Decimal("-150"))
+    _add_tx(
+        session,
+        booking_date=date(2026, 4, 6),
+        amount=Decimal("20"),
+        direction="credit",
+        transaction_type="refund",
+        dedup_hash="llm-compare-refund",
+    )
     session.commit()
 
     res = compare_periods(session, {"period_a": "2026-04", "period_b": "2026-03"})
-    assert res["a"]["total"] == pytest.approx(150.0)
+    assert res["a"]["total"] == pytest.approx(130.0)
     assert res["b"]["total"] == pytest.approx(100.0)
-    assert res["delta"] == pytest.approx(50.0)
-    assert res["delta_pct"] == pytest.approx(50.0)
+    assert res["delta"] == pytest.approx(30.0)
+    assert res["delta_pct"] == pytest.approx(30.0)
 
 
 def test_list_subscriptions_picks_whitelisted(session):

@@ -4,7 +4,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
-from apps.api.errors import validation_error
+from apps.api.errors import bad_request
 from apps.api.schemas.currencies import (
     CurrencyStatus,
     FetchNbpResult,
@@ -61,7 +61,7 @@ def post_rate(
             source="manual",
         )
     except ValueError as exc:
-        raise validation_error(str(exc)) from exc
+        raise bad_request(str(exc)) from exc
     session.commit()
     session.refresh(row)
     return FxRateRow.model_validate(row)

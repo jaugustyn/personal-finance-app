@@ -8,8 +8,8 @@ from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
 
 from finance.analytics.filters import (
-    category_candidate_type_filter,
     debit_spending_filters,
+    expense_category_candidate_filters,
     non_transfer_filters,
     period_filters,
 )
@@ -36,6 +36,7 @@ from finance.llm.types import (
     TopMerchantsResult,
     tool_result,
 )
+from finance.stats.recap import cashflow_totals
 from finance.transactions.merchants import (
     load_merchant_alias_maps,
     merchant_display_label,
@@ -43,21 +44,22 @@ from finance.transactions.merchants import (
 )
 
 
-def _category_candidate_type_filter():
-    return category_candidate_type_filter()
-
-
 def get_spending(session: Session, args: dict[str, Any]) -> ToolResult:
     parsed = GetSpendingArgs(**args)
     start, end = parse_period(parsed.period)
     amount = amount_base_expr()
-    stmt = (
-        select(func.sum(func.abs(amount)), func.count())
-        .where(
-            *debit_spending_filters(start, end, category=parsed.category),
-            amount.is_not(None),
-        )
+    net_amount = case(
+        (Transaction.direction == "credit", -func.abs(amount)),
+        else_=func.abs(amount),
     )
+    filters = [
+        *expense_category_candidate_filters(),
+        *period_filters(start, end),
+        amount.is_not(None),
+    ]
+    if parsed.category:
+        filters.append(Transaction.category == parsed.category)
+    stmt = select(func.sum(net_amount), func.count(amount)).where(*filters)
     total, n = session.execute(stmt).one()
     return tool_result(
         GetSpendingResult(
@@ -134,14 +136,18 @@ def top_categories(session: Session, args: dict[str, Any]) -> ToolResult:
     parsed = TopCategoriesArgs(**args)
     start, end = parse_period(parsed.period)
     amount_expr = amount_base_expr()
+    net_amount = case(
+        (Transaction.direction == "credit", -func.abs(amount_expr)),
+        else_=func.abs(amount_expr),
+    )
     base_filters = [
-        *debit_spending_filters(start, end),
-        _category_candidate_type_filter(),
+        *expense_category_candidate_filters(),
+        *period_filters(start, end),
         amount_expr.is_not(None),
     ]
     total_stmt = select(
-        func.sum(func.abs(amount_expr)),
-        func.count(),
+        func.sum(net_amount),
+        func.count(amount_expr),
     ).where(*base_filters)
     total, tx_count = session.execute(total_stmt).one()
     total_candidate_spend = float(total or 0.0)
@@ -149,12 +155,12 @@ def top_categories(session: Session, args: dict[str, Any]) -> ToolResult:
     rows = session.execute(
         select(
             Transaction.category,
-            func.sum(func.abs(amount_expr)).label("total"),
-            func.count().label("n"),
+            func.sum(net_amount).label("total"),
+            func.count(amount_expr).label("n"),
         )
         .where(*base_filters, Transaction.category.is_not(None))
         .group_by(Transaction.category)
-        .order_by(func.sum(func.abs(amount_expr)).desc())
+        .order_by(func.sum(net_amount).desc())
     ).all()
     categorized_total = float(sum(float(total or 0.0) for _, total, _ in rows))
     uncategorized_total = max(total_candidate_spend - categorized_total, 0.0)
@@ -192,47 +198,36 @@ def cashflow_overview(session: Session, args: dict[str, Any]) -> ToolResult:
     parsed = CashflowOverviewArgs(**args)
     start, end = parse_period(parsed.period)
     amount_expr = amount_base_expr()
-    income_expr = func.coalesce(
-        func.sum(
-            case(
-                (Transaction.direction == "credit", func.abs(amount_expr)),
-                else_=0,
+    totals = cashflow_totals(session, date_from=start, date_to=end)
+    tx_count = int(
+        session.scalar(
+            select(func.count()).where(
+                *period_filters(start, end),
+                *non_transfer_filters(),
+                amount_expr.is_not(None),
             )
-        ),
-        0,
-    )
-    expense_expr = func.coalesce(
-        func.sum(
-            case(
-                (Transaction.direction == "debit", func.abs(amount_expr)),
-                else_=0,
-            )
-        ),
-        0,
-    )
-    row = session.execute(
-        select(
-            income_expr.label("income"),
-            expense_expr.label("expenses"),
-            func.count().label("tx_count"),
-        ).where(
-            *period_filters(start, end),
-            *non_transfer_filters(),
-            amount_expr.is_not(None),
         )
-    ).one()
-    income = float(row.income or 0.0)
-    expenses = float(row.expenses or 0.0)
-    net = income - expenses
+        or 0
+    )
+    income = float(totals["income"])
+    expenses = float(totals["expenses"])
+    debt_payments = float(totals["debt_payments"])
+    net = float(totals["net"])
+    saved = income - expenses - debt_payments
+    savings_rate = saved / income if income > 0 else 0.0
     return tool_result(
         CashflowOverviewResult(
             period=PeriodRange(start=start.isoformat(), end=end.isoformat()),
             currency=resolve_base_currency(session),
             income=income,
+            gross_expenses=float(totals["gross_expenses"]),
+            refunds=float(totals["refunds"]),
             expenses=expenses,
+            debt_payments=debt_payments,
+            asset_allocations=float(totals["asset_allocations"]),
             net=net,
-            savings_rate=net / income if income else 0.0,
-            transactions=int(row.tx_count or 0),
+            savings_rate=max(min(savings_rate, 1.0), -10.0),
+            transactions=tx_count,
         )
     )
 
@@ -244,13 +239,18 @@ def compare_periods(session: Session, args: dict[str, Any]) -> ToolResult:
 
     def _sum(start: date, end: date) -> float:
         amount_expr = amount_base_expr()
-        stmt = (
-            select(func.sum(func.abs(amount_expr)))
-            .where(
-                *debit_spending_filters(start, end, category=parsed.category),
-                amount_expr.is_not(None),
-            )
+        net_amount = case(
+            (Transaction.direction == "credit", -func.abs(amount_expr)),
+            else_=func.abs(amount_expr),
         )
+        filters = [
+            *expense_category_candidate_filters(),
+            *period_filters(start, end),
+            amount_expr.is_not(None),
+        ]
+        if parsed.category:
+            filters.append(Transaction.category == parsed.category)
+        stmt = select(func.sum(net_amount)).where(*filters)
         return float(session.execute(stmt).scalar() or 0.0)
 
     total_a, total_b = _sum(a_start, a_end), _sum(b_start, b_end)
