@@ -1,16 +1,20 @@
 # Personal Finance Web
 
-Production dashboard for the thesis demo. The app is built with Next.js 16,
-React 19, TypeScript, Tailwind v4, TanStack Query and Recharts.
+Web dashboard for Personal Finance App. It is built with Next.js 16, React 19,
+TypeScript, Tailwind v4, TanStack Query and Recharts. Project setup and the
+Docker workflow are documented in the [root README](../../README.md).
 
 ## Role in the project
 
-- Main UI for the production demo at `http://localhost:3000`.
+- Main UI at `http://localhost:3000`.
 - Talks only to its local route handler at `/api/proxy/*`.
-- The proxy performs HTTP calls to FastAPI and injects BasicAuth credentials from
-  server-side env vars (`API_USERNAME`, `API_PASSWORD`) when configured.
+- The proxy forwards cookies and `Set-Cookie`, disables API response caching
+  and injects BasicAuth credentials from server-side environment variables
+  (`API_USERNAME`, `API_PASSWORD`) when configured.
 
 ## Development
+
+Requires Node.js 24.
 
 ```bash
 npm ci
@@ -28,7 +32,7 @@ API_PASSWORD=change-me
 ## Quality checks
 
 ```bash
-npx tsc --noEmit
-npx eslint src
+npm run typecheck
+npm run lint
 npm run build
 ```

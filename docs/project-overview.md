@@ -8,8 +8,8 @@ implementation details are described in
 ## Goal and scope
 
 The project is a single-user, self-hosted system for personal-finance analysis.
-It covers the complete path from bank-file ingestion through data review and
-analytics to classical ML experiments and a local natural-language assistant.
+It covers bank-file ingestion and manual transaction entry, data review,
+analytics, classical ML experiments and a local natural-language assistant.
 
 The project evaluates whether relatively simple, explainable methods are
 sufficient for private financial data with limited labels and short time
@@ -37,7 +37,7 @@ Browser
   -> PostgreSQL
 
 Optional local path:
-  FastAPI -> Ollama for routing, summaries or category fallback
+  FastAPI -> Ollama for unmatched tool selection or category fallback
 ```
 
 Main boundaries:
@@ -55,7 +55,8 @@ parsing in `src/finance/ingestion`, and ML in `src/finance/ml`.
 
 ## Data flow
 
-1. A Pekao, Revolut or generic file is parsed into a common transaction DTO.
+1. A Pekao, Revolut or generic file is parsed into a common transaction DTO;
+   individual transactions can also be entered manually.
 2. The import service normalizes fields, obtains the date-specific PLN exchange
    rate when available, calculates a deduplication hash and stores the original
    bank values.
@@ -64,10 +65,11 @@ parsing in `src/finance/ingestion`, and ML in `src/finance/ml`.
 5. Only explicit manual decisions and accepted suggestions become ML labels.
 6. Deterministic analytics feed the dashboard and LLM tools.
 
-User-maintained fixed charges form a separate planning schedule. They do not
-create bank transactions or change realised financial totals. A transaction
-can be linked manually to a scheduled occurrence; the reversible link records
-payment status without changing the transaction itself.
+User-maintained fixed charges form a separate planning schedule. Schedules do
+not generate transactions automatically. A user can link an existing
+transaction or explicitly add a manual payment for an occurrence; the
+reversible link records payment status without changing the transaction's type
+or category.
 
 PLN is the fixed analytical currency. Foreign records without a complete,
 positive-rate PLN conversion remain available for review and export but are
@@ -92,7 +94,7 @@ expense-category model.
 | Anomalies | IsolationForest, robust statistics and explainable rules | Provisional |
 | Subscriptions | Merchant normalization, cadence and amount stability | Provisional |
 | Fixed charges | Manual PLN schedule with calendar-based future dates | Operational |
-| Assistant | Polish routing and deterministic tools with optional local Ollama phrasing | Operational, optional LLM |
+| Assistant | Polish routing and deterministic tools with optional local Ollama tool selection | Operational, optional LLM |
 
 The category model is the primary ML workflow. It uses versioned candidates,
 mandatory time and unseen-merchant holdouts, manual activation, checksums and
@@ -135,7 +137,7 @@ data/model identifiers, privacy diagnostics and explicit section statuses.
 
 | Area | State |
 | --- | --- |
-| Import, transactions, currencies and analytics | Operational |
+| Import, manual transactions, currencies and analytics | Operational |
 | Dashboard and review workflows | Operational |
 | Category training, activation and rollback | Operational; requires local labels |
 | Transaction-type rules and review | Operational |
@@ -143,7 +145,7 @@ data/model identifiers, privacy diagnostics and explicit section statuses.
 | Forecasting, anomalies, subscriptions and type ML | Implemented, validation provisional |
 | Manual fixed-charge schedules | Operational |
 | Frozen private evaluation set | Backend available, hidden from normal UI |
-| Final evidence package | Pending sufficient confirmed data |
+| Evidence generation | Operational; strict classification profile requires sufficient confirmed data |
 
 Private datasets, trained models and final metric packages are generated
 locally and are not distributed with the repository.

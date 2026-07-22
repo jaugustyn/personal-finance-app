@@ -60,6 +60,7 @@ cannot silently become gold labels.
 | `data/reports/latest_anomaly_summary.json` | Aggregate anomaly reasons and review metrics |
 | `data/reports/latest_subscriptions.json` | Cadence and estimated-cost summary |
 | `data/reports/latest_evidence_package.json` | Combined schema `3.0` package and section statuses |
+| `data/reports/privacy_check_latest.json` | Aggregated public-output privacy diagnostics |
 | `data/reports/summary.md` | Short human-readable summary |
 | `data/private/latest_anomaly_review.csv` | Private row-level anomaly review |
 
@@ -113,8 +114,8 @@ prove model quality; metric interpretation remains a separate analysis step.
   `data/reports` when it was generated from real data.
 - Public evidence may contain only aggregates, aliases and fingerprints.
 - Do not publish TF-IDF model artifacts; their vocabulary can reveal merchants.
-- The local `data/` directory and every `.env` file remain outside version
-  control.
+- Runtime content under `data/` and local files matching `.env*` remain outside
+  version control. `.env.example` is the only tracked environment template.
 
 The generator checks public payloads against raw merchant/title values and
 aborts when it detects a possible leak.

@@ -22,11 +22,14 @@ the validation perspective.
 
 - Pekao and Revolut imports, plus a generic CSV/TSV/TXT mapping flow.
 - Deduplication, conversion of foreign amounts to PLN and daily exchange rates.
-- Transaction list with separate economic type and expense category workflows.
+- Imported and manually entered transactions with separate economic type and
+  expense category workflows.
 - Dashboard, period summaries, merchant analysis and asset tracking.
 - Category suggestions using TF-IDF and linear classifiers.
 - Rule-based transaction-type suggestions with explicit user review.
-- Forecasting, anomaly and subscription detection, plus manual fixed-charge schedules.
+- Forecasting, anomaly and subscription detection.
+- Manual fixed-charge schedules with transaction matching and explicit payment
+  entry.
 - Polish local assistant backed by deterministic finance tools.
 
 ## Architecture
@@ -71,7 +74,7 @@ Main optional settings:
 AUTH_USERNAME=
 AUTH_PASSWORD=
 APP_LOCK_COOKIE_SECURE=false
-OLLAMA_BASE_URL=http://localhost:11434
+OLLAMA_BASE_URL=http://host.docker.internal:11434
 LLM_ENABLED=true
 LLM_FALLBACK_ENABLED=false
 ```
@@ -80,6 +83,9 @@ Set both auth values to enable BasicAuth. Ollama endpoints other than loopback
 or `host.docker.internal` are rejected. An optional inactivity lock can be
 enabled from Settings; set `APP_LOCK_COOKIE_SECURE=true` only when the browser
 reaches the application over HTTPS.
+
+The example URL reaches Ollama on the host from the API container. When the API
+itself is started outside Docker, use `OLLAMA_BASE_URL=http://localhost:11434`.
 
 If the local lock code is lost, disable it from the host:
 
@@ -104,7 +110,7 @@ After installing `uv` for the first time, reopen PowerShell if the command is
 not yet visible. `uv sync` creates the project-local `.venv` automatically;
 manual activation is not required because project commands use `uv run`.
 
-Frontend:
+Frontend (Node.js 24):
 
 ```powershell
 cd apps/web
@@ -157,10 +163,10 @@ Evidence commands and interpretation rules are documented in
 
 ## Privacy
 
-Never publish bank exports, `.env` files, model artifacts or row-level reports.
-Keep them in ignored runtime locations such as `data/raw/`, `data/private/`,
-`data/models/` and `data/reports/`. The entire `data/` directory and local
-environment files are excluded from version control.
+Never publish bank exports, local `.env` files, model artifacts or row-level
+reports. Runtime content under `data/` and local environment files matching
+`.env*` are excluded from version control. `.env.example` is the only tracked
+environment template.
 
 The optional inactivity lock protects an application left open in a browser.
 It does not encrypt the database, exports or runtime files and does not replace

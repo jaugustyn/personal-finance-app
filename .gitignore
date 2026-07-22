@@ -25,17 +25,12 @@ env/
 .codex/
 
 # Env
-.env
-.env.local
+.env*
+!.env.example
 
 # Data (private)
-data/raw/
-data/processed/
-data/private/
-data/synthetic/
-data/external/
-data/models/
-data/reports/
+data/**
+!data/.gitkeep
 *.csv
 !tests/**/*.csv
 

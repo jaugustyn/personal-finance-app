@@ -43,7 +43,21 @@ This operation is destructive.
 Manual decisions and accepted suggestions become gold labels. Bank mappings,
 system rules and provisional personal-rule assignments do not.
 
-## 3. Category model lifecycle
+## 3. Operational smoke test
+
+Before validating ML, check the main data mutations:
+
+1. Add a manual transaction, edit it and verify that the list and financial
+   summary update consistently.
+2. Create a fixed-charge schedule, link and unlink an existing transaction,
+   then add an explicit manual payment for one occurrence.
+3. In Settings, enable the inactivity lock with a short timeout, lock the
+   application manually, unlock it and disable the lock again.
+
+These checks use synthetic values only. A fixed-charge schedule must not create
+a transaction until the user explicitly adds a payment.
+
+## 4. Category model lifecycle
 
 The ML screen first reports data readiness. On a clean or insufficiently
 labelled database, the missing active model and disabled training action are
@@ -62,7 +76,7 @@ When readiness is satisfied:
 Retraining never activates a model automatically. Suggestions should only be
 accepted when they are correct.
 
-## 4. Evidence validation
+## 5. Evidence validation
 
 After a model has been trained and activated:
 
@@ -81,7 +95,7 @@ uv run python scripts\inspect_report.py --profile classification-strict
 Aggregate outputs are written to `data/reports`. Row-level anomaly review,
 model artifacts and database contents remain local.
 
-## 5. Quality checks
+## 6. Quality checks
 
 Backend:
 
@@ -134,3 +148,7 @@ Expected conditions:
 The integrity command prints aggregate counts and transaction IDs only. Exit
 code `0` means no critical inconsistency; exit code `1` means the reported IDs
 require review or an explicit currency recomputation.
+
+CI runs the backend, frontend and PostgreSQL reference scenario for every pull
+request. Docker images are rebuilt only after Docker or dependency changes.
+Dependency security audits run weekly and can also be started manually.

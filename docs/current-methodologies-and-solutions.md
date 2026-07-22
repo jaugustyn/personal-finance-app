@@ -1,14 +1,15 @@
 # Aktualne metodyki i rozwiązania
 
-Stan na 2026-07-20. Dokument opisuje rozwiązania faktycznie obecne w kodzie.
+Stan na 2026-07-22. Dokument opisuje rozwiązania faktycznie obecne w kodzie.
 Nie zawiera wyników z prywatnych danych; kryteria modelu kategorii znajdują się
 w [model card](model-card.md).
 
 ## 1. Założenia projektu
 
 Aplikacja jest samo-hostowanym systemem single-user do analizy finansów
-osobistych. Obejmuje import danych bankowych, ich korektę, analitykę, klasyczne
-ML oraz opcjonalnego lokalnego asystenta językowego.
+osobistych. Obejmuje import danych bankowych, ręczne wprowadzanie i korektę
+transakcji, analitykę, klasyczne ML oraz opcjonalnego lokalnego asystenta
+językowego.
 
 Najważniejsze zasady:
 
@@ -39,6 +40,7 @@ Granice odpowiedzialności:
 - `src/finance/domain`: modele SQLAlchemy, enumy i DTO;
 - `src/finance/ingestion`: parsery i import;
 - `src/finance/transactions`: zapytania, mutacje, reguły i review;
+- `src/finance/fixed_charges`: harmonogramy opłat i powiązania płatności;
 - `src/finance/stats`: agregacje dashboardu i podsumowań;
 - `src/finance/ml`: klasyfikacja, forecasting, anomalie, subskrypcje i evidence;
 - `src/finance/llm`: routing, narzędzia, formatowanie i klient Ollama.
@@ -71,6 +73,11 @@ Deduplication chroni przed ponownym importem tej samej operacji. Jeżeli źród�
 dostarcza godzinę księgowania, jest ona częścią skrótu, dzięki czemu dwie
 identyczne kwotowo operacje z jednego dnia nie są automatycznie scalane.
 Oryginalne pola pozostają dostępne do audytu i eksportu.
+
+Pojedynczą transakcję można również dodać ręcznie. Korzysta ona z tych samych
+reguł walidacji kwoty, waluty, typu i kategorii co pozostałe mutacje, otrzymuje
+źródło `manual` i może być później edytowana. Tryb edycji nie obejmuje rekordów
+pochodzących z importu, aby nie zacierać ich bankowego pochodzenia.
 
 ## 4. Model transakcji
 
@@ -130,8 +137,8 @@ Główne agregacje obejmują:
 - trendy miesięczne oraz porównania okresów;
 - histogram i statystyki kwot;
 - portfel aktywów i historię wartości;
-- deterministyczne rekomendacje na podstawie zmian, limitów i celu
-  oszczędnościowego.
+- deterministyczne rekomendacje na podstawie zmian okresowych, kategorii,
+  największych merchantów, subskrypcji i anomalii.
 
 ## 7. Klasyfikacja kategorii wydatków
 
@@ -241,10 +248,10 @@ Regression oraz kalibrowany LinearSVC. Jego wynik nie uczestniczy w runtime.
 
 ### Forecasting
 
-Prognoza korzysta wyłącznie z zakończonych miesięcy i wymaga co najmniej 12
-miesięcy historii, 6 miesięcy z wydatkami oraz 6 okien walidacji dopasowanych
-do wybranego horyzontu. Porównywane są Naive, rolling mean, SES, tłumiony trend
-Holta i seasonal-naive. Model z trendem lub
+Prognoza korzysta wyłącznie z zakończonych miesięcy. Wymaga co najmniej 12
+miesięcy historii, 6 miesięcy z wydatkami i przynajmniej 6 okien walidacji;
+minimalna długość szeregu rośnie wraz z wybranym horyzontem. Porównywane są
+Naive, rolling mean, SES, tłumiony trend Holta i seasonal-naive. Model z trendem lub
 sezonowością jest wybierany tylko wtedy, gdy poprawia RMSE najlepszego prostego
 baseline'u o co najmniej 5%. W przeciwnym razie aplikacja jawnie prezentuje
 prognozę bazową. Moduł pozostaje provisional.
@@ -264,13 +271,14 @@ szacowany koszt miesięczny. To detektor wzorca, nie klasyfikator nadzorowany.
 Stałe opłaty są odrębnym, ręcznie utrzymywanym harmonogramem planowanych
 kosztów w PLN. Terminy są przesuwane kalendarzowo, a podsumowanie pokazuje
 ekwiwalent miesięczny, roczny i płatności z najbliższych 30 dni. Harmonogram
-nie tworzy transakcji i nie zmienia statystyk faktycznie zaksięgowanych kwot.
-Użytkownik może ręcznie przypisać jedną lub kilka transakcji do terminu opłaty,
-co aktualizuje wyłącznie jej status i historię płatności. Przypisanie można
-cofnąć; nie modyfikuje ono typu ani kategorii transakcji.
+nie generuje transakcji automatycznie i nie zmienia statystyk faktycznie
+zaksięgowanych kwot. Użytkownik może przypisać istniejącą transakcję albo jawnie
+dodać ręczną płatność do terminu opłaty. Powiązanie można cofnąć; nie
+modyfikuje ono typu ani kategorii transakcji.
 
-Wszystkie trzy moduły są użyteczne produktowo, lecz pozostają provisional w
-pakiecie evidence do czasu osobnej walidacji.
+Forecasting oraz detekcja anomalii i subskrypcji pozostają `provisional` w
+pakiecie evidence do czasu osobnej walidacji. Ręczne harmonogramy stałych opłat
+są funkcją operacyjną i nie są modułem ML.
 
 ## 10. Lokalny asystent LLM
 
@@ -305,11 +313,16 @@ Profil `classification-strict` wymaga kompletnej klasyfikacji kategorii i
 dopuszcza pozostałe moduły jako provisional. Szczegółowy przebieg znajduje się w
 [ml-evidence.md](ml-evidence.md).
 
-## 12. Uruchomienie i jakość
+## 12. Uruchomienie, bezpieczeństwo i jakość
 
 Jedynym wspieranym runtime Python jest 3.12. `uv.lock` jest źródłem wersji
 zależności, a Docker używa `uv sync --frozen`. Stack lokalny składa się z
 PostgreSQL, API i web uruchamianych przez Docker Compose.
+
+Wdrożenie single-user może opcjonalnie używać BasicAuth. Niezależna blokada po
+nieaktywności jest domyślnie wyłączona; po skonfigurowaniu backend egzekwuje
+czas sesji i wymaga lokalnego kodu do ponownego odblokowania interfejsu. Nie
+zastępuje to blokady systemu operacyjnego, HTTPS ani ochrony plików i bazy.
 
 Kontrole jakości:
 
