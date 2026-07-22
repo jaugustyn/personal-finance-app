@@ -485,7 +485,13 @@ def test_confirmed_subscription_is_not_hidden_by_min_confidence(client, db_sessi
     assert after.json()[0]["is_confirmed"] is True
 
 
-def test_subscription_price_increase_status(client, db_session) -> None:
+def test_subscription_price_increase_status(client, db_session, monkeypatch) -> None:
+    class _FixedDate(date):
+        @classmethod
+        def today(cls) -> date:
+            return cls(2026, 7, 1)
+
+    monkeypatch.setattr(subscription_service, "date", _FixedDate)
     for month, amount in [(3, "-49.99"), (4, "-49.99"), (5, "-60.00"), (6, "-60.00")]:
         db_session.add(
             Transaction(
