@@ -8,9 +8,12 @@ Self-hosted personal finance analysis app:
 * Next.js dashboard: `apps/web`
 * core package: `src/finance`
 * PostgreSQL database
+* manual transactions and fixed-charge schedules
+* PLN as the single analytical currency
 * ML: category classification, transaction type evidence, forecasting,
   anomalies, subscriptions
 * LLM: local Ollama with Polish routing and deterministic tools
+* optional BasicAuth and server-enforced inactivity lock
 
 The project is in quality-hardening mode. Prefer small, focused, low-risk changes over rewrites.
 
@@ -29,6 +32,7 @@ The project is in quality-hardening mode. Prefer small, focused, low-risk change
 * Keep SQLAlchemy models, enums and DTOs in `src/finance/domain`.
 * Keep ML logic in `src/finance/ml`.
 * Keep LLM routing/tools in `src/finance/llm`.
+* Keep fixed-charge scheduling and payment matching in `src/finance/fixed_charges`.
 * Do not move logic across layers unless the task is explicitly architectural.
 
 ## Privacy
@@ -51,10 +55,9 @@ Before changing transaction/domain models, inspect:
 
 Rules:
 
-* Consider migrations for SQLAlchemy model changes.
+* Use Alembic migrations for SQLAlchemy model changes.
 * Do not drop or rename columns without an explicit task requirement.
-* Preserve backward compatibility for existing local data when practical.
-* If no migration system exists, document required manual schema changes.
+* Do not add data backfills or legacy compatibility paths unless explicitly requested.
 
 ## Frontend
 
@@ -65,9 +68,10 @@ Rules:
 
 ## ML
 
-* Keep the TF-IDF + LinearSVC baseline reproducible.
+* Keep the TF-IDF Logistic Regression and calibrated LinearSVC baselines reproducible.
 * Report macro-F1, weighted-F1 and confusion matrix when changing training logic.
-* Avoid leakage from manual labels, predicted labels or bank-provided categories.
+* Train only on confirmed manual labels and accepted suggestions with complete provenance.
+* Never treat predictions, bank mappings or automatic rules as ground truth.
 * Preserve confidence diagnostics and optional LLM fallback behavior.
 * Do not optimize only for one private dataset.
 
@@ -79,6 +83,24 @@ The LLM is not the source of truth for financial facts.
 * Recommendations must compute facts first, then generate interpretation.
 * RAG/vector search is acceptable for documentation, category explanations and user notes, not for hard financial aggregation.
 * Polish query behavior should be tested when changed.
+
+## Validation
+
+Match validation effort to the scope and risk of the change:
+
+* Documentation or configuration-only changes: run formatting/diff checks and
+  validate the affected configuration.
+* Focused backend changes: run the relevant test module plus Ruff and Mypy for
+  the touched area.
+* Focused frontend changes: run type-check and lint; add a production build for
+  routing, dependency or cross-cutting UI changes.
+* Database, financial aggregation, import, security or ML lifecycle changes:
+  run the relevant targeted tests and the full affected quality suite.
+* Do not run the entire backend and frontend suites after trivial visual or
+  documentation edits unless the change creates a broader integration risk.
+
+Use the commands from `docs/validation-runbook.md` as the canonical full
+validation sequence.
 
 ## Response Format
 

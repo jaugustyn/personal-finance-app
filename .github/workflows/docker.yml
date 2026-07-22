@@ -1,0 +1,43 @@
+name: Docker build
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".dockerignore"
+      - ".github/workflows/docker.yml"
+      - "apps/web/.dockerignore"
+      - "apps/web/package.json"
+      - "apps/web/package-lock.json"
+      - "docker/**"
+      - "pyproject.toml"
+      - "uv.lock"
+  pull_request:
+    paths:
+      - ".dockerignore"
+      - ".github/workflows/docker.yml"
+      - "apps/web/.dockerignore"
+      - "apps/web/package.json"
+      - "apps/web/package-lock.json"
+      - "docker/**"
+      - "pyproject.toml"
+      - "uv.lock"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Validate Docker Compose
+        run: docker compose -f docker/docker-compose.yml config
+      - name: Build images
+        run: docker compose -f docker/docker-compose.yml build api web
