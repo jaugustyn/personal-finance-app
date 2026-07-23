@@ -6,6 +6,7 @@ from typing import Any, cast
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from finance.db import command_transaction
 from finance.domain.enums import (
     CategoryConfirmationMethod,
     CategorySource,
@@ -44,6 +45,22 @@ class SuggestionAcceptanceService:
         policy: ClassificationPolicy = DEFAULT_POLICY,
         manual: bool = False,
     ) -> int:
+        with command_transaction(self.session):
+            return self._accept_suggestions(
+                ids=ids,
+                min_confidence=min_confidence,
+                policy=policy,
+                manual=manual,
+            )
+
+    def _accept_suggestions(
+        self,
+        *,
+        ids: list[int] | None,
+        min_confidence: float,
+        policy: ClassificationPolicy,
+        manual: bool,
+    ) -> int:
         if manual and not ids:
             return 0
         rows = self._suggestion_rows(ids=ids, rejected=False)
@@ -70,10 +87,13 @@ class SuggestionAcceptanceService:
                 continue
             self._accept(tx)
             affected += 1
-        self.session.commit()
         return affected
 
     def reject_suggestions(self, *, ids: list[int] | None) -> int:
+        with command_transaction(self.session):
+            return self._reject_suggestions(ids=ids)
+
+    def _reject_suggestions(self, *, ids: list[int] | None) -> int:
         rows = self._suggestion_rows(ids=ids, rejected=False)
         affected = 0
         for tx in rows:
@@ -88,10 +108,13 @@ class SuggestionAcceptanceService:
             tx_model = cast(Any, tx)
             tx_model.category_suggestion_rejected = True
             affected += 1
-        self.session.commit()
         return affected
 
     def restore_suggestions(self, *, ids: list[int] | None) -> int:
+        with command_transaction(self.session):
+            return self._restore_suggestions(ids=ids)
+
+    def _restore_suggestions(self, *, ids: list[int] | None) -> int:
         rows = self._suggestion_rows(ids=ids, rejected=True)
         affected = 0
         for tx in rows:
@@ -100,7 +123,6 @@ class SuggestionAcceptanceService:
             tx_model = cast(Any, tx)
             tx_model.category_suggestion_rejected = False
             affected += 1
-        self.session.commit()
         return affected
 
     def _suggestion_rows(

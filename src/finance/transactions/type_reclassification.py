@@ -6,6 +6,7 @@ from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from finance.db import command_transaction
 from finance.domain.dto import TransactionDTO
 from finance.domain.enums import BankSource, TransactionDirection
 from finance.domain.models import Transaction
@@ -22,6 +23,20 @@ def reclassify_transaction_types(
     *,
     ids: list[int] | None = None,
     import_id: int | None = None,
+) -> int:
+    with command_transaction(session):
+        return _reclassify_transaction_types(
+            session,
+            ids=ids,
+            import_id=import_id,
+        )
+
+
+def _reclassify_transaction_types(
+    session: Session,
+    *,
+    ids: list[int] | None,
+    import_id: int | None,
 ) -> int:
     stmt = select(Transaction).where(
         Transaction.transaction_type_confirmation_method.not_in(TYPE_GOLD_METHODS)
@@ -55,5 +70,4 @@ def reclassify_transaction_types(
         )
         decision = decide_transaction_type(dto, personal=personal)
         updated += int(service.apply_decision(tx, decision))
-    session.commit()
     return updated

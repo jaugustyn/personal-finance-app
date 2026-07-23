@@ -13,6 +13,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from finance.currencies import BASE_CURRENCY, amount_base_value
+from finance.db import command_transaction
 from finance.domain.models import (
     CategoryDef,
     FixedCharge,
@@ -405,24 +406,32 @@ def link_fixed_charge_transactions(
     )
     if existing:
         raise FixedChargeLinkConflict("Transaction is already assigned to a fixed charge.")
-    for transaction in rows:
-        if transaction.direction != "debit":
-            raise FixedChargeValidationError("Only outgoing transactions can be assigned.")
-        if amount_base_value(transaction) is None:
-            raise FixedChargeValidationError("Transaction has no valid PLN conversion.")
-        if abs((transaction.booking_date - scheduled_due_date).days) > LINK_WINDOW_DAYS:
-            raise FixedChargeValidationError("Transaction is outside the allowed date range.")
-        session.add(
-            FixedChargeTransaction(
-                fixed_charge_id=charge_id,
-                transaction_id=transaction.id,
-                scheduled_due_date=scheduled_due_date,
-            )
-        )
     try:
-        session.commit()
+        with command_transaction(session):
+            for transaction in rows:
+                if transaction.direction != "debit":
+                    raise FixedChargeValidationError(
+                        "Only outgoing transactions can be assigned."
+                    )
+                if amount_base_value(transaction) is None:
+                    raise FixedChargeValidationError(
+                        "Transaction has no valid PLN conversion."
+                    )
+                if (
+                    abs((transaction.booking_date - scheduled_due_date).days)
+                    > LINK_WINDOW_DAYS
+                ):
+                    raise FixedChargeValidationError(
+                        "Transaction is outside the allowed date range."
+                    )
+                session.add(
+                    FixedChargeTransaction(
+                        fixed_charge_id=charge_id,
+                        transaction_id=transaction.id,
+                        scheduled_due_date=scheduled_due_date,
+                    )
+                )
     except IntegrityError as exc:
-        session.rollback()
         raise FixedChargeLinkConflict(
             "Transaction is already assigned to a fixed charge."
         ) from exc
@@ -502,10 +511,10 @@ def unlink_fixed_charge_transaction(
     ).scalar_one_or_none()
     if link is None:
         return False
-    session.execute(
-        delete(FixedChargeTransaction).where(FixedChargeTransaction.id == link.id)
-    )
-    session.commit()
+    with command_transaction(session):
+        session.execute(
+            delete(FixedChargeTransaction).where(FixedChargeTransaction.id == link.id)
+        )
     return True
 
 
@@ -547,8 +556,8 @@ def create_fixed_charge(
         anchor_date=anchor_date,
         category=_validated_category(session, category),
     )
-    session.add(row)
-    session.commit()
+    with command_transaction(session):
+        session.add(row)
     session.refresh(row)
     return row
 
@@ -561,6 +570,17 @@ def update_fixed_charge(
     row = session.get(FixedCharge, charge_id)
     if row is None:
         return None
+    with command_transaction(session):
+        _apply_fixed_charge_update(session, row, values)
+    session.refresh(row)
+    return row
+
+
+def _apply_fixed_charge_update(
+    session: Session,
+    row: FixedCharge,
+    values: dict[str, object],
+) -> None:
     if "name" in values:
         name = values["name"]
         if not isinstance(name, str):
@@ -592,20 +612,17 @@ def update_fixed_charge(
         if not isinstance(active, bool):
             raise FixedChargeValidationError("Invalid fixed charge state.")
         row.active = active
-    session.commit()
-    session.refresh(row)
-    return row
 
 
 def delete_fixed_charge(session: Session, charge_id: int) -> bool:
     row = session.get(FixedCharge, charge_id)
     if row is None:
         return False
-    session.execute(
-        delete(FixedChargeTransaction).where(
-            FixedChargeTransaction.fixed_charge_id == charge_id
+    with command_transaction(session):
+        session.execute(
+            delete(FixedChargeTransaction).where(
+                FixedChargeTransaction.fixed_charge_id == charge_id
+            )
         )
-    )
-    session.delete(row)
-    session.commit()
+        session.delete(row)
     return True

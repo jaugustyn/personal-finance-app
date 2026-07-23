@@ -33,6 +33,16 @@ def test_disabled_lock_keeps_existing_api_behavior(client):
     assert client.get("/profile/rules").status_code == 200
 
 
+def test_status_and_unlocked_dependency_do_not_create_profile(client, db_session):
+    assert db_session.get(UserProfile, 1) is None
+
+    assert client.get("/app-lock/status").status_code == 200
+    assert client.get("/profile/rules").status_code == 200
+
+    db_session.expire_all()
+    assert db_session.get(UserProfile, 1) is None
+
+
 def test_setup_hashes_code_sets_cookie_and_unlocks(client, db_session):
     response = _setup(client, code="private-code", timeout=30)
 

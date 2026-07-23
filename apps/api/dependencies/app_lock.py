@@ -5,7 +5,7 @@ from fastapi import Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from finance.db import get_session
-from finance.profile.service import get_or_create_profile
+from finance.profile.service import get_profile
 from finance.security import app_lock
 
 
@@ -13,8 +13,8 @@ def require_app_unlock(
     request: Request,
     session: Session = Depends(get_session),
 ) -> None:
-    profile = get_or_create_profile(session)
-    if profile.app_lock_secret_hash is None:
+    profile = get_profile(session)
+    if profile is None or profile.app_lock_secret_hash is None:
         return
     token = request.cookies.get(app_lock.APP_LOCK_COOKIE_NAME)
     if app_lock.session_is_active(
@@ -30,4 +30,3 @@ def require_app_unlock(
             "message": "Application is locked.",
         },
     )
-

@@ -7,6 +7,7 @@ from typing import Any, cast
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from finance.db import command_transaction
 from finance.domain.enums import CategorySource, TransactionDirection, TransactionType
 from finance.domain.models import Transaction
 from finance.ml.classification.evaluation_sets import invalidate_for_label_change
@@ -57,12 +58,12 @@ class TransactionTypeService:
         tx = self.session.get(Transaction, tx_id)
         if tx is None:
             return None
-        self.apply_manual_type(
-            tx,
-            value,
-            allow_direction_mismatch=allow_direction_mismatch,
-        )
-        self.session.commit()
+        with command_transaction(self.session):
+            self.apply_manual_type(
+                tx,
+                value,
+                allow_direction_mismatch=allow_direction_mismatch,
+            )
         self.session.refresh(tx)
         return tx
 
@@ -115,9 +116,11 @@ class TransactionTypeService:
 
     def accept_suggestion(self, tx_id: int) -> Transaction | None:
         tx = self.session.get(Transaction, tx_id)
-        if tx is None or not self._accept_provisional(tx):
+        if tx is None:
             return None
-        self.session.commit()
+        with command_transaction(self.session):
+            if not self._accept_provisional(tx):
+                return None
         self.session.refresh(tx)
         return tx
 
@@ -159,6 +162,10 @@ class TransactionTypeService:
         return True
 
     def accept_suggestions(self, *, ids: list[int] | None) -> int:
+        with command_transaction(self.session):
+            return self._accept_suggestions(ids=ids)
+
+    def _accept_suggestions(self, *, ids: list[int] | None) -> int:
         if not ids:
             return 0
         stmt = select(Transaction).where(
@@ -175,7 +182,6 @@ class TransactionTypeService:
             if not self._accept_provisional(tx):
                 continue
             affected += 1
-        self.session.commit()
         return affected
 
     def apply_decision(self, tx: Transaction, decision: TransactionTypeDecision) -> bool:

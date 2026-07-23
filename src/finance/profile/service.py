@@ -7,8 +7,8 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from finance.domain.enums import CATEGORY_VALUES, TRANSACTION_TYPE_VALUES
-from finance.domain.models import PersonalRule, UserProfile
+from finance.domain.enums import TRANSACTION_TYPE_VALUES
+from finance.domain.models import CategoryDef, PersonalRule, UserProfile
 from finance.transactions.normalization import normalize_text
 
 PROFILE_ID = 1
@@ -28,18 +28,24 @@ class RuleEffect:
     confidence: float
 
 
+def get_profile(session: Session) -> UserProfile | None:
+    """Return the singleton profile without creating state during a read."""
+    return session.get(UserProfile, PROFILE_ID)
+
+
 def get_or_create_profile(session: Session) -> UserProfile:
-    profile = session.get(UserProfile, PROFILE_ID)
+    """Return the singleton profile, flushing a new row without committing it."""
+    profile = get_profile(session)
     if profile is not None:
         return profile
     profile = UserProfile(id=PROFILE_ID)
     session.add(profile)
-    session.commit()
-    session.refresh(profile)
+    session.flush()
     return profile
 
 
 def _validate_rule_payload(
+    session: Session,
     *,
     pattern: str,
     pattern_target: str,
@@ -47,22 +53,26 @@ def _validate_rule_payload(
     transaction_type: str | None,
     mode: str,
     confidence: float,
-) -> None:
+) -> str | None:
     if not normalize_text(pattern):
         raise ValueError("Rule pattern cannot be empty.")
     if pattern_target not in RULE_TARGETS:
         raise ValueError(f"Invalid rule target: {pattern_target}.")
     if mode not in RULE_MODES:
         raise ValueError(f"Invalid rule mode: {mode}.")
-    if category is not None and category not in CATEGORY_VALUES:
+    normalized_category = category.strip().lower() if category is not None else None
+    if normalized_category is not None and session.scalar(
+        select(CategoryDef.id).where(CategoryDef.name == normalized_category)
+    ) is None:
         raise ValueError(f"Invalid category: {category}.")
     if transaction_type is not None and transaction_type not in TRANSACTION_TYPE_VALUES:
         raise ValueError(f"Invalid transaction type: {transaction_type}.")
     if not 0.0 <= confidence <= 1.0:
         raise ValueError("Rule confidence must be between 0 and 1.")
+    return normalized_category
 
 
-def create_rule(
+def _add_rule(
     session: Session,
     *,
     pattern: str,
@@ -75,7 +85,8 @@ def create_rule(
     mode: str = RULE_MODE_SUGGEST,
     confidence: float = 0.95,
 ) -> PersonalRule:
-    _validate_rule_payload(
+    category = _validate_rule_payload(
+        session,
         pattern=pattern,
         pattern_target=pattern_target,
         category=category,
@@ -96,7 +107,41 @@ def create_rule(
         confidence=confidence,
     )
     session.add(rule)
-    session.commit()
+    session.flush()
+    return rule
+
+
+def create_rule(
+    session: Session,
+    *,
+    pattern: str,
+    pattern_target: str = "merchant",
+    category: str | None = None,
+    transaction_type: str | None = None,
+    is_transfer: bool | None = None,
+    priority: int = 100,
+    active: bool = True,
+    mode: str = RULE_MODE_SUGGEST,
+    confidence: float = 0.95,
+) -> PersonalRule:
+    """Create a rule as a top-level command."""
+    try:
+        rule = _add_rule(
+            session,
+            pattern=pattern,
+            pattern_target=pattern_target,
+            category=category,
+            transaction_type=transaction_type,
+            is_transfer=is_transfer,
+            priority=priority,
+            active=active,
+            mode=mode,
+            confidence=confidence,
+        )
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
     session.refresh(rule)
     return rule
 
@@ -111,7 +156,8 @@ def update_rule(session: Session, rule_id: int, **changes: Any) -> PersonalRule 
     transaction_type = changes.get("transaction_type", rule.transaction_type)
     mode = str(changes.get("mode", rule.mode))
     confidence = float(changes.get("confidence", rule.confidence))
-    _validate_rule_payload(
+    category = _validate_rule_payload(
+        session,
         pattern=pattern,
         pattern_target=pattern_target,
         category=category,
@@ -129,7 +175,11 @@ def update_rule(session: Session, rule_id: int, **changes: Any) -> PersonalRule 
     rule.active = bool(changes.get("active", rule.active))
     rule.mode = mode
     rule.confidence = confidence
-    session.commit()
+    try:
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
     session.refresh(rule)
     return rule
 
@@ -139,7 +189,11 @@ def delete_rule(session: Session, rule_id: int) -> bool:
     if rule is None:
         return False
     session.delete(rule)
-    session.commit()
+    try:
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
     return True
 
 
@@ -200,10 +254,9 @@ def remember_merchant_category(
     ).scalar_one_or_none()
     if existing is not None:
         existing.active = True
-        session.commit()
-        session.refresh(existing)
+        session.flush()
         return existing
-    return create_rule(
+    return _add_rule(
         session,
         pattern=merchant,
         pattern_target="merchant",

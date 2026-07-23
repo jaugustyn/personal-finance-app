@@ -7,10 +7,12 @@ from dataclasses import dataclass, field
 from decimal import Decimal
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from finance.analytics.filters import expense_category_candidate_filters
 from finance.currencies import amount_base_expr
+from finance.db import command_transaction
 from finance.domain.models import MerchantAlias, Transaction
 from finance.transactions.normalization import normalize_merchant
 from finance.transactions.types import (
@@ -69,6 +71,10 @@ GENERIC_MERCHANT_KEYS = {
     "platnosc karta",
     "transakcja",
 }
+
+
+class MerchantAliasConflict(ValueError):
+    """Raised when concurrent alias updates target the same normalized alias."""
 
 
 @dataclass
@@ -213,6 +219,28 @@ def create_aliases(
     aliases: Iterable[str],
     canonical_key: str | None = None,
 ) -> list[MerchantAlias]:
+    try:
+        with command_transaction(session):
+            rows = _upsert_aliases(
+                session,
+                canonical_label=canonical_label,
+                aliases=aliases,
+                canonical_key=canonical_key,
+            )
+    except IntegrityError as exc:
+        raise MerchantAliasConflict("Merchant alias was modified concurrently.") from exc
+    for row in rows:
+        session.refresh(row)
+    return rows
+
+
+def _upsert_aliases(
+    session: Session,
+    *,
+    canonical_label: str,
+    aliases: Iterable[str],
+    canonical_key: str | None,
+) -> list[MerchantAlias]:
     canonical_label = compact_merchant_label(canonical_label)
     canonical_key = (
         normalize_merchant(canonical_key)
@@ -258,9 +286,6 @@ def create_aliases(
         out.append(row)
     if not out:
         raise ValueError("at least one alias is required")
-    session.commit()
-    for row in out:
-        session.refresh(row)
     return out
 
 
@@ -280,10 +305,10 @@ def update_alias_group_label(
             select(MerchantAlias).where(MerchantAlias.canonical_key == canonical_key)
         ).scalars()
     )
-    for row in rows:
-        row.canonical_label = canonical_label
     if rows:
-        session.commit()
+        with command_transaction(session):
+            for row in rows:
+                row.canonical_label = canonical_label
         for row in rows:
             session.refresh(row)
     return rows
@@ -293,8 +318,8 @@ def delete_alias(session: Session, alias_id: int) -> bool:
     row = session.get(MerchantAlias, alias_id)
     if row is None:
         return False
-    session.delete(row)
-    session.commit()
+    with command_transaction(session):
+        session.delete(row)
     return True
 
 

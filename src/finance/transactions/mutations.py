@@ -6,6 +6,7 @@ from typing import Any, cast
 from sqlalchemy import delete, update
 from sqlalchemy.orm import Session
 
+from finance.db import command_transaction
 from finance.domain.models import MlFeedbackEvent, Transaction
 from finance.ml.classification.policy import (
     DEFAULT_POLICY,
@@ -84,12 +85,12 @@ def update_annotations(
     if tx is None:
         return None
     tx_model = cast(Any, tx)
-    if notes is not UNCHANGED:
-        trimmed = "" if notes is None else str(notes).strip()
-        tx_model.notes = trimmed or None
-    if tags is not UNCHANGED:
-        tx_model.tags = clean_tags(cast(list[str], tags or []))
-    session.commit()
+    with command_transaction(session):
+        if notes is not UNCHANGED:
+            trimmed = "" if notes is None else str(notes).strip()
+            tx_model.notes = trimmed or None
+        if tags is not UNCHANGED:
+            tx_model.tags = clean_tags(cast(list[str], tags or []))
     session.refresh(tx)
     return tx
 
@@ -152,13 +153,13 @@ def restore_suggestions(
 def bulk_delete(session: Session, ids: list[int]) -> int:
     if not ids:
         return 0
-    session.execute(
-        update(MlFeedbackEvent)
-        .where(MlFeedbackEvent.transaction_id.in_(ids))
-        .values(transaction_id=None)
-    )
-    result = session.execute(delete(Transaction).where(Transaction.id.in_(ids)))
-    session.commit()
+    with command_transaction(session):
+        session.execute(
+            update(MlFeedbackEvent)
+            .where(MlFeedbackEvent.transaction_id.in_(ids))
+            .values(transaction_id=None)
+        )
+        result = session.execute(delete(Transaction).where(Transaction.id.in_(ids)))
     return int(cast(Any, result).rowcount or 0)
 
 
@@ -166,11 +167,11 @@ def delete_transaction(session: Session, tx_id: int) -> bool:
     tx = session.get(Transaction, tx_id)
     if tx is None:
         return False
-    session.execute(
-        update(MlFeedbackEvent)
-        .where(MlFeedbackEvent.transaction_id == tx_id)
-        .values(transaction_id=None)
-    )
-    session.delete(tx)
-    session.commit()
+    with command_transaction(session):
+        session.execute(
+            update(MlFeedbackEvent)
+            .where(MlFeedbackEvent.transaction_id == tx_id)
+            .values(transaction_id=None)
+        )
+        session.delete(tx)
     return True

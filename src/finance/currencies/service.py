@@ -21,6 +21,7 @@ from finance.currencies.providers import (
     NbpFxRateProvider,
 )
 from finance.currencies.types import ConversionResult, MissingFxRate
+from finance.db import command_transaction
 from finance.domain.models import FxRate, Transaction
 
 BASE_CURRENCY = "PLN"
@@ -421,6 +422,22 @@ def recompute_transactions(
     allow_fetch: bool = True,
     provider: FxRateProvider | None = None,
 ) -> dict[str, int]:
+    with command_transaction(session):
+        return _recompute_transactions(
+            session,
+            base_currency=base_currency,
+            allow_fetch=allow_fetch,
+            provider=provider,
+        )
+
+
+def _recompute_transactions(
+    session: Session,
+    *,
+    base_currency: str | None,
+    allow_fetch: bool,
+    provider: FxRateProvider | None,
+) -> dict[str, int]:
     base = normalize_currency(base_currency or BASE_CURRENCY)
     if base != BASE_CURRENCY:
         raise ValueError(f"Base currency must be {BASE_CURRENCY}.")
@@ -460,7 +477,6 @@ def recompute_transactions(
         tx.fx_rate_date = converted.fx_rate_date
         tx.fx_rate_source = converted.fx_rate_source
         updated += 1
-    session.commit()
     return {"updated": updated, "missing": missing}
 
 
@@ -468,6 +484,18 @@ def fetch_nbp_rates_for_missing_transactions(
     session: Session,
     *,
     provider: FxRateProvider | None = None,
+) -> dict[str, int]:
+    with command_transaction(session):
+        return _fetch_nbp_rates_for_missing_transactions(
+            session,
+            provider=provider,
+        )
+
+
+def _fetch_nbp_rates_for_missing_transactions(
+    session: Session,
+    *,
+    provider: FxRateProvider | None,
 ) -> dict[str, int]:
     base = resolve_base_currency(session)
     fetched = 0
@@ -484,5 +512,4 @@ def fetch_nbp_rates_for_missing_transactions(
             missing += 1
         else:
             fetched += 1
-    session.commit()
     return {"fetched": fetched, "missing": missing}

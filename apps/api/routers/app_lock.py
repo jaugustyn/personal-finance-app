@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from apps.api.dependencies.app_lock import require_app_unlock
 from finance.config import get_settings
 from finance.db import get_session
-from finance.profile.service import get_or_create_profile
+from finance.profile.service import get_or_create_profile, get_profile
 from finance.security import app_lock
 
 router = APIRouter(prefix="/app-lock", tags=["app-lock"])
@@ -44,7 +44,9 @@ def status(
     request: Request,
     session: Session = Depends(get_session),
 ) -> AppLockStatus:
-    profile = get_or_create_profile(session)
+    profile = get_profile(session)
+    if profile is None:
+        return _status(False, False, app_lock.DEFAULT_TIMEOUT_MINUTES)
     enabled = profile.app_lock_secret_hash is not None
     locked = enabled and not app_lock.session_is_active(
         request.cookies.get(app_lock.APP_LOCK_COOKIE_NAME),
@@ -60,20 +62,27 @@ def setup(
     response: Response,
     session: Session = Depends(get_session),
 ) -> AppLockStatus:
-    profile = get_or_create_profile(session)
-    if profile.app_lock_secret_hash is not None:
-        raise HTTPException(
-            status_code=409,
-            detail={"code": "app_lock_already_enabled"},
-        )
     try:
+        profile = get_or_create_profile(session)
+        if profile.app_lock_secret_hash is not None:
+            raise HTTPException(
+                status_code=409,
+                detail={"code": "app_lock_already_enabled"},
+            )
         profile.app_lock_secret_hash = app_lock.hash_code(payload.code)
         profile.app_lock_timeout_minutes = app_lock.validate_timeout(
             payload.timeout_minutes
         )
+        session.commit()
+    except HTTPException:
+        session.rollback()
+        raise
     except ValueError as exc:
+        session.rollback()
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    session.commit()
+    except Exception:
+        session.rollback()
+        raise
     app_lock.revoke_all_sessions()
     _set_session_cookie(response, app_lock.create_session())
     return _status(True, False, profile.app_lock_timeout_minutes)
@@ -86,10 +95,15 @@ def unlock(
     response: Response,
     session: Session = Depends(get_session),
 ) -> AppLockStatus:
-    profile = get_or_create_profile(session)
-    if profile.app_lock_secret_hash is None:
+    profile = get_profile(session)
+    if profile is None or profile.app_lock_secret_hash is None:
         _delete_session_cookie(response)
-        return _status(False, False, profile.app_lock_timeout_minutes)
+        timeout = (
+            profile.app_lock_timeout_minutes
+            if profile
+            else app_lock.DEFAULT_TIMEOUT_MINUTES
+        )
+        return _status(False, False, timeout)
 
     client_key = _client_key(request)
     retry_after = app_lock.unlock_retry_after(client_key)
@@ -138,8 +152,10 @@ def update_settings(
     response: Response,
     session: Session = Depends(get_session),
 ) -> AppLockStatus:
-    profile = get_or_create_profile(session)
-    if not app_lock.verify_code(payload.current_code, profile.app_lock_secret_hash):
+    profile = get_profile(session)
+    if profile is None or not app_lock.verify_code(
+        payload.current_code, profile.app_lock_secret_hash
+    ):
         raise HTTPException(
             status_code=401,
             detail={"code": "invalid_lock_code", "message": "Invalid code."},
@@ -153,10 +169,13 @@ def update_settings(
             profile.app_lock_secret_hash = app_lock.hash_code(payload.new_code)
         elif not payload.enabled:
             profile.app_lock_secret_hash = None
+        session.commit()
     except ValueError as exc:
+        session.rollback()
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-
-    session.commit()
+    except Exception:
+        session.rollback()
+        raise
     if not payload.enabled:
         app_lock.revoke_all_sessions()
         _delete_session_cookie(response)

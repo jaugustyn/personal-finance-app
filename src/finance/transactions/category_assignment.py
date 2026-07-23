@@ -6,6 +6,7 @@ from typing import Any, cast
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from finance.db import command_transaction
 from finance.domain.enums import CategoryConfirmationMethod, CategorySource, TransactionType
 from finance.domain.models import Transaction
 from finance.ml.classification.evaluation_sets import invalidate_for_label_change
@@ -46,13 +47,17 @@ class CategoryAssignmentService:
         tx = self.session.get(Transaction, tx_id)
         if tx is None:
             return None
-        self.apply_manual_decision(
-            tx,
-            category,
-            subcategory=subcategory,
-            remember_rule=remember_rule,
-        )
-        self.session.commit()
+        try:
+            self.apply_manual_decision(
+                tx,
+                category,
+                subcategory=subcategory,
+                remember_rule=remember_rule,
+            )
+            self.session.commit()
+        except Exception:
+            self.session.rollback()
+            raise
         self.session.refresh(tx)
         return tx
 
@@ -133,6 +138,36 @@ class CategoryAssignmentService:
         allow_direction_mismatch: bool = False,
         unchanged: object,
     ) -> int:
+        with command_transaction(self.session):
+            return self._bulk_categorize(
+                ids=ids,
+                merchant=merchant,
+                category=category,
+                merchant_canonical_key=merchant_canonical_key,
+                mark_transfer=mark_transfer,
+                transaction_type=transaction_type,
+                allow_direction_mismatch=allow_direction_mismatch,
+                unchanged=unchanged,
+            )
+
+    def _bulk_categorize(
+        self,
+        *,
+        ids: list[int] | None,
+        merchant: str | None,
+        category: str | None | object,
+        merchant_canonical_key: str | None = None,
+        mark_transfer: bool | None = None,
+        transaction_type: str | None = None,
+        allow_direction_mismatch: bool = False,
+        unchanged: object,
+    ) -> int:
+        if category is not unchanged and category is not None:
+            category, _ = resolve_category_assignment(
+                self.session,
+                cast(str, category),
+                None,
+            )
         tx_type_value: str | None = None
         if transaction_type is not None:
             tx_type_value = TransactionType(transaction_type).value
@@ -217,7 +252,6 @@ class CategoryAssignmentService:
             changed = True
             affected += int(changed)
 
-        self.session.commit()
         return affected
 
     @staticmethod
