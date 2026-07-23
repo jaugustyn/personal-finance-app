@@ -156,7 +156,7 @@ def ingest_file(
             duplicates += 1
 
     repository.finalize_import(import_row, inserted=inserted, duplicates=duplicates)
-    session.commit()
+    session.flush()
 
     return ImportSummary(
         import_id=import_row.id,

@@ -13,6 +13,7 @@ export function SuccessBox({ summary }: { summary: ImportSummary }) {
       {t("imports.success", {
         inserted: summary.inserted,
         duplicates: summary.duplicates,
+        skipped: summary.skipped_rows,
       })}
     </div>
   );

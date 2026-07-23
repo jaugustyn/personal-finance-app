@@ -521,71 +521,6 @@ export interface FixedChargeTransactionsResponse {
   candidates: FixedChargeTransaction[];
 }
 
-export interface Asset {
-  id: number;
-  symbol: string;
-  name: string;
-  asset_class: string;
-  currency: string;
-  quantity: number | string;
-  cost_basis: number | string;
-  notes: string | null;
-  last_price: number | string | null;
-  last_value_pln: number | string | null;
-  last_snapshot_date: string | null;
-  pnl_pln: number | string | null;
-}
-
-export interface PortfolioSummary {
-  total_value_pln: number | string;
-  total_cost_pln: number | string;
-  pnl_pln: number | string;
-  pnl_pct: number;
-  asset_count: number;
-  last_refresh: string | null;
-}
-
-export interface AssetHistoryPoint {
-  snapshot_date: string;
-  value_pln: number | string;
-}
-
-export interface SankeyNode {
-  name: string;
-  node_type?:
-    | "income"
-    | "category"
-    | "merchant"
-    | "other"
-    | "savings"
-    | string
-    | null;
-  category?: string | null;
-  merchant_display?: string | null;
-  merchant_canonical_key?: string | null;
-}
-
-export interface SankeyLink {
-  source: number;
-  target: number;
-  value: number | string;
-}
-
-export interface SankeyData {
-  nodes: SankeyNode[];
-  links: SankeyLink[];
-}
-
-export interface AssetInput {
-  symbol: string;
-  name?: string;
-  asset_class?: string;
-  currency?: string;
-  quantity?: number;
-  cost_basis?: number;
-  notes?: string | null;
-}
-
 export interface ImportPreview {
   headers: string[];
   sample_rows: Record<string, string>[];
@@ -625,6 +560,8 @@ export interface ImportSummary {
   inserted: number;
   duplicates: number;
   total_rows: number;
+  skipped_rows: number;
+  quality_report: ImportQualityReport;
 }
 
 export interface PersonalRule {

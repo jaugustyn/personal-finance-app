@@ -36,6 +36,16 @@ class PreviewResponse(BaseModel):
     supported_extensions: list[str]
 
 
+class ImportUploadResponse(BaseModel):
+    import_id: int
+    source: BankSource
+    inserted: int
+    duplicates: int
+    total_rows: int
+    skipped_rows: int
+    quality_report: ImportQualityReportResponse
+
+
 class ImportRow(BaseModel):
     id: int
     source: str

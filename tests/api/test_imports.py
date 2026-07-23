@@ -1,8 +1,8 @@
-"""Tests for POST /imports — router contract.
+"""Tests for the import HTTP contract.
 
-We mock ``ingest_file`` because the production implementation uses postgres
-``ON CONFLICT`` which is unsupported by the SQLite test DB. The actual parser
-behavior is covered by ``tests/ingestion/test_pekao.py`` etc.
+The upload use-case is replaced at the router boundary because persistence uses
+PostgreSQL ``ON CONFLICT``, which is unsupported by the SQLite test database.
+Parser orchestration is covered separately by ingestion use-case tests.
 """
 import io
 import json
@@ -12,43 +12,62 @@ import pytest
 from finance.domain.dto import ImportSummary
 from finance.domain.enums import BankSource
 from finance.ingestion import ParseError
+from finance.ingestion.types import ImportQualityReport
+from finance.ingestion.use_cases import ImportUploadResult, select_upload_parser
 
 
 @pytest.fixture
 def _patch_ingest(monkeypatch):
     calls: list[dict] = []
 
-    def fake_ingest(
+    def fake_run_import(
         session,
         *,
-        source,
         filename,
-        stream,
-        parser=None,
+        raw,
+        requested_source,
+        column_map,
         skip_categories=False,
         fx_mode="prefetch_missing",
     ):
+        chosen_source, parser = select_upload_parser(
+            raw=raw,
+            requested_source=requested_source,
+            column_map=column_map,
+        )
         calls.append(
             {
-                "source": source,
+                "source": chosen_source,
                 "filename": filename,
-                "bytes": stream.read(),
+                "bytes": raw,
                 "parser": parser,
                 "skip_categories": skip_categories,
                 "fx_mode": fx_mode,
             }
         )
-        return ImportSummary(
-            import_id=1,
-            source=BankSource(source) if not isinstance(source, BankSource) else source,
-            total_rows=3,
-            inserted=2,
-            duplicates=1,
+        return ImportUploadResult(
+            summary=ImportSummary(
+                import_id=1,
+                source=chosen_source,
+                total_rows=3,
+                inserted=2,
+                duplicates=1,
+            ),
+            skipped_rows=0,
+            quality_report=ImportQualityReport(
+                total_rows=3,
+                valid_rows=3,
+                blocking_issues=0,
+                warnings=0,
+                issues=[],
+            ),
+            chosen_source=chosen_source,
+            parser=parser,
         )
 
     from apps.api.routers import imports as imports_router
 
-    monkeypatch.setattr(imports_router, "ingest_file", fake_ingest)
+    monkeypatch.setattr(imports_router, "run_import", fake_run_import)
     return calls
 
 
@@ -63,6 +82,8 @@ def test_upload_returns_summary(client, _patch_ingest) -> None:
     assert body["inserted"] == 2
     assert body["duplicates"] == 1
     assert body["total_rows"] == 3
+    assert body["skipped_rows"] == 0
+    assert body["quality_report"]["valid_rows"] == 3
     assert len(_patch_ingest) == 1
     assert _patch_ingest[0]["filename"] == "pekao.csv"
     assert _patch_ingest[0]["skip_categories"] is False
@@ -105,10 +126,10 @@ def test_upload_parse_error_returns_422(client, monkeypatch) -> None:
     def boom(
         session,
         *,
-        source,
         filename,
-        stream,
-        parser=None,
+        raw,
+        requested_source,
+        column_map,
         skip_categories=False,
         fx_mode="prefetch_missing",
     ):
@@ -116,7 +137,7 @@ def test_upload_parse_error_returns_422(client, monkeypatch) -> None:
 
     from apps.api.routers import imports as imports_router
 
-    monkeypatch.setattr(imports_router, "ingest_file", boom)
+    monkeypatch.setattr(imports_router, "run_import", boom)
     r = client.post(
         "/imports",
         files={"file": ("x.csv", io.BytesIO(b"garbage"), "text/csv")},
@@ -130,10 +151,10 @@ def test_upload_not_implemented_returns_501(client, monkeypatch) -> None:
     def boom(
         session,
         *,
-        source,
         filename,
-        stream,
-        parser=None,
+        raw,
+        requested_source,
+        column_map,
         skip_categories=False,
         fx_mode="prefetch_missing",
     ):
@@ -141,7 +162,7 @@ def test_upload_not_implemented_returns_501(client, monkeypatch) -> None:
 
     from apps.api.routers import imports as imports_router
 
-    monkeypatch.setattr(imports_router, "ingest_file", boom)
+    monkeypatch.setattr(imports_router, "run_import", boom)
     r = client.post(
         "/imports",
         files={"file": ("x.csv", io.BytesIO(b"x"), "text/csv")},
@@ -276,7 +297,7 @@ def test_upload_auto_detects_pekao(client, _patch_ingest) -> None:
     )
     assert r.status_code == 200
     assert _patch_ingest[0]["source"] == BankSource.PEKAO
-    assert _patch_ingest[0]["parser"] is None  # registered parser used
+    assert _patch_ingest[0]["parser"].source == BankSource.PEKAO
 
 
 def test_upload_auto_falls_back_to_generic(client, _patch_ingest) -> None:
