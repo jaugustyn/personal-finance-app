@@ -33,12 +33,3 @@ export function formatCompactAxisNumber(value: unknown): string {
   if (Math.abs(number) >= 1000) return `${Math.round(number / 1000)}k`;
   return String(Math.round(number));
 }
-
-export interface SankeyNodeProps {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  index: number;
-  payload?: { name?: string };
-}

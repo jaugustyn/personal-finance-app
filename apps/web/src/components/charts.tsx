@@ -8,7 +8,5 @@ export {
   ForecastChart,
   FrequentMerchantsBar,
   NetWorthChart,
-  PortfolioHistoryChart,
-  SankeyFlow,
   TopMerchantsBar,
 } from "./charts/index";

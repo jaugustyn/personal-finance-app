@@ -64,10 +64,10 @@ class Import(Base):
 class CategoryDef(Base):
     """User-manageable category catalog.
 
-    System categories from :class:`Category` are seeded on first use and cannot
-    be deleted. Users may add their own. Because transaction and rule records
-    store the category name, custom categories referenced by those records must
-    not be deleted before the references are reassigned.
+    System categories from :class:`Category` are installed by migrations and
+    cannot be deleted. Users may add their own. Because transaction and rule
+    records store the category name, custom categories referenced by those
+    records must not be deleted before the references are reassigned.
     """
 
     __tablename__ = "categories"
@@ -183,6 +183,8 @@ class Transaction(Base):
         UniqueConstraint("dedup_hash", name="uq_transactions_dedup_hash"),
         Index("ix_transactions_booking_date", "booking_date"),
         Index("ix_transactions_category", "category"),
+        Index("ix_transactions_is_transfer", "is_transfer"),
+        Index("ix_transactions_transaction_type", "transaction_type"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -510,49 +512,3 @@ class FixedChargeTransaction(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
-
-
-class Asset(Base):
-    """User-tracked asset (stock, ETF, crypto, cash position)."""
-
-    __tablename__ = "assets"
-    __table_args__ = (UniqueConstraint("symbol", name="uq_assets_symbol"),)
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    symbol: Mapped[str] = mapped_column(String(32))  # e.g. AAPL, BTC-USD, CASH-PLN
-    name: Mapped[str] = mapped_column(String(128), default="")
-    # equity | etf | crypto | cash | bond
-    asset_class: Mapped[str] = mapped_column(String(16), default="equity")
-    currency: Mapped[str] = mapped_column(String(3), default="USD")
-    quantity: Mapped[Decimal] = mapped_column(Numeric(20, 8), default=Decimal("0"))
-    cost_basis: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=Decimal("0"))
-    notes: Mapped[str | None] = mapped_column(String(512), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
-
-    snapshots: Mapped[list["AssetSnapshot"]] = relationship(
-        back_populates="asset", cascade="all, delete-orphan"
-    )
-
-
-class AssetSnapshot(Base):
-    """Historical price/value point for an asset."""
-
-    __tablename__ = "asset_snapshots"
-    __table_args__ = (
-        UniqueConstraint("asset_id", "snapshot_date", name="uq_asset_snapshot_date"),
-        Index("ix_asset_snapshots_date", "snapshot_date"),
-    )
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    asset_id: Mapped[int] = mapped_column(ForeignKey("assets.id", ondelete="CASCADE"))
-    snapshot_date: Mapped[date] = mapped_column()
-    price: Mapped[Decimal] = mapped_column(Numeric(20, 8))
-    value_pln: Mapped[Decimal] = mapped_column(Numeric(14, 2))
-    source: Mapped[str] = mapped_column(String(32), default="yfinance")
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
-
-    asset: Mapped[Asset] = relationship(back_populates="snapshots")

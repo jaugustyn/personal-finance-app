@@ -5,6 +5,4 @@ export { CategoryTrendChart } from "./category-trend-chart";
 export { ForecastChart } from "./forecast-chart";
 export { FrequentMerchantsBar } from "./frequent-merchants-bar";
 export { NetWorthChart } from "./net-worth-chart";
-export { PortfolioHistoryChart } from "./portfolio-history-chart";
-export { SankeyFlow } from "./sankey-flow";
 export { TopMerchantsBar } from "./top-merchants-bar";

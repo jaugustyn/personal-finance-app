@@ -16,12 +16,6 @@ interface DashboardRankingKey extends DashboardRangeKey {
 }
 
 export const queryKeys = {
-  assets: {
-    all: ["assets"] as const,
-    list: ["assets", "list"] as const,
-    summary: ["assets", "summary"] as const,
-    history: (days: number) => ["assets", "history", { days }] as const,
-  },
   categories: {
     all: ["categories"] as const,
     list: ["categories", "list"] as const,

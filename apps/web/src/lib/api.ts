@@ -1,7 +1,6 @@
 // Public frontend API facade. Existing pages import from "@/lib/api"; the
 // implementation is split by feature under ./api/*.
 
-import { assetsApi } from "./api/assets";
 import { appLockApi } from "./api/app-lock";
 import { categoriesApi } from "./api/categories";
 import { chatApi } from "./api/chat";
@@ -35,7 +34,6 @@ export const api = {
   ...importsApi,
   ...merchantsApi,
   ...mlApi,
-  ...assetsApi,
   ...profileApi,
   ...chatApi,
 };

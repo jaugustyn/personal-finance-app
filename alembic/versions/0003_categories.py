@@ -1,7 +1,7 @@
 """categories table + is_transfer flag
 
 Revision ID: 0003_categories
-Revises: 0002_assets
+Revises: 0001_initial
 Create Date: 2026-05-01 12:00:00
 
 """
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "0003_categories"
-down_revision: str | None = "0002_assets"
+down_revision: str | None = "0001_initial"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

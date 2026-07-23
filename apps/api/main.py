@@ -16,7 +16,6 @@ from apps.api.middleware import (
 from apps.api.routers import (
     anomalies,
     app_lock,
-    assets,
     categories,
     chat,
     currencies,
@@ -136,6 +135,5 @@ app.include_router(anomalies.router, dependencies=_protected)
 app.include_router(subscriptions.router, dependencies=_protected)
 app.include_router(chat.router, dependencies=_protected)
 app.include_router(stats.router, dependencies=_protected)
-app.include_router(assets.router, dependencies=_protected)
 app.include_router(categories.router, dependencies=_protected)
 app.include_router(profile.router, dependencies=_protected)

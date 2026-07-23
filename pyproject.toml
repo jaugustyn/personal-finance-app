@@ -22,8 +22,6 @@ dependencies = [
     "scikit-learn>=1.9.0",
     "statsmodels>=0.14",
     "joblib>=1.4",
-    # assets
-    "yfinance>=0.2.40",
     # observability / llm-client
     "structlog>=25.5.0",
     "httpx>=0.28.1",
