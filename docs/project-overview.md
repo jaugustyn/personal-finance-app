@@ -53,6 +53,17 @@ Main boundaries:
 FastAPI routers are intentionally thin. Domain logic belongs in `src/finance`,
 parsing in `src/finance/ingestion`, and ML in `src/finance/ml`.
 
+Database transaction boundaries follow one convention across command paths:
+
+- read operations do not create or repair records;
+- the highest-level command owns `commit` and rolls back on failure;
+- lower-level helpers may use `flush` to obtain identifiers, but do not commit.
+
+System reference data, including the built-in category catalog, is installed by
+Alembic migrations. Integrity checks report missing reference rows without
+silently changing the database. SQLite tests seed required reference data
+explicitly in their fixtures.
+
 ## Data flow
 
 1. A Pekao, Revolut or generic file is parsed into a common transaction DTO;
@@ -144,6 +155,7 @@ data/model identifiers, privacy diagnostics and explicit section statuses.
 | Category model results | Not bundled; generated from private data |
 | Forecasting, anomalies, subscriptions and type ML | Implemented, validation provisional |
 | Manual fixed-charge schedules | Operational |
+| Asset portfolio | Removed pending redesign; UI placeholder only |
 | Frozen private evaluation set | Backend available, hidden from normal UI |
 | Evidence generation | Operational; strict classification profile requires sufficient confirmed data |
 

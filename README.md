@@ -18,13 +18,16 @@ activation is always manual. Forecasting, anomaly detection, subscription
 detection and transaction-type ML are implemented but remain provisional from
 the validation perspective.
 
+The asset portfolio module is intentionally unavailable pending a redesign;
+the dashboard route currently contains only a placeholder.
+
 ## Main capabilities
 
 - Pekao and Revolut imports, plus a generic CSV/TSV/TXT mapping flow.
 - Deduplication, conversion of foreign amounts to PLN and daily exchange rates.
 - Imported and manually entered transactions with separate economic type and
   expense category workflows.
-- Dashboard, period summaries, merchant analysis and asset tracking.
+- Dashboard, period summaries and merchant analysis.
 - Category suggestions using TF-IDF and linear classifiers.
 - Rule-based transaction-type suggestions with explicit user review.
 - Forecasting, anomaly and subscription detection.

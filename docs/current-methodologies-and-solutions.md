@@ -136,7 +136,6 @@ Główne agregacje obejmują:
 - wydatki według kategorii i merchantów;
 - trendy miesięczne oraz porównania okresów;
 - histogram i statystyki kwot;
-- portfel aktywów i historię wartości;
 - deterministyczne rekomendacje na podstawie zmian okresowych, kategorii,
   największych merchantów, subskrypcji i anomalii.
 
@@ -339,6 +338,8 @@ ale zmiana eksperymentalnej ontologii może wymagać czystego importu.
 
 ## 13. Ograniczenia
 
+- Moduł aktywów oczekuje na osobną przebudowę; backend, tabele i wyceny nie są
+  częścią bieżącej implementacji, a frontend pokazuje wyłącznie placeholder.
 - Wyniki dotyczą jednego prywatnego użytkownika i nie dowodzą generalizacji na
   populację.
 - Małe oraz niezbalansowane klasy dają niestabilne metryki.

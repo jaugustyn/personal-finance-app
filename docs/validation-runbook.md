@@ -100,6 +100,8 @@ model artifacts and database contents remain local.
 Backend:
 
 ```powershell
+uv run alembic upgrade head
+uv run alembic check
 uv run pytest
 uv run ruff check .
 uv run mypy src apps scripts
