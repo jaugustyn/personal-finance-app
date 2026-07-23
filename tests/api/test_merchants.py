@@ -196,6 +196,15 @@ def test_merchant_alias_crud(client) -> None:
     assert len(client.get("/merchants/aliases").json()) == 1
 
 
+def test_merchant_alias_rejects_values_longer_than_the_database_column(client) -> None:
+    response = client.post(
+        "/merchants/aliases",
+        json={"canonical_label": "Shop", "aliases": ["x" * 257]},
+    )
+
+    assert response.status_code == 422
+
+
 def test_merchant_alias_upsert_moves_alias_between_groups(client) -> None:
     created = client.post(
         "/merchants/aliases",

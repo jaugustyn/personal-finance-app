@@ -1,6 +1,8 @@
 """Tests for local profile and personal rules API."""
 from __future__ import annotations
 
+import pytest
+
 from finance.domain.models import PersonalRule
 
 
@@ -50,6 +52,41 @@ def test_personal_rule_rejects_invalid_enum_values(client) -> None:
             "category": "not-a-category",
             "transaction_type": "not-a-type",
         },
+    )
+
+    assert response.status_code == 422
+
+
+def test_personal_rule_accepts_a_custom_catalog_category(client) -> None:
+    created_category = client.post("/categories", json={"name": "Pets"})
+    assert created_category.status_code == 201
+
+    response = client.post(
+        "/profile/rules",
+        json={"pattern": "Vet", "category": "Pets"},
+    )
+
+    assert response.status_code == 201
+    assert response.json()["category"] == "pets"
+
+
+@pytest.mark.parametrize(
+    "field_name",
+    ["pattern", "pattern_target", "priority", "active", "mode", "confidence"],
+)
+def test_personal_rule_patch_rejects_null_for_required_fields(
+    client,
+    field_name: str,
+) -> None:
+    created = client.post(
+        "/profile/rules",
+        json={"pattern": "Lidl", "category": "food"},
+    )
+    rule_id = created.json()["id"]
+
+    response = client.patch(
+        f"/profile/rules/{rule_id}",
+        json={field_name: None},
     )
 
     assert response.status_code == 422

@@ -4,6 +4,7 @@ from importlib import reload
 
 import pytest
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 
 
 def _make_client(env: dict[str, str]) -> TestClient:
@@ -48,6 +49,15 @@ def test_protected_endpoint_requires_auth_when_enabled():
     r = client.get("/transactions", auth=("alice", "secret"))
     assert r.status_code != 401
     assert client.get("/app-lock/status", auth=("alice", "secret")).status_code != 401
+
+
+@pytest.mark.parametrize(
+    ("username", "password"),
+    [("alice", ""), ("", "secret")],
+)
+def test_partial_basic_auth_configuration_stops_startup(username, password):
+    with pytest.raises(ValidationError, match="must both be configured"):
+        _make_client({"AUTH_USERNAME": username, "AUTH_PASSWORD": password})
 
 
 @pytest.fixture(autouse=True)

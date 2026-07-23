@@ -3,8 +3,11 @@ from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal
+from typing import Annotated
 
 from pydantic import BaseModel, Field
+
+MerchantAliasLabel = Annotated[str, Field(min_length=1, max_length=256)]
 
 
 class MerchantAliasRow(BaseModel):
@@ -22,7 +25,7 @@ class MerchantAliasRow(BaseModel):
 class MerchantAliasCreate(BaseModel):
     canonical_label: str = Field(min_length=1, max_length=256)
     canonical_key: str | None = Field(default=None, max_length=256)
-    aliases: list[str] = Field(min_length=1)
+    aliases: list[MerchantAliasLabel] = Field(min_length=1, max_length=1000)
 
 
 class MerchantAliasGroupLabelPatch(BaseModel):

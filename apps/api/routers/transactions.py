@@ -157,8 +157,8 @@ def patch_manual_transaction(
 def list_transactions(
     session: Session = Depends(get_session),
     filters: TransactionFilterParams = Depends(),
-    limit: int = Query(default=100, le=1000),
-    offset: int = 0,
+    limit: int = Query(default=100, ge=1, le=1000),
+    offset: int = Query(default=0, ge=0),
     sort_by: tx_service.TransactionSortBy = Query(default="date"),
     sort_direction: tx_service.TransactionSortDirection = Query(default="desc"),
 ) -> list[TransactionRow]:
@@ -232,7 +232,7 @@ def merchant_groups(
     session: Session = Depends(get_session),
     only_uncategorized: bool = Query(default=True),
     min_count: int = Query(default=2, ge=1, le=100),
-    limit: int = Query(default=50, le=500),
+    limit: int = Query(default=50, ge=1, le=500),
     sort_by: tx_service.MerchantGroupSortBy = Query(default="count"),
     sort_direction: tx_service.TransactionSortDirection = Query(default="desc"),
 ) -> list[MerchantGroup]:

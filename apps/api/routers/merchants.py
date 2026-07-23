@@ -7,7 +7,7 @@ from typing import Literal
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
-from apps.api.errors import not_found, validation_error
+from apps.api.errors import conflict, not_found, validation_error
 from apps.api.schemas.merchants import (
     MerchantAliasCreate,
     MerchantAliasGroupLabelPatch,
@@ -62,6 +62,8 @@ def create_aliases(
             canonical_key=payload.canonical_key,
             aliases=payload.aliases,
         )
+    except merchant_service.MerchantAliasConflict as exc:
+        raise conflict(str(exc)) from exc
     except ValueError as exc:
         raise validation_error(str(exc)) from exc
     return _alias_rows(session, rows)

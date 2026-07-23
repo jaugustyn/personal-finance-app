@@ -6,6 +6,7 @@ should still return 200 with empty/zero values.
 from datetime import date
 from decimal import Decimal
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
@@ -504,3 +505,17 @@ def test_recap_shape() -> None:
         "unconverted_count",
     ):
         assert key in body
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "date_from=2026-01-01",
+        "date_to=2026-01-31",
+        "date_from=2026-02-01&date_to=2026-01-31",
+    ],
+)
+def test_recap_rejects_incomplete_or_reversed_custom_range(client, query) -> None:
+    response = client.get(f"/stats/recap?{query}")
+
+    assert response.status_code == 422

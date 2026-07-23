@@ -6,6 +6,7 @@ from datetime import date
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
+from apps.api.errors import validation_error
 from apps.api.schemas.stats import (
     CashflowBucket,
     CategorySpend,
@@ -177,7 +178,11 @@ def recap(
     top_changes: int = Query(default=5, ge=1, le=20),
 ) -> Recap:
     """Recap of a period vs the previous one. Use date_from+date_to for a custom range."""
-    if date_from is not None and date_to is not None and date_from <= date_to:
+    if (date_from is None) != (date_to is None):
+        raise validation_error("date_from and date_to must be provided together.")
+    if date_from is not None and date_to is not None:
+        if date_from > date_to:
+            raise validation_error("date_from must not be later than date_to.")
         return Recap(
             **stats_service.custom_recap(
                 session,

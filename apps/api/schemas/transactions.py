@@ -3,11 +3,14 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Any
+from typing import Annotated, Any
 
 from pydantic import BaseModel, Field
 
 from finance.domain.enums import TransactionDirection, TransactionType
+
+TransactionId = Annotated[int, Field(gt=0)]
+TransactionTag = Annotated[str, Field(max_length=64)]
 
 
 class ClassificationDecisionResponse(BaseModel):
@@ -144,8 +147,8 @@ class ReviewSummary(BaseModel):
 
 
 class CategoryUpdate(BaseModel):
-    category: str | None
-    subcategory: str | None = None
+    category: str | None = Field(max_length=64)
+    subcategory: str | None = Field(default=None, max_length=64)
     remember_rule: bool = False
 
 
@@ -155,15 +158,15 @@ class TypeUpdate(BaseModel):
 
 
 class AnnotationUpdate(BaseModel):
-    notes: str | None = None
-    tags: list[str] | None = None
+    notes: str | None = Field(default=None, max_length=1024)
+    tags: list[TransactionTag] | None = Field(default=None, max_length=20)
 
 
 class BulkCategorize(BaseModel):
-    ids: list[int] | None = None
-    merchant: str | None = None
-    merchant_canonical_key: str | None = None
-    category: str | None = None
+    ids: list[TransactionId] | None = Field(default=None, max_length=1000)
+    merchant: str | None = Field(default=None, max_length=256)
+    merchant_canonical_key: str | None = Field(default=None, max_length=256)
+    category: str | None = Field(default=None, max_length=64)
     mark_transfer: bool | None = None
     transaction_type: TransactionType | None = None
     allow_direction_mismatch: bool = False
@@ -174,14 +177,14 @@ class BulkResult(BaseModel):
 
 
 class AcceptSuggestions(BaseModel):
-    ids: list[int] | None = None
+    ids: list[TransactionId] | None = Field(default=None, max_length=1000)
     min_confidence: float = Field(default=0.75, ge=0.0, le=1.0)
     manual: bool = False
 
 
 class RejectSuggestions(BaseModel):
-    ids: list[int] | None = None
+    ids: list[TransactionId] | None = Field(default=None, max_length=1000)
 
 
 class BulkDelete(BaseModel):
-    ids: list[int] = Field(default_factory=list)
+    ids: list[TransactionId] = Field(default_factory=list, max_length=1000)

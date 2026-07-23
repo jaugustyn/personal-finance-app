@@ -134,6 +134,25 @@ def test_bulk_categorize_requires_selection(client) -> None:
     assert r.status_code == 422
 
 
+def test_bulk_operations_accept_at_most_one_thousand_ids(client) -> None:
+    ids = list(range(1, 1002))
+
+    assert client.post(
+        "/transactions/bulk/categorize",
+        json={"ids": ids, "category": "food"},
+    ).status_code == 422
+    assert client.post(
+        "/transactions/bulk/delete",
+        json={"ids": ids},
+    ).status_code == 422
+
+
+def test_list_and_groups_reject_non_positive_pagination(client) -> None:
+    assert client.get("/transactions?limit=0").status_code == 422
+    assert client.get("/transactions?offset=-1").status_code == 422
+    assert client.get("/transactions/groups?limit=0").status_code == 422
+
+
 def test_groups_returns_uncategorized_merchants(client, db_session) -> None:
     _tx(db_session, merchant="Biedronka", dedup_hash="g1")
     _tx(db_session, merchant="Biedronka", dedup_hash="g2")

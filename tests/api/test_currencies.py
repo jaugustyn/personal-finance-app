@@ -38,4 +38,4 @@ def test_manual_rate_rejects_pln_to_pln_pair(client) -> None:
         },
     )
 
-    assert response.status_code == 400
+    assert response.status_code == 422

@@ -683,6 +683,33 @@ def test_patch_category_rejects_mismatched_subcategory(client, db_session) -> No
     assert r.status_code == 422
 
 
+def test_patch_category_rejects_a_name_outside_the_catalog(client, db_session) -> None:
+    tx = _seed(db_session, category=None, dedup_hash="h-patch-unknown-category")
+
+    response = client.patch(
+        f"/transactions/{tx.id}/category",
+        json={"category": "does-not-exist"},
+    )
+
+    assert response.status_code == 422
+    db_session.refresh(tx)
+    assert tx.category is None
+
+
+def test_patch_category_accepts_a_custom_catalog_category(client, db_session) -> None:
+    created_category = client.post("/categories", json={"name": "Education"})
+    assert created_category.status_code == 201
+    tx = _seed(db_session, category=None, dedup_hash="h-patch-custom-category")
+
+    response = client.patch(
+        f"/transactions/{tx.id}/category",
+        json={"category": "education"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["category"] == "education"
+
+
 def test_patch_category_can_remember_merchant_rule(client, db_session) -> None:
     tx = _seed(db_session, category=None, merchant="Lidl", dedup_hash="h-remember")
 
@@ -851,6 +878,20 @@ def test_patch_annotations_sets_notes_and_dedup_tags(client, db_session) -> None
 def test_patch_annotations_404(client, db_session) -> None:
     r = client.patch("/transactions/999999/annotations", json={"notes": "x"})
     assert r.status_code == 404
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"notes": "x" * 1025},
+        {"tags": [f"tag-{index}" for index in range(21)]},
+        {"tags": ["x" * 65]},
+    ],
+)
+def test_patch_annotations_enforces_size_limits(client, payload) -> None:
+    response = client.patch("/transactions/1/annotations", json=payload)
+
+    assert response.status_code == 422
 
 
 def test_summary_by_category(client, db_session) -> None:

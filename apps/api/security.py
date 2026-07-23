@@ -1,6 +1,7 @@
 """Optional HTTP Basic Auth dependency.
 
-Auth is disabled when AUTH_USERNAME or AUTH_PASSWORD is empty.
+Auth is disabled when both AUTH_USERNAME and AUTH_PASSWORD are empty.
+Partial configuration is rejected while loading application settings.
 The /health endpoint is always public.
 """
 from __future__ import annotations

@@ -1,6 +1,8 @@
 """Application configuration via environment variables."""
 from functools import lru_cache
+from typing import Self
 
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -19,9 +21,9 @@ class Settings(BaseSettings):
     # LLM / Ollama
     ollama_base_url: str = "http://localhost:11434"
     ollama_model: str = "llama3.1:8b-instruct-q4_K_M"
-    ollama_timeout_s: float = 60.0
-    ollama_num_ctx: int = 2048
-    ollama_num_predict: int = 256
+    ollama_timeout_s: float = Field(default=60.0, gt=0)
+    ollama_num_ctx: int = Field(default=2048, gt=0)
+    ollama_num_predict: int = Field(default=256, gt=0)
     llm_enabled: bool = True
     llm_fallback_enabled: bool = False
 
@@ -34,7 +36,17 @@ class Settings(BaseSettings):
 
     # CORS / rate limiting
     cors_allow_origins: str = "http://localhost:3000"
-    rate_limit_per_minute: int = 120
+    rate_limit_per_minute: int = Field(default=120, ge=0)
+
+    @model_validator(mode="after")
+    def validate_basic_auth_pair(self) -> Self:
+        username_configured = bool(self.auth_username)
+        password_configured = bool(self.auth_password)
+        if username_configured != password_configured:
+            raise ValueError(
+                "AUTH_USERNAME and AUTH_PASSWORD must both be configured or both be empty."
+            )
+        return self
 
 
 @lru_cache(maxsize=1)
