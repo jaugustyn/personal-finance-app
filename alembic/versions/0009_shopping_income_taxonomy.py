@@ -33,14 +33,6 @@ def upgrade() -> None:
         sa.column("parent", sa.String),
         sa.column("color", sa.String),
     )
-    names = ("shopping", *_SHOPPING_SUBCATEGORIES)
-    conn = op.get_bind()
-    existing = {
-        row[0]
-        for row in conn.execute(
-            sa.select(categories.c.name).where(categories.c.name.in_(names))
-        )
-    }
     rows = [
         {
             "name": "shopping",
@@ -58,9 +50,7 @@ def upgrade() -> None:
             for sub in _SHOPPING_SUBCATEGORIES
         ],
     ]
-    missing = [row for row in rows if row["name"] not in existing]
-    if missing:
-        op.bulk_insert(categories, missing)
+    op.bulk_insert(categories, rows)
 
 
 def downgrade() -> None:

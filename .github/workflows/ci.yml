@@ -105,6 +105,8 @@ jobs:
         run: uv sync --locked --extra dev
       - name: Migrate test database
         run: uv run alembic upgrade head
+      - name: Check ORM and migration drift
+        run: uv run alembic check
       - name: Reference financial scenario
         run: >-
           uv run pytest
