@@ -197,6 +197,53 @@ def test_llm_selects_tool_but_does_not_author_answer(monkeypatch):
     assert "999 EUR" not in result.answer
 
 
+@pytest.mark.parametrize(
+    "message",
+    [
+        [],
+        {"tool_calls": "not-a-list"},
+        {"tool_calls": [{}]},
+        {"tool_calls": [{"function": {"name": "get_spending", "arguments": []}}]},
+        {
+            "tool_calls": [
+                {"function": {"name": "get_spending", "arguments": "{invalid"}}
+            ]
+        },
+    ],
+)
+def test_malformed_ollama_tool_response_uses_controlled_fallback(
+    monkeypatch,
+    message,
+) -> None:
+    monkeypatch.setattr(llm_router.client, "is_available", lambda: True)
+    monkeypatch.setattr(llm_router.client, "chat", lambda **_kwargs: message)
+
+    result = llm_router.answer(
+        "Przygotuj finansowe zestawienie alfa",
+        object(),  # type: ignore[arg-type]
+    )
+
+    assert result.source == "smalltalk"
+    assert result.tool is None
+    assert result.answer == llm_router.FALLBACK_ANSWER
+
+
+def test_ollama_unavailable_during_chat_uses_controlled_fallback(monkeypatch) -> None:
+    def unavailable(**_kwargs):
+        raise llm_router.client.OllamaUnavailable("invalid response")
+
+    monkeypatch.setattr(llm_router.client, "is_available", lambda: True)
+    monkeypatch.setattr(llm_router.client, "chat", unavailable)
+
+    result = llm_router.answer(
+        "Przygotuj finansowe zestawienie alfa",
+        object(),  # type: ignore[arg-type]
+    )
+
+    assert result.source == "smalltalk"
+    assert result.answer == llm_router.FALLBACK_ANSWER
+
+
 def test_year_month_extracted():
     call = heuristic_route("Ile wydałem 2026-04?")
     assert call is not None

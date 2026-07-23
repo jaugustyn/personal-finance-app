@@ -6,19 +6,19 @@ small CPUs / low VRAM: short context, low num_predict, no streaming.
 from __future__ import annotations
 
 import json
-import logging
 from typing import Any
 from urllib.parse import urlparse
 
 import httpx
 
 from finance.config import get_settings
+from finance.observability import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger("finance.llm.client")
 
 
 class OllamaUnavailable(RuntimeError):
-    """Raised when Ollama is unreachable or returns a non-2xx response."""
+    """Raised when Ollama is unreachable or returns an unusable response."""
 
 
 ALLOWED_OLLAMA_HOSTS = {"localhost", "127.0.0.1", "::1", "host.docker.internal"}
@@ -85,18 +85,37 @@ def chat(
         )
         r.raise_for_status()
     except httpx.HTTPError as exc:
-        raise OllamaUnavailable(f"Ollama request failed: {exc}") from exc
+        logger.warning(
+            "ollama_chat_unavailable",
+            reason="http_error",
+            error_type=type(exc).__name__,
+        )
+        raise OllamaUnavailable("Ollama request failed.") from exc
 
-    data = r.json()
-    msg = data.get("message", {})
-    if isinstance(msg.get("content"), str) and msg["content"].startswith("{"):
+    data = _json_object(r, operation="chat")
+    msg = data.get("message")
+    if not isinstance(msg, dict):
+        logger.warning("ollama_chat_invalid_response", reason="missing_message")
+        raise OllamaUnavailable("Ollama response does not contain a message object.")
+
+    calls = msg.get("tool_calls")
+    if calls is None:
+        calls = []
+    elif not isinstance(calls, list):
+        logger.warning("ollama_chat_invalid_response", reason="invalid_tool_calls")
+        raise OllamaUnavailable("Ollama returned malformed tool calls.")
+
+    content = msg.get("content")
+    if isinstance(content, str) and content.startswith("{"):
         # Some models put tool_calls inside content as JSON; try to parse.
         try:
-            parsed = json.loads(msg["content"])
+            parsed = json.loads(content)
             if isinstance(parsed, dict) and "name" in parsed:
-                msg.setdefault("tool_calls", []).append({"function": parsed})
+                calls.append({"function": parsed})
         except json.JSONDecodeError:
             pass
+    if calls:
+        msg["tool_calls"] = _normalize_tool_calls(calls)
     return msg
 
 
@@ -108,8 +127,17 @@ def model_manifest() -> dict[str, Any]:
         response = httpx.get(f"{base_url}/api/tags", timeout=5.0)
         response.raise_for_status()
     except httpx.HTTPError as exc:
-        raise OllamaUnavailable(f"Could not inspect local Ollama model: {exc}") from exc
-    models = response.json().get("models", [])
+        logger.warning(
+            "ollama_manifest_unavailable",
+            reason="http_error",
+            error_type=type(exc).__name__,
+        )
+        raise OllamaUnavailable("Could not inspect local Ollama model.") from exc
+    data = _json_object(response, operation="manifest")
+    models = data.get("models", [])
+    if not isinstance(models, list) or not all(isinstance(model, dict) for model in models):
+        logger.warning("ollama_manifest_invalid_response", reason="invalid_models")
+        raise OllamaUnavailable("Ollama returned a malformed model manifest.")
     selected: dict[str, Any] = next(
         (
             model
@@ -127,3 +155,45 @@ def model_manifest() -> dict[str, Any]:
         "options": _options(),
         "base_host": urlparse(base_url).hostname,
     }
+
+
+def _json_object(response: httpx.Response, *, operation: str) -> dict[str, Any]:
+    try:
+        data = response.json()
+    except ValueError as exc:
+        logger.warning(
+            "ollama_invalid_json",
+            operation=operation,
+            error_type=type(exc).__name__,
+        )
+        raise OllamaUnavailable("Ollama returned invalid JSON.") from exc
+    if not isinstance(data, dict):
+        logger.warning("ollama_invalid_json_shape", operation=operation)
+        raise OllamaUnavailable("Ollama returned a non-object JSON response.")
+    return data
+
+
+def _normalize_tool_calls(calls: list[Any]) -> list[dict[str, Any]]:
+    normalized: list[dict[str, Any]] = []
+    for call in calls:
+        if not isinstance(call, dict) or not isinstance(call.get("function"), dict):
+            logger.warning("ollama_chat_invalid_response", reason="invalid_tool_call")
+            raise OllamaUnavailable("Ollama returned malformed tool calls.")
+        function = dict(call["function"])
+        name = function.get("name")
+        if not isinstance(name, str) or not name:
+            logger.warning("ollama_chat_invalid_response", reason="invalid_tool_name")
+            raise OllamaUnavailable("Ollama returned malformed tool calls.")
+        arguments = function.get("arguments", {})
+        if isinstance(arguments, str):
+            try:
+                arguments = json.loads(arguments)
+            except json.JSONDecodeError as exc:
+                logger.warning("ollama_chat_invalid_response", reason="invalid_tool_arguments")
+                raise OllamaUnavailable("Ollama returned malformed tool calls.") from exc
+        if not isinstance(arguments, dict):
+            logger.warning("ollama_chat_invalid_response", reason="invalid_tool_arguments")
+            raise OllamaUnavailable("Ollama returned malformed tool calls.")
+        function["arguments"] = arguments
+        normalized.append({**call, "function": function})
+    return normalized

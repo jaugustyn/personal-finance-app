@@ -6,7 +6,6 @@ Goal: minimise Ollama load. ~80% of typical questions ("Ile wydałem...",
 from __future__ import annotations
 
 import json
-import logging
 from dataclasses import dataclass
 from datetime import date
 from functools import lru_cache
@@ -20,8 +19,9 @@ from finance.llm.heuristics import ToolCall, heuristic_route, normalize_question
 from finance.llm.periods import extract_period
 from finance.llm.tools import TOOL_SCHEMAS, TOOLS
 from finance.llm.types import ToolResult
+from finance.observability import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger("finance.llm.router")
 
 _PERIOD_FOLLOWUP_TOOLS = frozenset(
     {
@@ -68,22 +68,38 @@ def _llm_pick_tool(question: str) -> ToolCall | None:
             tools=TOOL_SCHEMAS,
         )
     except client.OllamaUnavailable:
-        logger.warning("Ollama unavailable during tool selection")
+        logger.warning("ollama_tool_selection_unavailable")
         return None
 
-    calls = msg.get("tool_calls") or []
-    if not calls:
+    if not isinstance(msg, dict):
+        logger.warning("ollama_tool_selection_invalid", reason="invalid_message")
         return None
-    fn = calls[0].get("function", {})
+    calls = msg.get("tool_calls")
+    if calls is None or calls == []:
+        return None
+    if not isinstance(calls, list) or not isinstance(calls[0], dict):
+        logger.warning("ollama_tool_selection_invalid", reason="invalid_tool_calls")
+        return None
+    fn = calls[0].get("function")
+    if not isinstance(fn, dict):
+        logger.warning("ollama_tool_selection_invalid", reason="invalid_function")
+        return None
     name = fn.get("name")
+    if not isinstance(name, str):
+        logger.warning("ollama_tool_selection_invalid", reason="invalid_tool_name")
+        return None
     raw_args = fn.get("arguments", {})
     if isinstance(raw_args, str):
         try:
             raw_args = json.loads(raw_args)
         except json.JSONDecodeError:
-            raw_args = {}
+            logger.warning("ollama_tool_selection_invalid", reason="invalid_arguments_json")
+            return None
+    if not isinstance(raw_args, dict):
+        logger.warning("ollama_tool_selection_invalid", reason="invalid_arguments")
+        return None
     if name in TOOLS:
-        return ToolCall(name=name, args=dict(raw_args))
+        return ToolCall(name=name, args=raw_args)
     return None
 
 
@@ -169,7 +185,7 @@ def answer(
     try:
         data = fn(session, call.args)
     except Exception:  # noqa: BLE001
-        logger.exception("Tool %s failed", call.name)
+        logger.exception("llm_tool_execution_failed", tool=call.name)
         return ChatResult(
             answer=TOOL_ERROR_ANSWER,
             tool=call.name, tool_args=call.args, data=None, source=source,
