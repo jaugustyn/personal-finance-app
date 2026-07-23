@@ -7,6 +7,7 @@ from typing import Any
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
+from finance.categories import missing_system_category_names
 from finance.currencies import BASE_CURRENCY, amount_base_expr
 from finance.domain.enums import (
     CATEGORY_CONFIRMATION_METHOD_VALUES,
@@ -60,6 +61,16 @@ def check_data_integrity(session: Session) -> list[IntegrityIssue]:
     """Return actionable aggregate issues without exposing transaction contents."""
 
     issues: list[IntegrityIssue] = []
+
+    missing_categories = missing_system_category_names(session)
+    if missing_categories:
+        issues.append(
+            IntegrityIssue(
+                code="missing_system_categories",
+                count=len(missing_categories),
+                sample_ids=(),
+            )
+        )
 
     foreign_invalid = _transaction_issue(
         session,

@@ -2,9 +2,8 @@
 from finance.domain.models import CategoryDef
 
 
-def test_list_seeds_system_categories(client, db_session) -> None:
-    # Empty table on first call.
-    assert db_session.query(CategoryDef).count() == 0
+def test_list_returns_explicitly_seeded_system_categories(client, db_session) -> None:
+    before = db_session.query(CategoryDef).count()
     r = client.get("/categories")
     assert r.status_code == 200
     body = r.json()
@@ -14,6 +13,19 @@ def test_list_seeds_system_categories(client, db_session) -> None:
             "entertainment", "housing", "savings", "shopping", "other"} <= names
     # All marked as system.
     assert all(c["is_system"] for c in body)
+    db_session.expire_all()
+    assert db_session.query(CategoryDef).count() == before
+
+
+def test_list_does_not_seed_an_empty_catalog(client, db_session) -> None:
+    db_session.query(CategoryDef).delete()
+    db_session.commit()
+
+    response = client.get("/categories")
+
+    assert response.status_code == 200
+    assert response.json() == []
+    assert db_session.query(CategoryDef).count() == 0
 
 
 def test_list_includes_user_categories_after_create(client) -> None:

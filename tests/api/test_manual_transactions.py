@@ -3,7 +3,7 @@
 from datetime import date
 from decimal import Decimal
 
-from finance.domain.models import CategoryDef, Transaction
+from finance.domain.models import Transaction
 
 
 def _payload(**overrides: object) -> dict[str, object]:
@@ -64,9 +64,6 @@ def test_identical_manual_transactions_are_explicit_distinct_records(
 def test_manual_category_and_type_receive_complete_provenance(
     client, db_session
 ) -> None:
-    db_session.add(CategoryDef(name="food", is_system=True, color="#f59e0b"))
-    db_session.commit()
-
     response = client.post(
         "/transactions",
         json=_payload(transaction_type="expense", category="food"),
@@ -85,9 +82,6 @@ def test_manual_category_and_type_receive_complete_provenance(
 
 
 def test_manual_credit_category_is_a_refund(client, db_session) -> None:
-    db_session.add(CategoryDef(name="food", is_system=True, color="#f59e0b"))
-    db_session.commit()
-
     response = client.post(
         "/transactions",
         json=_payload(
@@ -103,9 +97,6 @@ def test_manual_credit_category_is_a_refund(client, db_session) -> None:
 
 
 def test_manual_transaction_rejects_incompatible_labels(client, db_session) -> None:
-    db_session.add(CategoryDef(name="food", is_system=True, color="#f59e0b"))
-    db_session.commit()
-
     category_conflict = client.post(
         "/transactions",
         json=_payload(

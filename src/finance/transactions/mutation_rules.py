@@ -69,6 +69,12 @@ def resolve_category_assignment(
 ) -> tuple[str | None, str | None]:
     category = clean_label(category)
     subcategory = clean_label(subcategory)
+    if category is not None:
+        category_exists = session.scalar(
+            select(CategoryDef.id).where(CategoryDef.name == category)
+        )
+        if category_exists is None:
+            raise InvalidCategoryAssignment("Unknown category.")
     if subcategory is None:
         return category, None
     parent = known_subcategory_parent(session, subcategory)

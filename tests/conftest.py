@@ -24,6 +24,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from apps.api.main import app
+from finance.categories import seed_system_categories
 from finance.db import get_session
 from finance.domain.models import Base
 
@@ -38,6 +39,9 @@ def db_engine():
         future=True,
     )
     Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        seed_system_categories(session)
+        session.commit()
     try:
         yield engine
     finally:

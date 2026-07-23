@@ -1,149 +1,34 @@
-"""Category catalog endpoints — system + user-defined categories."""
+"""HTTP adapter for the category catalog."""
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel, Field
-from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from apps.api.errors import conflict, not_found, validation_error
+from apps.api.schemas.categories import CategoryCreate, CategoryRow, CategoryUpdate
+from finance.categories import service
 from finance.db import get_session
-from finance.domain.category_mapping import (
-    SYSTEM_CATEGORY_COLORS,
-    SYSTEM_SUBCATEGORIES,
-)
-from finance.domain.models import CategoryDef, FixedCharge, PersonalRule, Transaction
 
 router = APIRouter(prefix="/categories", tags=["categories"])
 
 
-def ensure_system_categories(session: Session) -> None:
-    """Seed the system groups and their subcategories if missing."""
-    existing = {
-        name for (name,) in session.execute(select(CategoryDef.name)).all()
-    }
-    added = False
-    for group, color in SYSTEM_CATEGORY_COLORS.items():
-        if group.value not in existing:
-            session.add(
-                CategoryDef(name=group.value, is_system=True, color=color)
-            )
-            added = True
-        for sub in SYSTEM_SUBCATEGORIES.get(group, ()):
-            if sub not in existing:
-                session.add(
-                    CategoryDef(
-                        name=sub,
-                        is_system=True,
-                        parent=group.value,
-                        color=color,
-                    )
-                )
-                added = True
-    if added:
-        session.commit()
-
-
-class CategoryRow(BaseModel):
-    id: int
-    name: str
-    is_system: bool
-    parent: str | None = None
-    color: str | None
-    icon: str | None
-    usage_count: int = 0
-
-    model_config = {"from_attributes": True}
-
-
-class CategoryCreate(BaseModel):
-    name: str = Field(min_length=1, max_length=64)
-    parent: str | None = Field(default=None, max_length=64)
-    color: str | None = Field(default=None, max_length=16)
-    icon: str | None = Field(default=None, max_length=32)
-
-
-class CategoryUpdate(BaseModel):
-    color: str | None = Field(default=None, max_length=16)
-    icon: str | None = Field(default=None, max_length=32)
-
-
-def _normalize(name: str) -> str:
-    return name.strip().lower()
-
-
 @router.get("", response_model=list[CategoryRow])
 def list_categories(session: Session = Depends(get_session)) -> list[CategoryRow]:
-    ensure_system_categories(session)
-    rows = session.execute(
-        select(CategoryDef).order_by(
-            CategoryDef.is_system.desc(), CategoryDef.name.asc()
-        )
-    ).scalars().all()
-    # Build usage counts in single grouped queries: group-level usage comes
-    # from ``Transaction.category``; subcategory usage from ``subcategory``.
-    usage: dict[str, int] = {}
-    for cat_name, count in session.execute(
-        select(Transaction.category, func.count(Transaction.id)).group_by(
-            Transaction.category
-        )
-    ).all():
-        if cat_name:
-            usage[str(cat_name)] = int(count)
-    for sub_name, count in session.execute(
-        select(Transaction.subcategory, func.count(Transaction.id)).group_by(
-            Transaction.subcategory
-        )
-    ).all():
-        if sub_name:
-            usage[str(sub_name)] = usage.get(str(sub_name), 0) + int(count)
-    return [
-        CategoryRow(
-            id=c.id,
-            name=c.name,
-            is_system=c.is_system,
-            parent=c.parent,
-            color=c.color,
-            icon=c.icon,
-            usage_count=usage.get(c.name, 0),
-        )
-        for c in rows
-    ]
+    return [CategoryRow(**row.__dict__) for row in service.list_categories(session)]
 
 
 @router.post("", response_model=CategoryRow, status_code=201)
 def create_category(
-    payload: CategoryCreate, session: Session = Depends(get_session)
+    payload: CategoryCreate,
+    session: Session = Depends(get_session),
 ) -> CategoryRow:
-    ensure_system_categories(session)
-    name = _normalize(payload.name)
-    if not name:
-        raise validation_error("Category name cannot be empty.")
-    parent = _normalize(payload.parent) if payload.parent else None
-    if parent is not None:
-        parent_def = session.execute(
-            select(CategoryDef).where(CategoryDef.name == parent)
-        ).scalar_one_or_none()
-        if parent_def is None:
-            raise validation_error("Parent category not found.")
-        if parent_def.parent is not None:
-            raise validation_error("Subcategories cannot be nested.")
-    existing = session.execute(
-        select(CategoryDef).where(CategoryDef.name == name)
-    ).scalar_one_or_none()
-    if existing is not None:
-        raise conflict("Category already exists.")
-    cat = CategoryDef(
-        name=name,
-        is_system=False,
-        parent=parent,
-        color=payload.color,
-        icon=payload.icon,
-    )
-    session.add(cat)
-    session.commit()
-    session.refresh(cat)
-    return CategoryRow.model_validate(cat)
+    try:
+        category = service.create_category(session, **payload.model_dump())
+    except service.CategoryAlreadyExists as exc:
+        raise conflict(str(exc)) from exc
+    except service.CategoryValidationError as exc:
+        raise validation_error(str(exc)) from exc
+    return CategoryRow.model_validate(category)
 
 
 @router.patch("/{category_id}", response_model=CategoryRow)
@@ -152,72 +37,29 @@ def update_category(
     payload: CategoryUpdate,
     session: Session = Depends(get_session),
 ) -> CategoryRow:
-    cat = session.get(CategoryDef, category_id)
-    if cat is None:
-        raise not_found("Category not found.")
-    if payload.color is not None:
-        cat.color = payload.color
-    if payload.icon is not None:
-        cat.icon = payload.icon
-    session.commit()
-    session.refresh(cat)
-    return CategoryRow.model_validate(cat)
+    try:
+        category = service.update_category(session, category_id, **payload.model_dump())
+    except service.CategoryNotFound as exc:
+        raise not_found(str(exc)) from exc
+    return CategoryRow.model_validate(category)
 
 
 @router.delete("/{category_id}", status_code=204, response_model=None)
-def delete_category(
-    category_id: int, session: Session = Depends(get_session)
-) -> None:
-    cat = session.get(CategoryDef, category_id)
-    if cat is None:
-        raise not_found("Category not found.")
-    if cat.is_system:
-        raise conflict("System categories cannot be deleted.")
-
-    transaction_count = int(
-        session.scalar(
-            select(func.count(Transaction.id)).where(
-                or_(
-                    Transaction.category == cat.name,
-                    Transaction.subcategory == cat.name,
-                    Transaction.category_predicted == cat.name,
-                )
-            )
-        )
-        or 0
-    )
-    rule_count = int(
-        session.scalar(
-            select(func.count(PersonalRule.id)).where(
-                PersonalRule.category == cat.name
-            )
-        )
-        or 0
-    )
-    child_count = int(
-        session.scalar(
-            select(func.count(CategoryDef.id)).where(CategoryDef.parent == cat.name)
-        )
-        or 0
-    )
-    fixed_charge_count = int(
-        session.scalar(
-            select(func.count(FixedCharge.id)).where(FixedCharge.category == cat.name)
-        )
-        or 0
-    )
-    if transaction_count or rule_count or child_count or fixed_charge_count:
+def delete_category(category_id: int, session: Session = Depends(get_session)) -> None:
+    try:
+        service.delete_category(session, category_id)
+    except service.CategoryNotFound as exc:
+        raise not_found(str(exc)) from exc
+    except service.SystemCategoryDeletionForbidden as exc:
+        raise conflict(str(exc)) from exc
+    except service.CategoryInUse as exc:
         detail = {
             "code": "category_in_use",
             "message": "Category is in use and cannot be deleted.",
-            "transaction_count": transaction_count,
-            "rule_count": rule_count,
-            "subcategory_count": child_count,
+            "transaction_count": exc.transaction_count,
+            "rule_count": exc.rule_count,
+            "subcategory_count": exc.subcategory_count,
         }
-        if fixed_charge_count:
-            detail["fixed_charge_count"] = fixed_charge_count
-        raise conflict(
-            detail
-        )
-    session.delete(cat)
-    session.commit()
+        if exc.fixed_charge_count:
+            detail["fixed_charge_count"] = exc.fixed_charge_count
+        raise conflict(detail) from exc

@@ -13,9 +13,6 @@ from finance.fixed_charges.service import (
 
 
 def test_fixed_charge_crud_and_pause(client, db_session) -> None:
-    db_session.add(CategoryDef(name="housing", is_system=True, color="#10b981"))
-    db_session.commit()
-
     created = client.post(
         "/fixed-charges",
         json={
@@ -227,8 +224,6 @@ def test_manual_transaction_link_updates_payment_status(client, db_session) -> N
 
 def test_create_manual_payment_is_linked_atomically(client, db_session) -> None:
     today = date.today()
-    db_session.add(CategoryDef(name="housing", is_system=True, color="#10b981"))
-    db_session.commit()
     charge = client.post(
         "/fixed-charges",
         json={

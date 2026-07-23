@@ -2,10 +2,19 @@
 from datetime import UTC, date, datetime
 from decimal import Decimal
 
+import pytest
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from finance.domain.models import Transaction, UserProfile
+from finance.categories import seed_system_categories
+from finance.domain.models import CategoryDef, Transaction, UserProfile
 from finance.integrity import check_data_integrity
+
+
+@pytest.fixture(autouse=True)
+def _system_category_catalog(db_session: Session) -> None:
+    seed_system_categories(db_session)
+    db_session.commit()
 
 
 def test_integrity_reports_ids_without_private_transaction_content(
@@ -129,3 +138,19 @@ def test_integrity_accepts_consistent_pln_transaction(db_session: Session) -> No
     db_session.commit()
 
     assert check_data_integrity(db_session) == []
+
+
+def test_integrity_reports_missing_system_categories_without_repairing_them(
+    db_session: Session,
+) -> None:
+    food = db_session.scalar(select(CategoryDef).where(CategoryDef.name == "food"))
+    assert food is not None
+    db_session.delete(food)
+    db_session.commit()
+
+    issues = {issue.code: issue for issue in check_data_integrity(db_session)}
+
+    assert issues["missing_system_categories"].count == 1
+    assert db_session.scalar(
+        select(CategoryDef).where(CategoryDef.name == "food")
+    ) is None
