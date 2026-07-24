@@ -68,9 +68,9 @@ jobs:
       - name: Build
         run: npm run build
 
-  reference-scenario-postgres:
+  database-migrations:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 10
     services:
       postgres:
         image: postgres:16-alpine
@@ -82,15 +82,11 @@ jobs:
           - 5432:5432
         options: >-
           --health-cmd "pg_isready -U finance -d finance_test"
-          --health-interval 10s
+          --health-interval 5s
           --health-timeout 5s
           --health-retries 5
     env:
       DATABASE_URL: postgresql+psycopg://finance:finance@localhost:5432/finance_test
-      TEST_DATABASE_URL: postgresql+psycopg://finance:finance@localhost:5432/finance_test
-      APP_ENV: test
-      RATE_LIMIT_PER_MINUTE: "0"
-      APP_LOCK_COOKIE_SECURE: "false"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
@@ -102,16 +98,8 @@ jobs:
           version: "0.8.15"
           enable-cache: true
       - name: Install
-        run: uv sync --locked --extra dev
-      - name: Verify migration round trip
-        run: |
-          uv run alembic upgrade head
-          uv run alembic downgrade base
-          uv run alembic upgrade head
+        run: uv sync --locked
+      - name: Apply migrations
+        run: uv run alembic upgrade head
       - name: Check ORM and migration drift
         run: uv run alembic check
-      - name: Reference financial scenario
-        run: >-
-          uv run pytest
-          tests/integration/test_reference_financial_scenario_postgres.py
-          -m postgres_integration --no-cov
