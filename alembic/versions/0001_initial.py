@@ -5,6 +5,7 @@ Revises:
 Create Date: 2026-04-30 00:00:00
 
 """
+
 from collections.abc import Sequence
 
 import sqlalchemy as sa
@@ -77,9 +78,11 @@ def upgrade() -> None:
     )
     op.create_index("ix_transactions_booking_date", "transactions", ["booking_date"])
     op.create_index("ix_transactions_category", "transactions", ["category"])
+    op.create_index("ix_transactions_import_id", "transactions", ["import_id"])
 
 
 def downgrade() -> None:
+    op.drop_index("ix_transactions_import_id", table_name="transactions")
     op.drop_index("ix_transactions_category", table_name="transactions")
     op.drop_index("ix_transactions_booking_date", table_name="transactions")
     op.drop_table("transactions")

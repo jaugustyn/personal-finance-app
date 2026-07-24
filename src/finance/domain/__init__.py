@@ -4,6 +4,9 @@ from finance.domain.dto import TransactionDTO
 from finance.domain.enums import Category, CategorySource, TransactionDirection, TransactionType
 from finance.domain.models import (
     Account,
+    AssetAccount,
+    AssetItem,
+    AssetValuation,
     Base,
     FxRate,
     Import,
@@ -14,6 +17,9 @@ from finance.domain.models import (
 
 __all__ = [
     "Account",
+    "AssetAccount",
+    "AssetItem",
+    "AssetValuation",
     "Base",
     "Category",
     "CategorySource",

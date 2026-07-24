@@ -5,6 +5,7 @@ Revises: 0012_currency_layer
 Create Date: 2026-06-28 00:00:00
 
 """
+
 from collections.abc import Sequence
 
 import sqlalchemy as sa
@@ -42,13 +43,7 @@ def upgrade() -> None:
             name="uq_subscription_preferences_key",
         ),
     )
-    op.create_index(
-        "ix_subscription_preferences_key",
-        "subscription_preferences",
-        ["subscription_key"],
-    )
 
 
 def downgrade() -> None:
-    op.drop_index("ix_subscription_preferences_key", table_name="subscription_preferences")
     op.drop_table("subscription_preferences")

@@ -5,6 +5,7 @@ Revises: 0011_merchant_aliases
 Create Date: 2026-06-27 00:00:00
 
 """
+
 from collections.abc import Sequence
 
 import sqlalchemy as sa
@@ -39,11 +40,6 @@ def upgrade() -> None:
             name="uq_fx_rates_currency_base_date",
         ),
     )
-    op.create_index(
-        "ix_fx_rates_currency_base_date",
-        "fx_rates",
-        ["currency", "base_currency", "rate_date"],
-    )
     op.add_column(
         "transactions",
         sa.Column("amount_base", sa.Numeric(14, 2), nullable=True),
@@ -72,5 +68,4 @@ def downgrade() -> None:
     op.drop_column("transactions", "fx_rate")
     op.drop_column("transactions", "base_currency")
     op.drop_column("transactions", "amount_base")
-    op.drop_index("ix_fx_rates_currency_base_date", table_name="fx_rates")
     op.drop_table("fx_rates")

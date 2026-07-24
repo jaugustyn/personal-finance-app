@@ -4,6 +4,7 @@ Revision ID: 0014_ml_hardening
 Revises: 0013_subscription_preferences
 Create Date: 2026-07-11 00:00:00
 """
+
 from collections.abc import Sequence
 
 import sqlalchemy as sa
@@ -38,7 +39,12 @@ def upgrade() -> None:
         sa.Column("ontology_version", sa.String(32), nullable=False),
         sa.Column("dataset_fingerprint", sa.String(64), nullable=False),
         sa.Column("config", sa.JSON(), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
         sa.Column("invalidated_at", sa.DateTime(timezone=True)),
         sa.Column("invalidation_reason", sa.String(512)),
         sa.CheckConstraint(
@@ -72,7 +78,12 @@ def upgrade() -> None:
         sa.Column("result", sa.JSON(), nullable=False),
         sa.Column("message", sa.String(512)),
         sa.Column("error", sa.String(2048)),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
         sa.Column("started_at", sa.DateTime(timezone=True)),
         sa.Column("finished_at", sa.DateTime(timezone=True)),
         sa.UniqueConstraint("execution_slot", name="uq_ml_training_jobs_execution_slot"),
@@ -111,7 +122,12 @@ def upgrade() -> None:
         sa.Column("gates", sa.JSON(), nullable=False),
         sa.Column("confidence_policy", sa.JSON(), nullable=False),
         sa.Column("promotable", sa.Boolean(), server_default="false", nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
         sa.Column("activated_at", sa.DateTime(timezone=True)),
         sa.CheckConstraint(
             "status IN ('candidate', 'active', 'archived', 'rejected')",

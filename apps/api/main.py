@@ -16,6 +16,7 @@ from apps.api.middleware import (
 from apps.api.routers import (
     anomalies,
     app_lock,
+    assets,
     categories,
     chat,
     currencies,
@@ -128,6 +129,7 @@ app.include_router(imports.router, dependencies=_protected)
 app.include_router(transactions.router, dependencies=_protected)
 app.include_router(merchants.router, dependencies=_protected)
 app.include_router(currencies.router, dependencies=_protected)
+app.include_router(assets.router, dependencies=_protected)
 app.include_router(fixed_charges.router, dependencies=_protected)
 app.include_router(ml.router, dependencies=_protected)
 app.include_router(forecast.router, dependencies=_protected)
