@@ -145,6 +145,162 @@ export interface CurrencyStatus {
   missing_rate_count: number;
 }
 
+export type AssetAccountKind =
+  | "bank"
+  | "brokerage"
+  | "retirement"
+  | "crypto"
+  | "physical"
+  | "other";
+export type AssetAccountWrapper = "standard" | "ike" | "ikze" | "ppk";
+export type AssetTrackingMode = "aggregate" | "detailed";
+export type AssetType =
+  | "cash"
+  | "savings_account"
+  | "deposit"
+  | "bond"
+  | "stock"
+  | "etf"
+  | "fund"
+  | "crypto"
+  | "precious_metal"
+  | "loan_receivable"
+  | "other";
+export type AssetInputMode = "total" | "unit_price";
+export type AssetGrowthMode = "none" | "fixed_rate";
+export type AssetCompounding = "simple" | "daily" | "monthly" | "yearly";
+export type AssetHistoryRange = "3m" | "1y" | "all";
+
+export interface AssetValuationInput {
+  valuation_date: string;
+  input_mode: AssetInputMode;
+  total_value?: number | string | null;
+  quantity?: number | string | null;
+  unit_price?: number | string | null;
+  growth_mode: AssetGrowthMode;
+  annual_rate_percent?: number | string | null;
+  compounding?: AssetCompounding | null;
+  growth_end_date?: string | null;
+}
+
+export interface AssetValuation extends AssetValuationInput {
+  id: number;
+  item_id: number;
+  total_value: number | string;
+  currency: string;
+  amount_pln: number | string | null;
+  fx_rate: number | string | null;
+  fx_rate_date: string | null;
+  fx_rate_source: string | null;
+  source: string;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export interface AssetValue {
+  as_of: string;
+  valuation_id: number | null;
+  valuation_date: string | null;
+  native_value: number | string | null;
+  currency: string;
+  amount_pln: number | string | null;
+  growth_mode: AssetGrowthMode | null;
+  projected: boolean;
+  stale: boolean;
+  matured: boolean;
+  unconverted: boolean;
+  fx_rate_date: string | null;
+  fx_rate_source: string | null;
+}
+
+export interface AssetItem {
+  id: number;
+  account_id: number;
+  name: string;
+  asset_type: AssetType;
+  currency: string;
+  symbol: string | null;
+  isin: string | null;
+  review_interval_days: number | null;
+  notes: string | null;
+  archived_at: string | null;
+  current_value: AssetValue;
+}
+
+export interface AssetAccount {
+  id: number;
+  name: string;
+  institution: string | null;
+  kind: AssetAccountKind;
+  wrapper: AssetAccountWrapper;
+  tracking_mode: AssetTrackingMode;
+  default_currency: string;
+  notes: string | null;
+  archived_at: string | null;
+  amount_pln: number | string;
+  native_value: number | string | null;
+  native_currency: string | null;
+  valuation_item_id: number | null;
+  aggregate_asset_type: AssetType | null;
+  review_interval_days: number | null;
+  stale_count: number;
+  matured_count: number;
+  unconverted_count: number;
+  missing_valuation_count: number;
+  items: AssetItem[];
+}
+
+export interface AssetOverview {
+  as_of: string;
+  base_currency: "PLN";
+  total_pln: number | string;
+  account_count: number;
+  item_count: number;
+  stale_count: number;
+  matured_count: number;
+  unconverted_count: number;
+  missing_valuation_count: number;
+  breakdown: {
+    asset_type: AssetType;
+    amount_pln: number | string;
+    share: number | string;
+  }[];
+}
+
+export interface AssetHistory {
+  range: AssetHistoryRange;
+  base_currency: "PLN";
+  points: {
+    date: string;
+    amount_pln: number | string;
+    unconverted_count: number;
+  }[];
+}
+
+export interface AssetAccountInput {
+  name: string;
+  institution?: string | null;
+  kind: AssetAccountKind;
+  wrapper: AssetAccountWrapper;
+  tracking_mode: AssetTrackingMode;
+  default_currency: string;
+  notes?: string | null;
+  aggregate_asset_type?: AssetType | null;
+  review_interval_days?: 7 | 30 | 90 | 180 | null;
+  initial_valuation?: AssetValuationInput | null;
+}
+
+export interface AssetItemInput {
+  name: string;
+  asset_type: AssetType;
+  currency?: string | null;
+  symbol?: string | null;
+  isin?: string | null;
+  review_interval_days?: 7 | 30 | 90 | 180 | null;
+  notes?: string | null;
+  initial_valuation?: AssetValuationInput | null;
+}
+
 export type ClassificationDecisionAction =
   | "accept"
   | "review"

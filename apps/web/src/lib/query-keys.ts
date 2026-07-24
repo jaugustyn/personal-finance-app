@@ -16,6 +16,16 @@ interface DashboardRankingKey extends DashboardRangeKey {
 }
 
 export const queryKeys = {
+  assets: {
+    all: ["assets"] as const,
+    overview: ["assets", "overview"] as const,
+    accounts: (includeArchived = false) =>
+      ["assets", "accounts", { includeArchived }] as const,
+    history: (range: "3m" | "1y" | "all", accountId?: number | null) =>
+      ["assets", "history", { range, accountId: accountId ?? null }] as const,
+    valuations: (itemId: number | null) =>
+      ["assets", "valuations", { itemId }] as const,
+  },
   categories: {
     all: ["categories"] as const,
     list: ["categories", "list"] as const,
@@ -157,7 +167,14 @@ export function invalidateImportData(queryClient: QueryClient) {
 }
 
 export function invalidateCurrencyData(queryClient: QueryClient) {
-  return invalidateRoots(queryClient, transactionDerivedRoots);
+  return invalidateRoots(queryClient, [
+    ...transactionDerivedRoots,
+    queryKeys.assets.all,
+  ]);
+}
+
+export function invalidateAssetData(queryClient: QueryClient) {
+  return invalidateRoots(queryClient, [queryKeys.assets.all]);
 }
 
 export function invalidateMerchantData(queryClient: QueryClient) {

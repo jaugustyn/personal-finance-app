@@ -19,7 +19,9 @@ export function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
             {t(section.titleKey)}
           </p>
           {section.items.map((it) => {
-            const active = pathname === it.href;
+            const active =
+              pathname === it.href ||
+              (it.href !== "/" && pathname.startsWith(`${it.href}/`));
             const Icon = it.icon;
             return (
               <Link

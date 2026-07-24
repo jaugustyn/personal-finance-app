@@ -286,17 +286,20 @@ export function DatePicker({
   value,
   onChange,
   ariaLabel,
+  max,
 }: {
   id?: string;
   value: string;
   onChange: (value: string) => void;
   ariaLabel: string;
+  max?: string;
 }) {
   const { t } = useT();
   const { formatDate, localeTag } = useFormatters();
   const [open, setOpen] = useState(false);
   const [calendarMode, setCalendarMode] = useState<CalendarMode>("days");
   const selectedDate = parseDateValue(value);
+  const maximumDate = parseDateValue(max ?? "");
   const [visibleMonth, setVisibleMonth] = useState(() =>
     startOfMonth(selectedDate ?? new Date()),
   );
@@ -392,6 +395,7 @@ export function DatePicker({
                       day={day}
                       from={selectedDate}
                       to={null}
+                      disabled={Boolean(maximumDate && day > maximumDate)}
                       onClick={() => {
                         onChange(toDateValue(day));
                         setOpen(false);
@@ -575,11 +579,13 @@ function CalendarDay({
   from,
   to,
   onClick,
+  disabled = false,
 }: {
   day: Date;
   from: Date | null;
   to: Date | null;
   onClick: () => void;
+  disabled?: boolean;
 }) {
   const selectedStart = Boolean(from && sameDay(day, from));
   const selectedEnd = Boolean(to && sameDay(day, to));
@@ -590,12 +596,14 @@ function CalendarDay({
     <button
       type="button"
       onClick={onClick}
+      disabled={disabled}
       className={cn(
         "flex h-8 items-center justify-center rounded-md text-sm transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
         inRange && "bg-primary/10 text-foreground",
         (selectedStart || selectedEnd) &&
           "bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground",
         today && !selectedStart && !selectedEnd && "ring-1 ring-border",
+        disabled && "cursor-not-allowed opacity-35 hover:bg-transparent hover:text-current",
       )}
     >
       {day.getDate()}
