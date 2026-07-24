@@ -154,9 +154,8 @@ The integrity command prints aggregate counts and transaction IDs only. Exit
 code `0` means no critical inconsistency; exit code `1` means the reported IDs
 require review or an explicit currency recomputation.
 
-CI runs the regular backend and frontend suites plus a PostgreSQL migration
-smoke test for every pull request. The full PostgreSQL reference scenario
-remains an explicit local integration check for changes affecting imports,
-deduplication or financial aggregates. Docker images are rebuilt only after
-Docker or dependency changes. Dependency security audits run weekly and can
-also be started manually.
+CI runs the regular backend and frontend suites for every pull request. The
+PostgreSQL reference scenario and migration checks remain explicit local
+integration checks. Docker images are rebuilt only after Docker or dependency
+changes. Dependency security audits run weekly and can also be started
+manually.
