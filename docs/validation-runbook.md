@@ -51,7 +51,10 @@ Before validating ML, check the main data mutations:
    summary update consistently.
 2. Create a fixed-charge schedule, link and unlink an existing transaction,
    then add an explicit manual payment for one occurrence.
-3. In Settings, enable the inactivity lock with a short timeout, lock the
+3. Add one aggregate asset and one detailed account. Update a valuation,
+   archive and restore an item, and verify that a foreign valuation without a
+   PLN rate is excluded from the displayed total.
+4. In Settings, enable the inactivity lock with a short timeout, lock the
    application manually, unlock it and disable the lock again.
 
 These checks use synthetic values only. A fixed-charge schedule must not create

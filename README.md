@@ -18,9 +18,6 @@ activation is always manual. Forecasting, anomaly detection, subscription
 detection and transaction-type ML are implemented but remain provisional from
 the validation perspective.
 
-The asset portfolio module is intentionally unavailable pending a redesign;
-the dashboard route currently contains only a placeholder.
-
 ## Main capabilities
 
 - Pekao and Revolut imports, plus a generic CSV/TSV/TXT mapping flow.
@@ -33,6 +30,9 @@ the dashboard route currently contains only a placeholder.
 - Forecasting, anomaly and subscription detection.
 - Manual fixed-charge schedules with transaction matching and explicit payment
   entry.
+- Approximate gross asset tracking for accounts, investments, deposits, loans
+  receivable, retirement wrappers, crypto and physical assets, with manual
+  history, a compact analysis view and optional fixed-rate projections.
 - Polish local assistant backed by deterministic finance tools.
 
 ## Architecture

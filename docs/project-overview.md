@@ -105,6 +105,7 @@ expense-category model.
 | Anomalies | IsolationForest, robust statistics and explainable rules | Provisional |
 | Subscriptions | Merchant normalization, cadence and amount stability | Provisional |
 | Fixed charges | Manual PLN schedule with calendar-based future dates | Operational |
+| Assets | Manual aggregate or detailed valuations, compact analysis and optional fixed-rate projection | Operational |
 | Assistant | Polish routing and deterministic tools with optional local Ollama tool selection | Operational, optional LLM |
 
 The category model is the primary ML workflow. It uses versioned candidates,
@@ -155,7 +156,7 @@ data/model identifiers, privacy diagnostics and explicit section statuses.
 | Category model results | Not bundled; generated from private data |
 | Forecasting, anomalies, subscriptions and type ML | Implemented, validation provisional |
 | Manual fixed-charge schedules | Operational |
-| Asset portfolio | Removed pending redesign; UI placeholder only |
+| Approximate asset tracking | Operational; manual valuations, compact analysis and optional fixed-rate projection |
 | Frozen private evaluation set | Backend available, hidden from normal UI |
 | Evidence generation | Operational; strict classification profile requires sufficient confirmed data |
 

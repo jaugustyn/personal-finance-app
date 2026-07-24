@@ -1,6 +1,6 @@
 # Aktualne metodyki i rozwiązania
 
-Stan na 2026-07-22. Dokument opisuje rozwiązania faktycznie obecne w kodzie.
+Stan na 2026-07-24. Dokument opisuje rozwiązania faktycznie obecne w kodzie.
 Nie zawiera wyników z prywatnych danych; kryteria modelu kategorii znajdują się
 w [model card](model-card.md).
 
@@ -41,6 +41,7 @@ Granice odpowiedzialności:
 - `src/finance/ingestion`: parsery i import;
 - `src/finance/transactions`: zapytania, mutacje, reguły i review;
 - `src/finance/fixed_charges`: harmonogramy opłat i powiązania płatności;
+- `src/finance/assets`: rachunki, składniki aktywów, wyceny i projekcje;
 - `src/finance/stats`: agregacje dashboardu i podsumowań;
 - `src/finance/ml`: klasyfikacja, forecasting, anomalie, subskrypcje i evidence;
 - `src/finance/llm`: routing, narzędzia, formatowanie i klient Ollama.
@@ -275,6 +276,26 @@ zaksięgowanych kwot. Użytkownik może przypisać istniejącą transakcję albo
 dodać ręczną płatność do terminu opłaty. Powiązanie można cofnąć; nie
 modyfikuje ono typu ani kategorii transakcji.
 
+### Aktywa
+
+Moduł aktywów służy do przybliżonego śledzenia łącznej wartości aktywów brutto,
+a nie do księgowości maklerskiej ani obliczania majątku netto. Rachunek może być
+prowadzony jako jedna łączna wartość
+albo jako lista składników, np. gotówki, lokat, obligacji, ETF-ów, akcji,
+kryptowalut, metali szlachetnych i pożyczek udzielonych. Pożyczka udzielona
+jest traktowana jako należność zwiększająca majątek; pożyczka zaciągnięta nie
+jest aktywem. Obsługiwane są również oznaczenia IKE, IKZE i PPK.
+
+Każda zmiana wartości tworzy datowaną wycenę. Dla kont oszczędnościowych, lokat
+i pożyczek udzielonych użytkownik może włączyć prostą projekcję według stałej
+stopy rocznej i daty końcowej. Jest to jawne oszacowanie; instrumenty rynkowe
+nie otrzymują automatycznej wyceny. Wyceny walutowe używają tej samej bezpiecznej polityki FX
+co transakcje: bez poprawnego kursu do PLN pozostają widoczne, ale nie są
+doliczane do sumy majątku. Archiwizacja zachowuje historię i jest odwracalna.
+Osobny, prosty widok analityczny prezentuje zmianę łącznej wartości, strukturę
+typów aktywów i udział rachunków. Zmiana wartości obejmuje również wpłaty i
+wypłaty, dlatego nie jest prezentowana jako stopa zwrotu z inwestycji.
+
 Forecasting oraz detekcja anomalii i subskrypcji pozostają `provisional` w
 pakiecie evidence do czasu osobnej walidacji. Ręczne harmonogramy stałych opłat
 są funkcją operacyjną i nie są modułem ML.
@@ -338,8 +359,8 @@ ale zmiana eksperymentalnej ontologii może wymagać czystego importu.
 
 ## 13. Ograniczenia
 
-- Moduł aktywów oczekuje na osobną przebudowę; backend, tabele i wyceny nie są
-  częścią bieżącej implementacji, a frontend pokazuje wyłącznie placeholder.
+- Wyceny aktywów są wprowadzane ręcznie; aplikacja nie integruje się obecnie z
+  brokerami ani dostawcami notowań giełdowych i kryptowalutowych.
 - Wyniki dotyczą jednego prywatnego użytkownika i nie dowodzą generalizacji na
   populację.
 - Małe oraz niezbalansowane klasy dają niestabilne metryki.
