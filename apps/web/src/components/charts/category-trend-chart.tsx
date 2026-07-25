@@ -16,7 +16,11 @@ import type { CategoryTrendPoint } from "@/lib/api";
 import { getCategoryChartStyle } from "@/lib/category-colors";
 import { useFormatters, useT, tCategory } from "@/lib/i18n";
 import { useCategories } from "@/hooks/use-categories";
-import { PIE_COLORS, tooltipStyle } from "./chart-utils";
+import {
+  formatCompactAxisNumber,
+  PIE_COLORS,
+  tooltipStyle,
+} from "./chart-utils";
 
 /**
  * Multi-series line chart of monthly spend for the top categories. The flat
@@ -31,7 +35,7 @@ export function CategoryTrendChart({
   currency?: string;
 }) {
   const { t } = useT();
-  const { formatCurrency, formatMonth } = useFormatters();
+  const { formatCurrency, formatMonth, localeTag } = useFormatters();
   const { resolvedTheme } = useTheme();
   const theme = resolvedTheme === "dark" ? "dark" : "light";
   const { data: categories = [] } = useCategories();
@@ -74,7 +78,9 @@ export function CategoryTrendChart({
         <YAxis
           tick={{ fontSize: 12 }}
           stroke="hsl(var(--muted-foreground))"
-          tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`}
+          tickFormatter={(value) =>
+            formatCompactAxisNumber(value, localeTag)
+          }
         />
         <Tooltip
           contentStyle={tooltipStyle()}

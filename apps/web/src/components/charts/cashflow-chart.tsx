@@ -14,7 +14,7 @@ import {
 import { useMemo } from "react";
 import type { CashflowPoint } from "@/lib/api";
 import { useFormatters, useT } from "@/lib/i18n";
-import { tooltipStyle } from "./chart-utils";
+import { formatCompactAxisNumber, tooltipStyle } from "./chart-utils";
 
 export function CashflowChart({
   data,
@@ -24,7 +24,7 @@ export function CashflowChart({
   currency?: string;
 }) {
   const { t } = useT();
-  const { formatCurrency, formatMonth } = useFormatters();
+  const { formatCurrency, formatMonth, localeTag } = useFormatters();
   const formatted = useMemo(
     () =>
       data.map((d) => ({
@@ -50,7 +50,9 @@ export function CashflowChart({
         <YAxis
           tick={{ fontSize: 12 }}
           stroke="hsl(var(--muted-foreground))"
-          tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`}
+          tickFormatter={(value) =>
+            formatCompactAxisNumber(value, localeTag)
+          }
         />
         <Tooltip
           contentStyle={tooltipStyle()}

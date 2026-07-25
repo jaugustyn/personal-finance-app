@@ -34,7 +34,7 @@ export function TopMerchantsBar({
   currency?: string;
 }) {
   const { t } = useT();
-  const { formatCurrency } = useFormatters();
+  const { formatCurrency, localeTag } = useFormatters();
   const { resolvedTheme } = useTheme();
   const theme = resolvedTheme === "dark" ? "dark" : "light";
   const { data: categories = [] } = useCategories();
@@ -64,7 +64,9 @@ export function TopMerchantsBar({
           type="number"
           tick={{ fontSize: 11 }}
           stroke="hsl(var(--muted-foreground))"
-          tickFormatter={formatCompactAxisNumber}
+          tickFormatter={(value) =>
+            formatCompactAxisNumber(value, localeTag)
+          }
         />
         <YAxis
           type="category"

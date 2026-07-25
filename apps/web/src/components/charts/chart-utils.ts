@@ -27,9 +27,38 @@ export function truncateChartLabel(value: unknown, maxLength = 18): string {
   return `${text.slice(0, maxLength - 3).trimEnd()}...`;
 }
 
-export function formatCompactAxisNumber(value: unknown): string {
+export function formatCompactAxisNumber(
+  value: unknown,
+  localeTag = "pl-PL",
+): string {
   const number = Number(value);
   if (!Number.isFinite(number)) return "";
-  if (Math.abs(number) >= 1000) return `${Math.round(number / 1000)}k`;
-  return String(Math.round(number));
+
+  const absolute = Math.abs(number);
+  let scaled = number;
+  let suffix = "";
+  if (absolute >= 1_000_000_000) {
+    scaled = number / 1_000_000_000;
+    suffix = "B";
+  } else if (absolute >= 1_000_000) {
+    scaled = number / 1_000_000;
+    suffix = "M";
+  } else if (absolute >= 1_000) {
+    scaled = number / 1_000;
+    suffix = "k";
+  }
+
+  const scaledAbsolute = Math.abs(scaled);
+  let maximumFractionDigits = 0;
+  if (suffix && scaledAbsolute < 10) {
+    maximumFractionDigits = 1;
+  } else if (!suffix && absolute < 10) {
+    maximumFractionDigits = 2;
+  } else if (!suffix && absolute < 100) {
+    maximumFractionDigits = 1;
+  }
+
+  return `${new Intl.NumberFormat(localeTag, {
+    maximumFractionDigits,
+  }).format(scaled)}${suffix}`;
 }

@@ -14,7 +14,7 @@ import {
 import { useMemo } from "react";
 import type { CategoryTrendPoint } from "@/lib/api";
 import { useFormatters, useT, tCategory } from "@/lib/i18n";
-import { tooltipStyle } from "./chart-utils";
+import { formatCompactAxisNumber, tooltipStyle } from "./chart-utils";
 
 /**
  * Diverging horizontal bars for either latest month-over-month change or
@@ -30,7 +30,7 @@ export function CategoryMoMChart({
   comparisonMode?: "latest" | "period";
 }) {
   const { t } = useT();
-  const { formatCurrency } = useFormatters();
+  const { formatCurrency, localeTag } = useFormatters();
 
   const { rows } = useMemo(() => {
     const months = Array.from(new Set(data.map((d) => d.month))).sort();
@@ -82,7 +82,9 @@ export function CategoryMoMChart({
             type="number"
             tick={{ fontSize: 12 }}
             stroke="hsl(var(--muted-foreground))"
-            tickFormatter={(v) => `${(v / 1000).toFixed(1)}k`}
+            tickFormatter={(value) =>
+              formatCompactAxisNumber(value, localeTag)
+            }
           />
           <YAxis
             type="category"

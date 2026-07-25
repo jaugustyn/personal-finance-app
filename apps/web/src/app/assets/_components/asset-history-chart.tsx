@@ -16,7 +16,7 @@ import { formatCompactAxisNumber, tooltipStyle } from "@/components/charts/chart
 
 export function AssetHistoryChart({ data }: { data: AssetHistory["points"] }) {
   const { t } = useT();
-  const { formatCurrency, formatDate } = useFormatters();
+  const { formatCurrency, formatDate, localeTag } = useFormatters();
   const points = useMemo(
     () =>
       data.map((point) => ({
@@ -47,7 +47,9 @@ export function AssetHistoryChart({ data }: { data: AssetHistory["points"] }) {
           width={46}
           tick={{ fontSize: 11 }}
           stroke="hsl(var(--muted-foreground))"
-          tickFormatter={formatCompactAxisNumber}
+          tickFormatter={(value) =>
+            formatCompactAxisNumber(value, localeTag)
+          }
         />
         <Tooltip
           contentStyle={tooltipStyle()}
@@ -68,4 +70,3 @@ export function AssetHistoryChart({ data }: { data: AssetHistory["points"] }) {
     </ResponsiveContainer>
   );
 }
-

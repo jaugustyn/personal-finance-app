@@ -12,7 +12,7 @@ import {
 import { useMemo } from "react";
 import type { NetWorthPoint } from "@/lib/api";
 import { useFormatters, useT } from "@/lib/i18n";
-import { tooltipStyle } from "./chart-utils";
+import { formatCompactAxisNumber, tooltipStyle } from "./chart-utils";
 
 export function NetWorthChart({
   data,
@@ -22,7 +22,7 @@ export function NetWorthChart({
   currency?: string;
 }) {
   const { t } = useT();
-  const { formatCurrency, formatMonth } = useFormatters();
+  const { formatCurrency, formatMonth, localeTag } = useFormatters();
   const formatted = useMemo(
     () => data.map((d) => ({ label: formatMonth(d.month), balance: Number(d.balance) })),
     [data, formatMonth],
@@ -41,7 +41,9 @@ export function NetWorthChart({
         <YAxis
           tick={{ fontSize: 12 }}
           stroke="hsl(var(--muted-foreground))"
-          tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`}
+          tickFormatter={(value) =>
+            formatCompactAxisNumber(value, localeTag)
+          }
         />
         <Tooltip
           contentStyle={tooltipStyle()}

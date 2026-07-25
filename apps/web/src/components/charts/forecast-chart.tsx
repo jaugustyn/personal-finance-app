@@ -13,7 +13,7 @@ import {
 import { useMemo } from "react";
 import type { ForecastPoint } from "@/lib/api";
 import { useFormatters, useT } from "@/lib/i18n";
-import { tooltipStyle } from "./chart-utils";
+import { formatCompactAxisNumber, tooltipStyle } from "./chart-utils";
 
 export function ForecastChart({
   history,
@@ -25,7 +25,7 @@ export function ForecastChart({
   currency: string;
 }) {
   const { t } = useT();
-  const { formatCurrency, formatMonth } = useFormatters();
+  const { formatCurrency, formatMonth, localeTag } = useFormatters();
   const data = useMemo(
     () => [
       ...history.map((h) => ({
@@ -49,7 +49,9 @@ export function ForecastChart({
         <YAxis
           tick={{ fontSize: 12 }}
           stroke="hsl(var(--muted-foreground))"
-          tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`}
+          tickFormatter={(value) =>
+            formatCompactAxisNumber(value, localeTag)
+          }
         />
         <Tooltip
           contentStyle={tooltipStyle()}
