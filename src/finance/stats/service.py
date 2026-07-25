@@ -5,7 +5,7 @@ from datetime import date
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import and_, case, func, select
+from sqlalchemy import Integer, and_, case, cast, func, select
 from sqlalchemy.orm import Session
 
 from finance.analytics.filters import category_candidate_type_filter, non_transfer_filters
@@ -25,9 +25,8 @@ from finance.stats.types import (
     month_bucket,
 )
 from finance.transactions.merchants import (
-    load_merchant_alias_maps,
+    load_merchant_identity_resolver,
     merchant_display_label,
-    merchant_identity,
 )
 from finance.transactions.type_decision import (
     TYPE_GOLD_METHODS,
@@ -48,6 +47,7 @@ __all__ = [
     "custom_recap",
     "month_bucket",
 ]
+
 
 def months_ago(months: int) -> date:
     today = date.today()
@@ -135,6 +135,17 @@ def _base_filters(start: date | None, *, include_transfers: bool) -> list[Any]:
     ]
 
 
+def _month_parts() -> tuple[Any, Any]:
+    return (
+        cast(func.extract("year", Transaction.booking_date), Integer),
+        cast(func.extract("month", Transaction.booking_date), Integer),
+    )
+
+
+def _month_label(year: int, month: int) -> str:
+    return f"{int(year):04d}-{int(month):02d}"
+
+
 def _category_candidate_type_filter() -> Any:
     return category_candidate_type_filter()
 
@@ -146,6 +157,12 @@ def overview(
     include_transfers: bool = False,
 ) -> Overview:
     start = _period_start(months)
+    safe_amount = amount_base_expr()
+    converted = safe_amount.is_not(None)
+    provisional = (
+        Transaction.transaction_type_confirmation_method.is_(None)
+        | Transaction.transaction_type_confirmation_method.not_in(TYPE_GOLD_METHODS)
+    )
     stmt = select(
         _income_expr().label("inc"),
         _expense_expr().label("gross_exp"),
@@ -154,36 +171,18 @@ def overview(
         _typed_sum(TransactionType.ASSET_ALLOCATION, TransactionDirection.DEBIT).label(
             "allocations"
         ),
-        func.count().label("cnt"),
+        func.sum(case((converted, 1), else_=0)).label("cnt"),
         func.sum(
             case(
-                (
-                    and_(
-                        (
-                            Transaction.transaction_type_confirmation_method.is_(None)
-                            | Transaction.transaction_type_confirmation_method.not_in(
-                                TYPE_GOLD_METHODS
-                            )
-                        ),
-                    ),
-                    1,
-                ),
+                (and_(converted, provisional), 1),
                 else_=0,
             )
         ).label("provisional"),
-        func.min(Transaction.booking_date).label("dmin"),
-        func.max(Transaction.booking_date).label("dmax"),
-    ).where(*_base_filters(start, include_transfers=include_transfers))
+        func.min(case((converted, Transaction.booking_date))).label("dmin"),
+        func.max(case((converted, Transaction.booking_date))).label("dmax"),
+        func.sum(case((safe_amount.is_(None), 1), else_=0)).label("unconverted"),
+    ).where(*_scope_filters(start, include_transfers=include_transfers))
     row = session.execute(stmt).one()
-    unconverted_count = int(
-        session.execute(
-            select(func.count()).where(
-                *_scope_filters(start, include_transfers=include_transfers),
-                amount_base_expr().is_(None),
-            )
-        ).scalar_one()
-        or 0
-    )
     income = Decimal(row.inc or 0)
     gross_expenses = Decimal(row.gross_exp or 0)
     refunds = Decimal(row.refunds or 0)
@@ -207,7 +206,7 @@ def overview(
         tx_count=int(row.cnt or 0),
         base_currency=resolve_base_currency(session),
         provisional_transaction_count=int(row.provisional or 0),
-        unconverted_count=unconverted_count,
+        unconverted_count=int(row.unconverted or 0),
     )
 
 
@@ -218,18 +217,24 @@ def cashflow(
     include_transfers: bool = False,
 ) -> list[CashflowBucket]:
     start = _period_start(months)
+    year, month = _month_parts()
+    transaction_type = effective_transaction_type_expr()
     stmt = select(
-        Transaction.booking_date,
-        Transaction.direction,
-        effective_transaction_type_expr().label("transaction_type"),
-        func.abs(amount_base_expr()).label("amount"),
-    ).where(*_base_filters(start, include_transfers=include_transfers))
+        year.label("year"),
+        month.label("month"),
+        transaction_type.label("transaction_type"),
+        func.sum(func.abs(amount_base_expr())).label("amount"),
+    ).where(*_base_filters(start, include_transfers=include_transfers)).group_by(
+        year,
+        month,
+        transaction_type,
+    )
     rows = session.execute(stmt).all()
     sums: dict[str, dict[str, Decimal]] = {}
     for row in rows:
-        month = month_bucket(row.booking_date)
+        month_label = _month_label(row.year, row.month)
         bucket = sums.setdefault(
-            month,
+            month_label,
             {
                 "income": Decimal(0),
                 "expenses": Decimal(0),
@@ -407,30 +412,28 @@ def top_merchants(
         filters.append(
             effective_transaction_type_expr() == TransactionType.EXPENSE.value
         )
+    resolver = load_merchant_identity_resolver(session)
+    amount = func.abs(amount_base_expr())
+    groups: dict[str, dict[str, Any]] = {}
     rows = session.execute(
         select(
             Transaction.merchant,
             Transaction.title,
-            func.abs(amount_base_expr()).label("amount"),
             Transaction.category,
+            func.sum(amount).label("amount"),
+            func.count(Transaction.id).label("tx_count"),
         )
         .where(*filters)
+        .group_by(Transaction.merchant, Transaction.title, Transaction.category)
     ).all()
-
-    alias_map, label_map = load_merchant_alias_maps(session)
-    groups: dict[str, dict[str, Any]] = {}
     for row in rows:
-        identity = merchant_identity(
-            row.merchant,
-            row.title,
-            alias_map=alias_map,
-            label_map=label_map,
-        )
+        identity = resolver.resolve(row.merchant, row.title)
         key = identity.canonical_key
         if not key:
             continue
         label = identity.display_label or merchant_display_label(row.merchant, row.title)
         value = Decimal(row.amount or 0)
+        row_count = int(row.tx_count or 0)
         group = groups.setdefault(
             key,
             {
@@ -442,10 +445,10 @@ def top_merchants(
             },
         )
         group["amount"] += value
-        group["count"] += 1
+        group["count"] += row_count
         labels = group["labels"]
         label_stats = labels.setdefault(label, {"count": 0, "amount": Decimal(0)})
-        label_stats["count"] += 1
+        label_stats["count"] += row_count
         label_stats["amount"] += value
         if row.category:
             categories = group["categories"]
@@ -532,26 +535,32 @@ def category_trend(
     if not top_categories:
         return []
 
+    year, month = _month_parts()
     rows = session.execute(
         select(
-            Transaction.booking_date,
+            year.label("year"),
+            month.label("month"),
             Transaction.category.label("category"),
-            case(
-                (
-                    Transaction.direction == TransactionDirection.CREDIT.value,
-                    -func.abs(amount_base_expr()),
-                ),
-                else_=func.abs(amount_base_expr()),
+            func.sum(
+                case(
+                    (
+                        Transaction.direction == TransactionDirection.CREDIT.value,
+                        -func.abs(amount_base_expr()),
+                    ),
+                    else_=func.abs(amount_base_expr()),
+                )
             ).label("amount"),
-        ).where(*base, Transaction.category.in_(top_categories))
+        )
+        .where(*base, Transaction.category.in_(top_categories))
+        .group_by(year, month, Transaction.category)
     ).all()
-    sums: dict[tuple[str, str], Decimal] = {}
-    for row in rows:
-        key = (month_bucket(row.booking_date), row.category)
-        sums[key] = sums.get(key, Decimal(0)) + Decimal(row.amount or 0)
     return [
-        CategoryTrendPoint(month=month, category=category, amount=value)
-        for (month, category), value in sorted(sums.items())
+        CategoryTrendPoint(
+            month=_month_label(row.year, row.month),
+            category=row.category,
+            amount=Decimal(row.amount or 0),
+        )
+        for row in sorted(rows, key=lambda item: (item.year, item.month, item.category))
     ]
 
 

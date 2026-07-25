@@ -287,6 +287,33 @@ def test_merchant_groups_sort_before_limit(db_session) -> None:
     assert [group.merchant for group in groups] == ["Duży wydatek"]
 
 
+def test_merchant_sort_hydrates_only_the_requested_page(db_session) -> None:
+    for index, merchant in enumerate(["Zulu", "Alfa", "Market", "Beta", "Omega"]):
+        _tx(
+            db_session,
+            dedup_hash=f"merchant-projection-{index}",
+            merchant=merchant,
+        )
+    db_session.expunge_all()
+
+    rows = service.list_transactions(
+        db_session,
+        service.TransactionFilters(),
+        limit=2,
+        offset=1,
+        sort_by="merchant",
+        sort_direction="asc",
+    )
+
+    loaded_transactions = [
+        value
+        for value in db_session.identity_map.values()
+        if isinstance(value, Transaction)
+    ]
+    assert [row.merchant for row in rows] == ["Beta", "Market"]
+    assert {row.id for row in loaded_transactions} == {row.id for row in rows}
+
+
 def test_transaction_filters_review_priority_orders_uncertain_rows_first(
     db_session,
 ) -> None:

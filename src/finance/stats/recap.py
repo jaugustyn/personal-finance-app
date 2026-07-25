@@ -20,9 +20,9 @@ from finance.currencies import amount_base_expr, resolve_base_currency
 from finance.domain.enums import TransactionDirection, TransactionType
 from finance.domain.models import Transaction
 from finance.transactions.merchants import (
-    load_merchant_alias_maps,
+    MerchantIdentityResolver,
+    load_merchant_identity_resolver,
     merchant_display_label,
-    merchant_identity,
 )
 from finance.transactions.type_decision import effective_transaction_type_expr
 
@@ -223,32 +223,29 @@ def cashflow_totals(
 def _merchant_totals(
     session: Session,
     bounds: PeriodBounds,
+    *,
+    resolver: MerchantIdentityResolver,
 ) -> dict[str, dict[str, Any]]:
     base_amount = amount_base_expr()
     rows = session.execute(
         select(
             Transaction.merchant,
             Transaction.title,
-            base_amount,
             Transaction.direction,
+            func.sum(func.abs(base_amount)).label("amount"),
+            func.count(Transaction.id).label("count"),
         )
         .where(
             *expense_category_candidate_filters(),
             *period_filters(bounds.start, bounds.end),
             *non_transfer_filters(),
+            base_amount.is_not(None),
         )
+        .group_by(Transaction.merchant, Transaction.title, Transaction.direction)
     ).all()
-    alias_map, label_map = load_merchant_alias_maps(session)
     groups: dict[str, dict[str, Any]] = {}
-    for merchant, title, amount, direction in rows:
-        if amount is None:
-            continue
-        identity = merchant_identity(
-            merchant,
-            title,
-            alias_map=alias_map,
-            label_map=label_map,
-        )
+    for merchant, title, direction, amount, count in rows:
+        identity = resolver.resolve(merchant, title)
         if not identity.canonical_key:
             continue
         group = groups.setdefault(
@@ -261,15 +258,16 @@ def _merchant_totals(
                 "merchant_canonical_key": identity.canonical_key,
             },
         )
-        value = abs(Decimal(amount))
+        value = Decimal(amount or 0)
         if direction == TransactionDirection.CREDIT.value:
             value = -value
+        row_count = int(count or 0)
         group["amount"] += value
-        group["count"] += 1
+        group["count"] += row_count
         label = identity.display_label or merchant_display_label(merchant, title)
         labels = group["labels"]
         label_stats = labels.setdefault(label, {"count": 0, "amount": Decimal(0)})
-        label_stats["count"] += 1
+        label_stats["count"] += row_count
         label_stats["amount"] += value
         raw_label = merchant_display_label(merchant, title)
         raw_labels = group["raw_labels"]
@@ -277,7 +275,7 @@ def _merchant_totals(
             raw_label,
             {"count": 0, "amount": Decimal(0)},
         )
-        raw_stats["count"] += 1
+        raw_stats["count"] += row_count
         raw_stats["amount"] += value
 
     for group in groups.values():
@@ -406,8 +404,17 @@ def _compute_recap(
     previous_expense = _expense_by_category(session, previous_bounds)
 
     changes = _category_changes(current_expense, previous_expense, limit=top_changes)
-    current_merchants = _merchant_totals(session, current_bounds)
-    previous_merchants = _merchant_totals(session, previous_bounds)
+    merchant_resolver = load_merchant_identity_resolver(session)
+    current_merchants = _merchant_totals(
+        session,
+        current_bounds,
+        resolver=merchant_resolver,
+    )
+    previous_merchants = _merchant_totals(
+        session,
+        previous_bounds,
+        resolver=merchant_resolver,
+    )
     merchant_changes = _merchant_changes(
         current_merchants,
         previous_merchants,

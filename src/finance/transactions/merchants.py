@@ -6,7 +6,7 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from decimal import Decimal
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -75,6 +75,34 @@ GENERIC_MERCHANT_KEYS = {
 
 class MerchantAliasConflict(ValueError):
     """Raised when concurrent alias updates target the same normalized alias."""
+
+
+@dataclass
+class MerchantIdentityResolver:
+    """Resolve repeated merchant/title pairs once within a read operation."""
+
+    alias_map: dict[str, str]
+    label_map: dict[str, str]
+    _cache: dict[tuple[str | None, str | None], MerchantIdentity] = field(
+        default_factory=dict
+    )
+
+    def resolve(
+        self,
+        merchant: str | None,
+        title: str | None = None,
+    ) -> MerchantIdentity:
+        key = (merchant, title)
+        identity = self._cache.get(key)
+        if identity is None:
+            identity = merchant_identity(
+                merchant,
+                title,
+                alias_map=self.alias_map,
+                label_map=self.label_map,
+            )
+            self._cache[key] = identity
+        return identity
 
 
 @dataclass
@@ -190,6 +218,11 @@ def load_merchant_alias_maps(session: Session) -> tuple[dict[str, str], dict[str
     return alias_map, label_map
 
 
+def load_merchant_identity_resolver(session: Session) -> MerchantIdentityResolver:
+    alias_map, label_map = load_merchant_alias_maps(session)
+    return MerchantIdentityResolver(alias_map=alias_map, label_map=label_map)
+
+
 def list_aliases(session: Session) -> list[MerchantAlias]:
     rows = session.execute(select(MerchantAlias).order_by(MerchantAlias.alias_label))
     return list(rows.scalars())
@@ -204,11 +237,17 @@ def alias_usage_counts(
     if not keys:
         return counts
 
-    rows = session.execute(select(Transaction.merchant, Transaction.title))
-    for merchant, title in rows:
+    rows = session.execute(
+        select(
+            Transaction.merchant,
+            Transaction.title,
+            func.count(Transaction.id),
+        ).group_by(Transaction.merchant, Transaction.title)
+    )
+    for merchant, title, count in rows:
         alias_key = merchant_key(merchant, title)
         if alias_key in counts:
-            counts[alias_key] += 1
+            counts[alias_key] += int(count)
     return counts
 
 
@@ -332,27 +371,35 @@ def alias_suggestions(
     query = normalize_merchant(q)
     if not query:
         return []
-    alias_map, label_map = load_merchant_alias_maps(session)
+    resolver = load_merchant_identity_resolver(session)
+    alias_map = resolver.alias_map
+    label_map = resolver.label_map
+    amount = amount_base_expr()
     rows = session.execute(
-        select(Transaction.merchant, Transaction.title, amount_base_expr()).where(
-            amount_base_expr().is_not(None)
+        select(
+            Transaction.merchant,
+            Transaction.title,
+            func.sum(func.abs(amount)).label("total"),
+            func.count(Transaction.id).label("count"),
         )
+        .where(amount.is_not(None))
+        .group_by(Transaction.merchant, Transaction.title)
     ).all()
     variants: defaultdict[str, _AliasSuggestionAccumulator] = defaultdict(
         _AliasSuggestionAccumulator
     )
-    for merchant, title, amount in rows:
+    for merchant, title, total, count in rows:
         alias_key = merchant_key(merchant, title)
         if not alias_key or alias_key in alias_map:
             continue
         label = merchant_display_label(merchant, title)
         if query not in alias_key and query not in normalize_merchant(label):
             continue
-        canonical_key = merchant_canonical_key(merchant, title, alias_map=alias_map)
+        canonical_key = resolver.resolve(merchant, title).canonical_key
         variant = variants[alias_key]
-        variant.labels[label] += 1
-        variant.count += 1
-        variant.total += abs(Decimal(amount or 0))
+        variant.labels[label] += int(count)
+        variant.count += int(count)
+        variant.total += Decimal(total or 0)
         variant.canonical = canonical_key
 
     out: list[MerchantAliasSuggestion] = []
@@ -385,40 +432,47 @@ def alias_candidates(
     sort_by: str = "count",
     sort_dir: str = "desc",
 ) -> list[MerchantCandidate]:
-    alias_map, label_map = load_merchant_alias_maps(session)
+    resolver = load_merchant_identity_resolver(session)
+    alias_map = resolver.alias_map
+    label_map = resolver.label_map
+    amount = amount_base_expr()
     rows = session.execute(
-        select(Transaction.merchant, Transaction.title, amount_base_expr()).where(
+        select(
+            Transaction.merchant,
+            Transaction.title,
+            func.sum(func.abs(amount)).label("total"),
+            func.count(Transaction.id).label("count"),
+        )
+        .where(
             *expense_category_candidate_filters(),
             Transaction.direction == "debit",
-            amount_base_expr().is_not(None),
+            amount.is_not(None),
         )
+        .group_by(Transaction.merchant, Transaction.title)
     ).all()
 
     groups: defaultdict[str, _MerchantCandidateAccumulator] = defaultdict(
         _MerchantCandidateAccumulator
     )
-    for merchant, title, amount in rows:
-        identity = merchant_identity(
-            merchant,
-            title,
-            alias_map=alias_map,
-            label_map=label_map,
-        )
+    for merchant, title, total, count in rows:
+        identity = resolver.resolve(merchant, title)
         if not identity.canonical_key:
             continue
         label = merchant_display_label(merchant, title)
         alias_key = merchant_key(merchant, title)
         group = groups[identity.canonical_key]
-        group.labels[label] += 1
+        row_count = int(count)
+        row_total = Decimal(total or 0)
+        group.labels[label] += row_count
         group.aliases.add(alias_key)
         if alias_map.get(alias_key) != identity.canonical_key:
             group.unresolved_aliases.add(alias_key)
-        group.count += 1
-        group.total += abs(Decimal(amount or 0))
+        group.count += row_count
+        group.total += row_total
         variant = group.variants[alias_key]
-        variant.labels[label] += 1
-        variant.count += 1
-        variant.total += abs(Decimal(amount or 0))
+        variant.labels[label] += row_count
+        variant.count += row_count
+        variant.total += row_total
 
     candidates: list[MerchantCandidate] = []
     for canonical_key, group in groups.items():

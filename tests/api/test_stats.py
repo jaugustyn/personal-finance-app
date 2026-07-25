@@ -8,10 +8,12 @@ from decimal import Decimal
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import event
 from sqlalchemy.orm import Session
 
 from apps.api.main import app
 from finance.domain.models import Transaction
+from finance.stats import service as stats_service
 
 client = TestClient(app, raise_server_exceptions=False)
 
@@ -257,6 +259,47 @@ def test_overview_uses_base_amount_for_foreign_currency(
     body = response.json()
     assert Decimal(body["total_expenses"]) == Decimal("40.00")
     assert body["base_currency"] == "PLN"
+
+
+def test_overview_combines_converted_and_unconverted_counts_in_one_query(
+    db_engine,
+    db_session: Session,
+) -> None:
+    _add_tx(
+        db_session,
+        amount=Decimal("-20.00"),
+        currency="PLN",
+        dedup_hash="stats-query-count-pln",
+    )
+    _add_tx(
+        db_session,
+        amount=Decimal("-10.00"),
+        currency="USD",
+        amount_base=None,
+        base_currency=None,
+        fx_rate=None,
+        dedup_hash="stats-query-count-usd",
+    )
+    db_session.commit()
+    statements: list[str] = []
+
+    def record_statement(_conn, _cursor, statement, _parameters, _context, _many) -> None:
+        statements.append(statement.lower())
+
+    event.listen(db_engine, "before_cursor_execute", record_statement)
+    try:
+        result = stats_service.overview(db_session, months=None)
+    finally:
+        event.remove(db_engine, "before_cursor_execute", record_statement)
+
+    transaction_selects = [
+        statement
+        for statement in statements
+        if statement.lstrip().startswith("select") and "transactions" in statement
+    ]
+    assert result.tx_count == 1
+    assert result.unconverted_count == 1
+    assert len(transaction_selects) == 1
 
 
 def test_by_category_can_include_predictions_explicitly(
