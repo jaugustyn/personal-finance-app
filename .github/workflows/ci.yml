@@ -29,6 +29,7 @@ jobs:
         with:
           version: "0.8.15"
           enable-cache: true
+          prune-cache: true
       - name: Install
         run: uv sync --locked --extra dev
       - name: Ruff

@@ -26,6 +26,7 @@ jobs:
         with:
           version: "0.8.15"
           enable-cache: true
+          prune-cache: true
       - name: Install production dependencies
         run: uv sync --locked --no-dev
       - name: Audit Python environment
