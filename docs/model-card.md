@@ -132,5 +132,5 @@ uv run python scripts/build_ml_evidence.py --from-db
 uv run python scripts/inspect_report.py --profile classification-strict
 ```
 
-The supported runtime is Python 3.12. Split operations use `random_state=42`,
+The supported runtime is Python 3.14. Split operations use `random_state=42`,
 and artifact schema `3.0` rejects incompatible environments.

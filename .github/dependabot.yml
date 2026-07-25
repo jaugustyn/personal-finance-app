@@ -35,6 +35,6 @@ updates:
       interval: "monthly"
     ignore:
       - dependency-name: "python"
-        versions: [">=3.13"]
+        versions: [">=3.15"]
       - dependency-name: "node"
         versions: [">=25"]

@@ -335,7 +335,7 @@ dopuszcza pozostałe moduły jako provisional. Szczegółowy przebieg znajduje s
 
 ## 12. Uruchomienie, bezpieczeństwo i jakość
 
-Jedynym wspieranym runtime Python jest 3.12. `uv.lock` jest źródłem wersji
+Jedynym wspieranym runtime Python jest 3.14. `uv.lock` jest źródłem wersji
 zależności, a Docker używa `uv sync --frozen`. Stack lokalny składa się z
 PostgreSQL, API i web uruchamianych przez Docker Compose.
 

@@ -1,5 +1,7 @@
 """SQLAlchemy ORM models."""
 
+from __future__ import annotations
+
 from datetime import date, datetime
 from decimal import Decimal
 
@@ -41,7 +43,7 @@ class Account(Base):
     currency: Mapped[str] = mapped_column(String(3))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
-    transactions: Mapped[list["Transaction"]] = relationship(back_populates="account")
+    transactions: Mapped[list[Transaction]] = relationship(back_populates="account")
 
 
 class Import(Base):
@@ -55,7 +57,7 @@ class Import(Base):
     duplicates: Mapped[int] = mapped_column(default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
-    transactions: Mapped[list["Transaction"]] = relationship(back_populates="import_")
+    transactions: Mapped[list[Transaction]] = relationship(back_populates="import_")
 
 
 class CategoryDef(Base):
@@ -508,7 +510,7 @@ class AssetAccount(Base):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
 
-    items: Mapped[list["AssetItem"]] = relationship(
+    items: Mapped[list[AssetItem]] = relationship(
         back_populates="account",
         cascade="all, delete-orphan",
     )
@@ -561,7 +563,7 @@ class AssetItem(Base):
     )
 
     account: Mapped[AssetAccount] = relationship(back_populates="items")
-    valuations: Mapped[list["AssetValuation"]] = relationship(
+    valuations: Mapped[list[AssetValuation]] = relationship(
         back_populates="item",
         cascade="all, delete-orphan",
     )

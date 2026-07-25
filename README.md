@@ -47,7 +47,7 @@ Next.js web -> /api/proxy/* -> FastAPI -> src/finance -> PostgreSQL
 | API and domain | FastAPI, Pydantic, SQLAlchemy, Alembic               |
 | Web            | Next.js, React, TypeScript, Tailwind, TanStack Query |
 | Data and ML    | pandas, scikit-learn, statsmodels, joblib            |
-| Runtime        | PostgreSQL, Docker Compose, Python 3.12, `uv`        |
+| Runtime        | PostgreSQL, Docker Compose, Python 3.14, `uv`        |
 
 ## Quick start
 
@@ -102,8 +102,8 @@ Backend:
 
 ```powershell
 winget install --id astral-sh.uv --exact
-uv python install 3.12
-uv sync --python 3.12 --frozen --extra dev
+uv python install 3.14
+uv sync --python 3.14 --frozen --extra dev
 $env:PYTHONPATH="$PWD\src"
 uv run alembic upgrade head
 uv run uvicorn apps.api.main:app --reload --port 8000

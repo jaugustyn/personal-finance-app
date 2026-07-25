@@ -26,8 +26,11 @@ from finance.llm.tools import (
 def session():
     engine = create_engine("sqlite:///:memory:")
     Base.metadata.create_all(engine)
-    with Session(engine) as s:
-        yield s
+    try:
+        with Session(engine) as s:
+            yield s
+    finally:
+        engine.dispose()
 
 
 def _add_tx(s: Session, **kw) -> None:

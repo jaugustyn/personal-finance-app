@@ -3,7 +3,7 @@ name = "finance"
 version = "0.1.0"
 description = "Self-hosted personal finance analysis system with ML and local LLM"
 readme = "README.md"
-requires-python = ">=3.12,<3.13"
+requires-python = ">=3.14,<3.15"
 license = { file = "LICENSE" }
 dependencies = [
     # web / api
@@ -48,7 +48,7 @@ packages = ["src/finance"]
 
 [tool.ruff]
 line-length = 100
-target-version = "py312"
+target-version = "py314"
 extend-exclude = ["notebooks"]
 
 [tool.ruff.lint]
@@ -68,6 +68,6 @@ markers = [
 ]
 
 [tool.mypy]
-python_version = "3.12"
+python_version = "3.14"
 strict = false
 ignore_missing_imports = true

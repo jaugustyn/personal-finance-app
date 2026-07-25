@@ -134,7 +134,7 @@ accusations or regulated financial advice.
 
 ## Reproducibility and quality
 
-- Python is fixed to 3.12 and dependencies are locked in `uv.lock`.
+- Python is fixed to 3.14 and dependencies are locked in `uv.lock`.
 - Model artifacts record exact Python and core ML-library versions.
 - Dataset fingerprints, validation memberships and aggregated metrics are
   stored with candidate reports.
