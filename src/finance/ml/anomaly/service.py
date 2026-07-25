@@ -1,16 +1,17 @@
 """Shared anomaly review service used by API and LLM tools."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Literal
+from typing import Any, Literal
 
 import pandas as pd
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from finance.currencies import BASE_CURRENCY, amount_base_value
+from finance.currencies import BASE_CURRENCY, amount_base_expr, amount_base_value
 from finance.domain.models import MlFeedbackEvent, Transaction
 from finance.ml.anomaly.detector import detect_anomalies
 from finance.ml.feedback import (
@@ -20,8 +21,11 @@ from finance.ml.feedback import (
     FeedbackEventInput,
     record_feedback_event,
 )
-from finance.transactions.merchants import load_merchant_alias_maps, merchant_identity
-from finance.transactions.type_decision import effective_transaction_type
+from finance.transactions.merchants import (
+    MerchantIdentityResolver,
+    load_merchant_identity_resolver,
+)
+from finance.transactions.type_decision import effective_transaction_type_expr
 
 AnomalyMode = Literal["review", "suspicious", "all"]
 AnomalyDirection = Literal["debit", "credit", "both"]
@@ -89,32 +93,35 @@ def _transaction_frame(
     date_from: date | None,
     date_to: date | None,
 ) -> pd.DataFrame:
-    stmt = select(Transaction).order_by(Transaction.booking_date.desc())
+    amount = amount_base_expr()
+    stmt = (
+        select(
+            Transaction.id.label("id"),
+            Transaction.booking_date.label("booking_date"),
+            amount.label("amount"),
+            Transaction.direction.label("direction"),
+            Transaction.merchant.label("merchant"),
+            Transaction.title.label("title"),
+            Transaction.category.label("category"),
+            Transaction.is_transfer.label("is_transfer"),
+            effective_transaction_type_expr().label("transaction_type"),
+        )
+        .where(amount.is_not(None))
+        .order_by(Transaction.booking_date.desc())
+    )
     if date_from is not None:
         stmt = stmt.where(Transaction.booking_date >= date_from)
     if date_to is not None:
         stmt = stmt.where(Transaction.booking_date <= date_to)
-    rows = session.execute(stmt).scalars().all()
-    items = []
-    for row in rows:
-        base_amount = amount_base_value(row)
-        if base_amount is None:
-            continue
-        items.append(
-            {
-                "id": row.id,
-                "booking_date": row.booking_date,
-                "amount": float(base_amount),
-                "base_currency": BASE_CURRENCY,
-                "direction": row.direction,
-                "merchant": row.merchant or "",
-                "title": row.title or "",
-                "category": row.category,
-                "is_transfer": row.is_transfer,
-                "transaction_type": effective_transaction_type(row),
-            }
-        )
-    return pd.DataFrame(items)
+    rows = session.execute(stmt).mappings().all()
+    if not rows:
+        return pd.DataFrame()
+    frame = pd.DataFrame(rows)
+    frame["amount"] = frame["amount"].astype(float)
+    frame["base_currency"] = BASE_CURRENCY
+    frame["merchant"] = frame["merchant"].fillna("")
+    frame["title"] = frame["title"].fillna("")
+    return frame
 
 
 ANOMALY_FEEDBACK_EVENT_TO_STATUS: dict[str, AnomalyFeedbackStatus] = {
@@ -146,8 +153,7 @@ def anomaly_feedback_decisions(
             return {}
         stmt = stmt.where(MlFeedbackEvent.transaction_id.in_(transaction_ids))
     rows = session.execute(
-        stmt
-        .order_by(MlFeedbackEvent.created_at.asc(), MlFeedbackEvent.id.asc())
+        stmt.order_by(MlFeedbackEvent.created_at.asc(), MlFeedbackEvent.id.asc())
     ).all()
     decisions: dict[int, AnomalyFeedbackDecision] = {}
     for transaction_id, event_type, created_at in rows:
@@ -183,16 +189,16 @@ def reviewed_anomaly_transaction_ids(session: Session) -> set[int]:
     return set(anomaly_feedback_decisions(session))
 
 
-def _with_merchant_identity(session: Session, flagged: pd.DataFrame) -> pd.DataFrame:
+def _with_merchant_identity(
+    flagged: pd.DataFrame,
+    resolver: MerchantIdentityResolver,
+) -> pd.DataFrame:
     if flagged.empty:
         return flagged
-    alias_map, label_map = load_merchant_alias_maps(session)
     identities = [
-        merchant_identity(
+        resolver.resolve(
             str(row.get("merchant") or ""),
             str(row.get("title") or ""),
-            alias_map=alias_map,
-            label_map=label_map,
         )
         for _, row in flagged.iterrows()
     ]
@@ -222,9 +228,7 @@ def _apply_mode(flagged: pd.DataFrame, *, mode: AnomalyMode) -> pd.DataFrame:
         return flagged[flagged["priority_score"] >= 0.45]
     if mode == "suspicious":
         return flagged[
-            flagged["anomaly_type"].isin(
-                ["suspicious", "data_quality", "merchant_amount_outlier"]
-            )
+            flagged["anomaly_type"].isin(["suspicious", "data_quality", "merchant_amount_outlier"])
             & (flagged["priority_score"] >= 0.65)
         ]
     return flagged
@@ -292,7 +296,6 @@ def _detect_flagged(
         flagged["anomaly_type"] = "none"
     if not include_model_only:
         flagged = flagged[flagged["anomaly_type"] != "model_only"]
-    flagged = _with_merchant_identity(session, flagged)
     flagged = _apply_mode(flagged, mode=mode)
     return flagged.sort_values(["priority_score", "severity"], ascending=False)
 
@@ -322,27 +325,22 @@ def list_anomaly_rows(
     if mode == "review":
         flagged = _apply_feedback(session, flagged, mode=mode)
     flagged = flagged.head(limit)
+    flagged = _with_merchant_identity(
+        flagged,
+        load_merchant_identity_resolver(session),
+    )
     transaction_ids = {int(raw["id"]) for _, raw in flagged.iterrows()}
     decisions = anomaly_feedback_decisions(session, transaction_ids)
-    return [
-        _to_row(raw, decisions.get(int(raw["id"])))
-        for _, raw in flagged.iterrows()
-    ]
+    return [_to_row(raw, decisions.get(int(raw["id"]))) for _, raw in flagged.iterrows()]
 
 
 def _historical_review_row(
     tx: Transaction,
     decision: AnomalyFeedbackDecision,
     *,
-    alias_map: dict[str, str],
-    label_map: dict[str, str],
+    resolver: MerchantIdentityResolver,
 ) -> AnomalyReviewRow:
-    identity = merchant_identity(
-        tx.merchant,
-        tx.title,
-        alias_map=alias_map,
-        label_map=label_map,
-    )
+    identity = resolver.resolve(tx.merchant, tx.title)
     base_amount = amount_base_value(tx)
     amount = base_amount if base_amount is not None else tx.amount
     currency = BASE_CURRENCY if base_amount is not None else tx.currency
@@ -393,52 +391,74 @@ def get_anomaly_review_result(
     decisions = anomaly_feedback_decisions(session)
     reviewed_ids = set(decisions)
 
-    if flagged.empty:
-        pending_rows: list[AnomalyReviewRow] = []
-        current_rows: dict[int, AnomalyReviewRow] = {}
-    else:
-        pending = flagged[~flagged["id"].astype(int).isin(reviewed_ids)]
-        pending_rows = [_to_row(raw, None) for _, raw in pending.iterrows()]
-        current_rows = {
-            int(raw["id"]): _to_row(
-                raw,
-                decisions.get(int(raw["id"])),
-            )
-            for _, raw in flagged.iterrows()
-        }
-
-    reviewed_stmt = select(Transaction).where(Transaction.id.in_(reviewed_ids))
-    if direction not in (None, "both"):
-        reviewed_stmt = reviewed_stmt.where(Transaction.direction == direction)
-    if date_from is not None:
-        reviewed_stmt = reviewed_stmt.where(Transaction.booking_date >= date_from)
-    if date_to is not None:
-        reviewed_stmt = reviewed_stmt.where(Transaction.booking_date <= date_to)
-    reviewed_transactions = session.execute(reviewed_stmt).scalars().all()
-    alias_map, label_map = load_merchant_alias_maps(session)
-    reviewed_rows = [
-        current_rows.get(tx.id)
-        or _historical_review_row(
-            tx,
-            decisions[tx.id],
-            alias_map=alias_map,
-            label_map=label_map,
-        )
-        for tx in reviewed_transactions
-        if tx.id in decisions
-    ]
-    reviewed_rows.sort(
-        key=lambda row: row.reviewed_at.timestamp() if row.reviewed_at else 0.0,
-        reverse=True,
+    pending = (
+        flagged[~flagged["id"].astype(int).isin(reviewed_ids)] if not flagged.empty else flagged
     )
+    pending_total = len(pending)
 
-    selected = pending_rows if review_state == "pending" else reviewed_rows
-    items = selected if limit is None else selected[:limit]
+    reviewed_filters: list[Any] = [Transaction.id.in_(reviewed_ids)]
+    if direction not in (None, "both"):
+        reviewed_filters.append(Transaction.direction == direction)
+    if date_from is not None:
+        reviewed_filters.append(Transaction.booking_date >= date_from)
+    if date_to is not None:
+        reviewed_filters.append(Transaction.booking_date <= date_to)
+    if not reviewed_ids:
+        reviewed_transactions: list[Transaction] = []
+        reviewed_total = 0
+    elif review_state == "pending":
+        reviewed_transactions = []
+        reviewed_total = int(
+            session.scalar(select(func.count(Transaction.id)).where(*reviewed_filters)) or 0
+        )
+    else:
+        reviewed_transactions = list(
+            session.execute(select(Transaction).where(*reviewed_filters)).scalars()
+        )
+        reviewed_total = len(reviewed_transactions)
+
+    if review_state == "pending":
+        selected = pending if limit is None else pending.head(limit)
+        if selected.empty:
+            items: list[AnomalyReviewRow] = []
+        else:
+            selected = _with_merchant_identity(
+                selected,
+                load_merchant_identity_resolver(session),
+            )
+            items = [_to_row(raw, None) for _, raw in selected.iterrows()]
+    else:
+        resolver = load_merchant_identity_resolver(session)
+        current_flagged = (
+            flagged[flagged["id"].astype(int).isin(tx.id for tx in reviewed_transactions)]
+            if not flagged.empty
+            else flagged
+        )
+        current_flagged = _with_merchant_identity(current_flagged, resolver)
+        current_rows = {
+            int(raw["id"]): _to_row(raw, decisions.get(int(raw["id"])))
+            for _, raw in current_flagged.iterrows()
+        }
+        reviewed_rows = [
+            current_rows.get(tx.id)
+            or _historical_review_row(
+                tx,
+                decisions[tx.id],
+                resolver=resolver,
+            )
+            for tx in reviewed_transactions
+            if tx.id in decisions
+        ]
+        reviewed_rows.sort(
+            key=lambda row: row.reviewed_at.timestamp() if row.reviewed_at else 0.0,
+            reverse=True,
+        )
+        items = reviewed_rows if limit is None else reviewed_rows[:limit]
     return AnomalyReviewResult(
         items=items,
-        total=len(selected),
-        pending_total=len(pending_rows),
-        reviewed_total=len(reviewed_rows),
+        total=pending_total if review_state == "pending" else reviewed_total,
+        pending_total=pending_total,
+        reviewed_total=reviewed_total,
     )
 
 

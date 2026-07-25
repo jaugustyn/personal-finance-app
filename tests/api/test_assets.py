@@ -485,6 +485,48 @@ def test_history_recalculates_after_edit_delete_and_archive(client) -> None:
     assert client.get("/assets/history?range=all").json()["points"]
 
 
+def test_history_sampling_is_bounded_and_keeps_range_endpoints(client, db_session) -> None:
+    today = date.today()
+    account = client.post(
+        "/assets/accounts",
+        json={
+            "name": "Historia",
+            "kind": "physical",
+            "tracking_mode": "aggregate",
+            "aggregate_asset_type": "cash",
+            "initial_valuation": _valuation("500", valuation_date=today),
+        },
+    ).json()
+    item_id = account["valuation_item_id"]
+    db_session.add_all(
+        [
+            AssetValuation(
+                item_id=item_id,
+                valuation_date=today - timedelta(days=offset),
+                input_mode="total",
+                total_value=Decimal(offset),
+                currency="PLN",
+                amount_pln=Decimal(offset),
+                fx_rate=Decimal("1"),
+                fx_rate_date=today - timedelta(days=offset),
+                fx_rate_source="same_currency",
+                growth_mode="none",
+                source="manual",
+            )
+            for offset in range(1, 181)
+        ]
+    )
+    db_session.commit()
+
+    yearly = client.get("/assets/history?range=1y").json()["points"]
+    complete = client.get("/assets/history?range=all").json()["points"]
+
+    assert len(yearly) <= 54
+    assert len(complete) == service.MAX_HISTORY_POINTS
+    assert complete[0]["date"] == (today - timedelta(days=180)).isoformat()
+    assert complete[-1]["date"] == today.isoformat()
+
+
 def test_open_ended_fixed_rate_uses_review_interval(client) -> None:
     old = date.today() - timedelta(days=31)
     response = client.post(

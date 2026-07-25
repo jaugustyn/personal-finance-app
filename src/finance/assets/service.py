@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import calendar
+from bisect import bisect_right
 from collections import defaultdict
 from datetime import UTC, date, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal, localcontext
@@ -50,6 +51,7 @@ INPUT_MODES = frozenset({"total", "unit_price"})
 GROWTH_MODES = frozenset({"none", "fixed_rate"})
 COMPOUNDING_MODES = frozenset({"simple", "daily", "monthly", "yearly"})
 HISTORY_RANGES = frozenset({"3m", "1y", "all"})
+MAX_HISTORY_POINTS = 120
 FIXED_GROWTH_ASSET_TYPES = frozenset({"savings_account", "deposit", "loan_receivable"})
 
 VALUE_QUANTUM = Decimal("0.00000001")
@@ -733,24 +735,32 @@ def _latest_valuation(rows: list[AssetValuation], as_of: date) -> AssetValuation
     return max(eligible, key=lambda row: (row.valuation_date, row.id), default=None)
 
 
-def value_at(item: AssetItem, rows: list[AssetValuation], *, as_of: date) -> AssetValueView:
-    row = _latest_valuation(rows, as_of)
+def _empty_value(item: AssetItem, *, as_of: date) -> AssetValueView:
+    return AssetValueView(
+        as_of=as_of,
+        valuation_id=None,
+        valuation_date=None,
+        native_value=None,
+        currency=item.currency,
+        amount_pln=None,
+        growth_mode=None,
+        projected=False,
+        stale=False,
+        matured=False,
+        unconverted=False,
+        fx_rate_date=None,
+        fx_rate_source=None,
+    )
+
+
+def _value_from_valuation(
+    item: AssetItem,
+    row: AssetValuation | None,
+    *,
+    as_of: date,
+) -> AssetValueView:
     if row is None:
-        return AssetValueView(
-            as_of=as_of,
-            valuation_id=None,
-            valuation_date=None,
-            native_value=None,
-            currency=item.currency,
-            amount_pln=None,
-            growth_mode=None,
-            projected=False,
-            stale=False,
-            matured=False,
-            unconverted=False,
-            fx_rate_date=None,
-            fx_rate_source=None,
-        )
+        return _empty_value(item, as_of=as_of)
     factor = _growth_factor(row, as_of)
     native_value = _quant_value(Decimal(row.total_value) * factor)
     amount_pln = _money(Decimal(row.amount_pln) * factor) if row.amount_pln is not None else None
@@ -779,6 +789,26 @@ def value_at(item: AssetItem, rows: list[AssetValuation], *, as_of: date) -> Ass
     )
 
 
+def _value_at_sorted(
+    item: AssetItem,
+    rows: tuple[AssetValuation, ...],
+    dates: tuple[date, ...],
+    *,
+    as_of: date,
+) -> AssetValueView:
+    index = bisect_right(dates, as_of) - 1
+    row = rows[index] if index >= 0 else None
+    return _value_from_valuation(item, row, as_of=as_of)
+
+
+def value_at(item: AssetItem, rows: list[AssetValuation], *, as_of: date) -> AssetValueView:
+    return _value_from_valuation(
+        item,
+        _latest_valuation(rows, as_of),
+        as_of=as_of,
+    )
+
+
 def _load_accounts(session: Session, *, include_archived: bool) -> list[AssetAccount]:
     query = select(AssetAccount).options(
         selectinload(AssetAccount.items).selectinload(AssetItem.valuations)
@@ -788,6 +818,22 @@ def _load_accounts(session: Session, *, include_archived: bool) -> list[AssetAcc
     return list(
         session.execute(query.order_by(AssetAccount.name, AssetAccount.id)).scalars().unique()
     )
+
+
+def _load_account(
+    session: Session,
+    account_id: int,
+    *,
+    include_archived: bool,
+) -> AssetAccount | None:
+    query = (
+        select(AssetAccount)
+        .options(selectinload(AssetAccount.items).selectinload(AssetItem.valuations))
+        .where(AssetAccount.id == account_id)
+    )
+    if not include_archived:
+        query = query.where(AssetAccount.archived_at.is_(None))
+    return session.execute(query).scalars().unique().one_or_none()
 
 
 def _item_is_active(item: AssetItem, as_of: date) -> bool:
@@ -815,6 +861,78 @@ def _item_view(item: AssetItem, *, as_of: date) -> AssetItemView:
     )
 
 
+def _account_view(
+    account: AssetAccount,
+    *,
+    target: date,
+    include_archived: bool,
+) -> AssetAccountView:
+    account_target = (
+        min(target, account.archived_at.date()) if account.archived_at is not None else target
+    )
+    item_views_by_id = {
+        item.id: _item_view(
+            item,
+            as_of=(
+                min(account_target, item.archived_at.date())
+                if item.archived_at is not None
+                else account_target
+            ),
+        )
+        for item in account.items
+    }
+    active_items = [item for item in account.items if _item_is_active(item, account_target)]
+    active_item_views = [item_views_by_id[item.id] for item in active_items]
+    amount_pln = _money(
+        sum(
+            (
+                item.current_value.amount_pln
+                for item in active_item_views
+                if item.current_value.amount_pln is not None
+            ),
+            Decimal(0),
+        )
+    )
+    summary = next(
+        (item for item in active_item_views if _summary_item(account, item.id)),
+        None,
+    )
+    public_items = (
+        []
+        if account.tracking_mode == "aggregate"
+        else [
+            item_views_by_id[item.id]
+            for item in account.items
+            if not _summary_item(account, item.id)
+            and (include_archived or _item_is_active(item, account_target))
+        ]
+    )
+    return AssetAccountView(
+        id=account.id,
+        name=account.name,
+        institution=account.institution,
+        kind=account.kind,
+        wrapper=account.wrapper,
+        tracking_mode=account.tracking_mode,
+        default_currency=account.default_currency,
+        notes=account.notes,
+        archived_at=account.archived_at,
+        amount_pln=amount_pln,
+        native_value=summary.current_value.native_value if summary else None,
+        native_currency=summary.currency if summary else None,
+        valuation_item_id=summary.id if summary else None,
+        aggregate_asset_type=summary.asset_type if summary else None,
+        review_interval_days=(summary.review_interval_days if summary else None),
+        stale_count=sum(item.current_value.stale for item in active_item_views),
+        matured_count=sum(item.current_value.matured for item in active_item_views),
+        unconverted_count=sum(item.current_value.unconverted for item in active_item_views),
+        missing_valuation_count=sum(
+            item.current_value.valuation_id is None for item in active_item_views
+        ),
+        items=public_items,
+    )
+
+
 def list_accounts(
     session: Session,
     *,
@@ -822,75 +940,10 @@ def list_accounts(
     include_archived: bool = False,
 ) -> list[AssetAccountView]:
     target = as_of or date.today()
-    result: list[AssetAccountView] = []
-    for account in _load_accounts(session, include_archived=include_archived):
-        account_target = (
-            min(target, account.archived_at.date()) if account.archived_at is not None else target
-        )
-        item_views_by_id = {
-            item.id: _item_view(
-                item,
-                as_of=(
-                    min(account_target, item.archived_at.date())
-                    if item.archived_at is not None
-                    else account_target
-                ),
-            )
-            for item in account.items
-        }
-        active_items = [item for item in account.items if _item_is_active(item, account_target)]
-        active_item_views = [item_views_by_id[item.id] for item in active_items]
-        amount_pln = _money(
-            sum(
-                (
-                    item.current_value.amount_pln
-                    for item in active_item_views
-                    if item.current_value.amount_pln is not None
-                ),
-                Decimal(0),
-            )
-        )
-        summary = next(
-            (item for item in active_item_views if _summary_item(account, item.id)),
-            None,
-        )
-        public_items = (
-            []
-            if account.tracking_mode == "aggregate"
-            else [
-                item_views_by_id[item.id]
-                for item in account.items
-                if not _summary_item(account, item.id)
-                and (include_archived or _item_is_active(item, account_target))
-            ]
-        )
-        result.append(
-            AssetAccountView(
-                id=account.id,
-                name=account.name,
-                institution=account.institution,
-                kind=account.kind,
-                wrapper=account.wrapper,
-                tracking_mode=account.tracking_mode,
-                default_currency=account.default_currency,
-                notes=account.notes,
-                archived_at=account.archived_at,
-                amount_pln=amount_pln,
-                native_value=summary.current_value.native_value if summary else None,
-                native_currency=summary.currency if summary else None,
-                valuation_item_id=summary.id if summary else None,
-                aggregate_asset_type=summary.asset_type if summary else None,
-                review_interval_days=(summary.review_interval_days if summary else None),
-                stale_count=sum(item.current_value.stale for item in active_item_views),
-                matured_count=sum(item.current_value.matured for item in active_item_views),
-                unconverted_count=sum(item.current_value.unconverted for item in active_item_views),
-                missing_valuation_count=sum(
-                    item.current_value.valuation_id is None for item in active_item_views
-                ),
-                items=public_items,
-            )
-        )
-    return result
+    return [
+        _account_view(account, target=target, include_archived=include_archived)
+        for account in _load_accounts(session, include_archived=include_archived)
+    ]
 
 
 def get_account_view(
@@ -900,17 +953,19 @@ def get_account_view(
     as_of: date | None = None,
     include_archived: bool = True,
 ) -> AssetAccountView | None:
-    return next(
-        (
-            account
-            for account in list_accounts(
-                session,
-                as_of=as_of,
-                include_archived=include_archived,
-            )
-            if account.id == account_id
-        ),
-        None,
+    account = _load_account(
+        session,
+        account_id,
+        include_archived=include_archived,
+    )
+    return (
+        _account_view(
+            account,
+            target=as_of or date.today(),
+            include_archived=include_archived,
+        )
+        if account is not None
+        else None
     )
 
 
@@ -990,6 +1045,24 @@ def _month_starts(start: date, end: date) -> list[date]:
     return points
 
 
+def _weekly_samples(start: date, end: date) -> list[date]:
+    points = [start]
+    cursor = start + timedelta(days=7)
+    while cursor < end:
+        points.append(cursor)
+        cursor += timedelta(days=7)
+    points.append(end)
+    return points
+
+
+def _downsample_dates(points: list[date], *, limit: int) -> list[date]:
+    if len(points) <= limit:
+        return points
+    last_index = len(points) - 1
+    indexes = [round(index * last_index / (limit - 1)) for index in range(limit)]
+    return [points[index] for index in indexes]
+
+
 def history(
     session: Session,
     *,
@@ -1000,11 +1073,13 @@ def history(
     if range_name not in HISTORY_RANGES:
         raise AssetValidationError("Unsupported asset history range.")
     target = as_of or date.today()
-    accounts = _load_accounts(session, include_archived=True)
     if account_id is not None:
-        accounts = [account for account in accounts if account.id == account_id]
-        if not accounts:
+        account = _load_account(session, account_id, include_archived=True)
+        if account is None:
             raise AssetValidationError("Asset account not found.")
+        accounts = [account]
+    else:
+        accounts = _load_accounts(session, include_archived=True)
     valuation_dates = sorted(
         {
             valuation.valuation_date
@@ -1022,13 +1097,27 @@ def history(
         start = target - timedelta(days=365)
     else:
         start = valuation_dates[0]
-    if (target - start).days <= 366:
+    if range_name == "3m":
         samples = [start + timedelta(days=offset) for offset in range((target - start).days + 1)]
+    elif range_name == "1y":
+        samples = _weekly_samples(start, target)
     else:
         samples = _month_starts(start, target)
         samples.extend(day for day in valuation_dates if day >= start)
         samples.append(target)
         samples = sorted(set(samples))
+        samples = _downsample_dates(samples, limit=MAX_HISTORY_POINTS)
+
+    timelines: dict[int, tuple[tuple[AssetValuation, ...], tuple[date, ...]]] = {}
+    for account in accounts:
+        for item in account.items:
+            rows = tuple(
+                sorted(
+                    item.valuations,
+                    key=lambda row: (row.valuation_date, row.id),
+                )
+            )
+            timelines[item.id] = (rows, tuple(row.valuation_date for row in rows))
     points: list[AssetHistoryPointView] = []
     for sample in samples:
         total = Decimal(0)
@@ -1039,7 +1128,8 @@ def history(
             for item in account.items:
                 if not _item_is_active(item, sample):
                     continue
-                current = value_at(item, list(item.valuations), as_of=sample)
+                rows, dates = timelines[item.id]
+                current = _value_at_sorted(item, rows, dates, as_of=sample)
                 if current.amount_pln is not None:
                     total += current.amount_pln
                 elif current.unconverted:

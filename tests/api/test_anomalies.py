@@ -1,10 +1,12 @@
 """API regression tests for anomaly response shape and transfer filtering."""
+
 from __future__ import annotations
 
 from datetime import date, timedelta
 from decimal import Decimal
 
 from finance.domain.models import Transaction
+from finance.ml.anomaly import service as anomaly_service
 
 
 def _tx(
@@ -17,9 +19,7 @@ def _tx(
     transaction_type: str | None = None,
     direction: str = "debit",
 ) -> Transaction:
-    effective_type = transaction_type or (
-        "refund" if direction == "credit" else "expense"
-    )
+    effective_type = transaction_type or ("refund" if direction == "credit" else "expense")
     return Transaction(
         booking_date=date(2026, 1, 1) + timedelta(days=day),
         amount=amount,
@@ -41,9 +41,7 @@ def test_anomalies_return_reason_list_and_exclude_transfers(client, db_session) 
     for idx in range(30):
         db_session.add(_tx(idx, amount=Decimal("-40"), merchant=f"Shop {idx % 3}"))
     db_session.add(_tx(31, amount=Decimal("-2500"), merchant="Real anomaly"))
-    db_session.add(
-        _tx(32, amount=Decimal("-9999"), merchant="Own transfer", is_transfer=True)
-    )
+    db_session.add(_tx(32, amount=Decimal("-9999"), merchant="Own transfer", is_transfer=True))
     unconverted = _tx(
         33,
         amount=Decimal("-99999"),
@@ -92,22 +90,16 @@ def test_anomaly_feedback_endpoint_updates_quality_summary(client, db_session) -
     summary = client.get("/transactions/review-summary").json()
     assert summary["anomaly_feedback"]["reviewed"] == 1
     assert summary["anomaly_feedback"]["relevant"] == 1
-    assert anomaly_feedback_statuses(db_session, {tx.id}) == {
-        tx.id: "relevant"
-    }
+    assert anomaly_feedback_statuses(db_session, {tx.id}) == {tx.id: "relevant"}
 
-    changed = client.post(
-        f"/anomalies/{tx.id}/feedback", json={"action": "not_relevant"}
-    )
+    changed = client.post(f"/anomalies/{tx.id}/feedback", json={"action": "not_relevant"})
     assert changed.status_code == 200
     changed_summary = client.get("/transactions/review-summary").json()
     assert changed_summary["anomaly_feedback"]["reviewed"] == 1
     assert changed_summary["anomaly_feedback"]["relevant"] == 0
     assert changed_summary["anomaly_feedback"]["not_relevant"] == 1
 
-    restored = client.post(
-        f"/anomalies/{tx.id}/feedback", json={"action": "restore"}
-    )
+    restored = client.post(f"/anomalies/{tx.id}/feedback", json={"action": "restore"})
     assert restored.status_code == 200
     restored_summary = client.get("/transactions/review-summary").json()
     assert restored_summary["anomaly_feedback"]["reviewed"] == 0
@@ -142,19 +134,14 @@ def test_anomalies_suspicious_mode_is_stricter(client, db_session) -> None:
 
     for idx in range(40):
         db_session.add(_tx(idx, amount=Decimal("-40"), merchant=f"Shop {idx % 3}"))
-    db_session.add(
-        _tx(50, amount=Decimal("-2500"), merchant="Large but known category")
-    )
-    db_session.add(
-        _tx(51, amount=Decimal("-20000"), merchant="", category=None)
-    )
+    db_session.add(_tx(50, amount=Decimal("-2500"), merchant="Large but known category"))
+    db_session.add(_tx(51, amount=Decimal("-20000"), merchant="", category=None))
     db_session.commit()
 
     rows = list_anomaly_rows(db_session, mode="suspicious", limit=20)
     assert rows
     assert all(
-        row.anomaly_type
-        in {"suspicious", "data_quality", "merchant_amount_outlier"}
+        row.anomaly_type in {"suspicious", "data_quality", "merchant_amount_outlier"}
         for row in rows
     )
 
@@ -235,6 +222,34 @@ def test_review_history_keeps_transaction_no_longer_detected(client, db_session)
     pending = client.get("/anomalies").json()
     assert anomaly.id not in {row["id"] for row in pending["items"]}
     assert pending["reviewed_total"] == 0
+
+
+def test_pending_anomalies_do_not_build_review_history_rows(
+    client,
+    db_session,
+    monkeypatch,
+) -> None:
+    historical = _tx(1, amount=Decimal("-5000"), merchant="Historical")
+    db_session.add(historical)
+    db_session.commit()
+    feedback = client.post(
+        f"/anomalies/{historical.id}/feedback",
+        json={"action": "relevant"},
+    )
+    assert feedback.status_code == 200
+    historical.transaction_type = "own_transfer"
+    historical.is_transfer = True
+    db_session.commit()
+
+    def fail_if_called(*_args, **_kwargs):
+        raise AssertionError("pending view should not materialize review history")
+
+    monkeypatch.setattr(anomaly_service, "_historical_review_row", fail_if_called)
+
+    response = client.get("/anomalies", params={"review_state": "pending", "limit": 5})
+
+    assert response.status_code == 200
+    assert response.json()["reviewed_total"] == 1
 
 
 def test_anomaly_totals_do_not_depend_on_limit(client, db_session) -> None:

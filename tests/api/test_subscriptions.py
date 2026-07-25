@@ -1,10 +1,12 @@
 """API tests for subscription feedback and lifecycle data."""
+
 from __future__ import annotations
 
 from datetime import date
 from decimal import Decimal
 
 from finance.domain.models import MerchantAlias, Transaction
+from finance.ml.subscriptions import projection as subscription_projection
 from finance.ml.subscriptions import service as subscription_service
 from finance.ml.subscriptions.service import list_subscription_rows
 from finance.transactions.merchants import merchant_identity
@@ -278,9 +280,7 @@ def test_restore_subscription_makes_rejected_row_visible_again(client, db_sessio
     assert restore.status_code == 200
 
     after = client.get("/subscriptions", params={"min_confidence": 0.0})
-    restored = next(
-        item for item in after.json() if item["merchant_key"] == row["merchant_key"]
-    )
+    restored = next(item for item in after.json() if item["merchant_key"] == row["merchant_key"])
     assert restored["user_decision"] == "suggested"
     assert restored["is_confirmed"] is False
 
@@ -291,9 +291,7 @@ def test_confirm_after_reject_returns_confirmed_subscription(client, db_session)
     db_session.commit()
 
     before = client.get("/subscriptions", params={"min_confidence": 0.0})
-    row = next(
-        item for item in before.json() if item["display_name"] == "Confirm After Reject"
-    )
+    row = next(item for item in before.json() if item["display_name"] == "Confirm After Reject")
 
     reject = client.post(
         "/subscriptions/preference",
@@ -311,9 +309,7 @@ def test_confirm_after_reject_returns_confirmed_subscription(client, db_session)
     assert confirm.status_code == 200
 
     after = client.get("/subscriptions", params={"min_confidence": 0.99})
-    confirmed = next(
-        item for item in after.json() if item["merchant_key"] == row["merchant_key"]
-    )
+    confirmed = next(item for item in after.json() if item["merchant_key"] == row["merchant_key"])
     assert confirmed["user_decision"] == "confirmed"
     assert confirmed["is_confirmed"] is True
 
@@ -539,3 +535,38 @@ def test_subscription_overview_returns_kpis(client, db_session, monkeypatch) -> 
     assert data["monthly_total"] == 29.99
     assert data["yearly_total"] == 359.88
     assert data["base_currency"] == "PLN"
+
+
+def test_subscription_overview_skips_unused_row_details(
+    client,
+    db_session,
+    monkeypatch,
+) -> None:
+    class _FixedDate(date):
+        @classmethod
+        def today(cls) -> date:
+            return cls(2026, 7, 1)
+
+    monkeypatch.setattr(subscription_service, "date", _FixedDate)
+    for month in range(3, 7):
+        db_session.add(_subscription_tx(month))
+    db_session.commit()
+
+    def fail_if_called(*_args, **_kwargs):
+        raise AssertionError("overview should not build transaction details")
+
+    monkeypatch.setattr(
+        subscription_projection,
+        "transaction_samples",
+        fail_if_called,
+    )
+    monkeypatch.setattr(
+        subscription_projection,
+        "sample_evidence",
+        fail_if_called,
+    )
+
+    response = client.get("/subscriptions/overview")
+
+    assert response.status_code == 200
+    assert response.json()["monthly_total"] == 29.99

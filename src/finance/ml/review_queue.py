@@ -1,7 +1,9 @@
 """Prioritized review queue for category-quality work."""
+
 from __future__ import annotations
 
 import math
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
@@ -19,11 +21,10 @@ from finance.ml.classification.policy import (
     ClassificationPolicy,
     decide_classification,
 )
-from finance.profile.service import effect_for_transaction
+from finance.profile.service import PersonalRuleMatcher, load_rule_matcher
 from finance.transactions.merchants import (
-    load_merchant_alias_maps,
-    merchant_canonical_key,
-    merchant_identity,
+    MerchantIdentityResolver,
+    load_merchant_identity_resolver,
 )
 from finance.transactions.type_decision import effective_transaction_type
 
@@ -61,34 +62,33 @@ def _category_counts(session: Session) -> dict[str, int]:
     return {str(category): int(count) for category, count in rows}
 
 
-def _merchant_candidate_counts(session: Session, alias_map: dict[str, str]) -> dict[str, int]:
-    rows = session.execute(
-        select(Transaction.merchant, Transaction.title)
-        .where(*expense_category_candidate_filters())
-        .where(Transaction.category.is_(None))
-    ).all()
+def _merchant_candidate_counts(
+    rows: Sequence[Transaction],
+    resolver: MerchantIdentityResolver,
+) -> dict[str, int]:
     counts: dict[str, int] = {}
-    for merchant, title in rows:
-        key = merchant_canonical_key(merchant, title, alias_map=alias_map)
+    for row in rows:
+        key = resolver.resolve(row.merchant, row.title).canonical_key
         if key:
             counts[key] = counts.get(key, 0) + 1
     return counts
 
 
-def _merchant_feedback_counts(session: Session, alias_map: dict[str, str]) -> dict[str, int]:
+def _merchant_feedback_counts(
+    session: Session,
+    resolver: MerchantIdentityResolver,
+) -> dict[str, int]:
     rows = session.execute(
         select(Transaction.merchant, Transaction.title)
         .select_from(MlFeedbackEvent)
         .join(Transaction, Transaction.id == MlFeedbackEvent.transaction_id)
         .where(
-            MlFeedbackEvent.event_type.in_(
-                ["manual_category", "reject_suggestion", "manual_clear"]
-            )
+            MlFeedbackEvent.event_type.in_(["manual_category", "reject_suggestion", "manual_clear"])
         )
     ).all()
     counts: dict[str, int] = {}
     for merchant, title in rows:
-        key = merchant_canonical_key(merchant, title, alias_map=alias_map)
+        key = resolver.resolve(merchant, title).canonical_key
         if key:
             counts[key] = counts.get(key, 0) + 1
     return counts
@@ -120,7 +120,10 @@ def _rare_category_score(
     return 0.0, None
 
 
-def _conflict_score(session: Session, tx: Transaction) -> tuple[float, list[str]]:
+def _conflict_score(
+    tx: Transaction,
+    rule_matcher: PersonalRuleMatcher,
+) -> tuple[float, list[str]]:
     reasons: list[str] = []
     score = 0.0
     source_category = map_source_category(tx.raw_category)
@@ -129,7 +132,7 @@ def _conflict_score(session: Session, tx: Transaction) -> tuple[float, list[str]
         score += 12.0
         reasons.append("bank_model_conflict")
 
-    personal = effect_for_transaction(session, merchant=tx.merchant, title=tx.title)
+    personal = rule_matcher.effect(merchant=tx.merchant, title=tx.title)
     if personal and personal.category and predicted and personal.category != predicted:
         score += 15.0
         reasons.append("rule_model_conflict")
@@ -143,27 +146,24 @@ def review_queue(
     policy: ClassificationPolicy = DEFAULT_POLICY,
 ) -> list[ReviewQueueItem]:
     """Return the highest-value category review items first."""
-    rows = session.execute(
-        select(Transaction)
-        .where(*expense_category_candidate_filters())
-        .where(Transaction.category.is_(None))
-    ).scalars().all()
+    rows = (
+        session.execute(
+            select(Transaction)
+            .where(*expense_category_candidate_filters())
+            .where(Transaction.category.is_(None))
+        )
+        .scalars()
+        .all()
+    )
     if not rows:
         return []
 
-    alias_map, label_map = load_merchant_alias_maps(session)
+    merchant_resolver = load_merchant_identity_resolver(session)
+    rule_matcher = load_rule_matcher(session)
     category_counts = _category_counts(session)
-    merchant_counts = _merchant_candidate_counts(session, alias_map)
-    merchant_feedback = _merchant_feedback_counts(session, alias_map)
-    max_amount_log = (
-        max(
-            math.log1p(
-                abs(float(amount_base_value(row) or 0))
-            )
-            for row in rows
-        )
-        or 1.0
-    )
+    merchant_counts = _merchant_candidate_counts(rows, merchant_resolver)
+    merchant_feedback = _merchant_feedback_counts(session, merchant_resolver)
+    max_amount_log = max(math.log1p(abs(float(amount_base_value(row) or 0))) for row in rows) or 1.0
 
     items: list[ReviewQueueItem] = []
     for tx in rows:
@@ -188,17 +188,12 @@ def review_queue(
             tx.category_predicted,
             category_counts,
         )
-        merchant_identity_ = merchant_identity(
-            tx.merchant,
-            tx.title,
-            alias_map=alias_map,
-            label_map=label_map,
-        )
+        merchant_identity_ = merchant_resolver.resolve(tx.merchant, tx.title)
         merchant_key = merchant_identity_.canonical_key
         cluster_count = merchant_counts.get(merchant_key, 0)
         cluster_score = float(min(max(cluster_count - 1, 0) * 3, 15))
         feedback_score = float(min(merchant_feedback.get(merchant_key, 0) * 5, 15))
-        conflict_score, conflict_reasons = _conflict_score(session, tx)
+        conflict_score, conflict_reasons = _conflict_score(tx, rule_matcher)
         other_score = 0.0
         other_reason = None
         if tx.category_predicted == OTHER_CATEGORY:

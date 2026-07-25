@@ -1,4 +1,5 @@
 """Projection helpers for subscription review rows and KPIs."""
+
 from __future__ import annotations
 
 from datetime import date, timedelta
@@ -162,10 +163,7 @@ def sample_evidence(
         for value in pd.to_datetime(samples["booking_date"]).sort_values().tail(6).tolist()
     ]
     amount_stability = None
-    amounts = [
-        round(value, 2)
-        for value in samples["amount_base"].abs().astype(float).tolist()
-    ]
+    amounts = [round(value, 2) for value in samples["amount_base"].abs().astype(float).tolist()]
     if amounts:
         most_common_count = pd.Series(amounts).value_counts().iloc[0]
         amount_stability = round(float(most_common_count) / len(amounts), 3)
@@ -191,18 +189,14 @@ def transaction_samples(samples: pd.DataFrame) -> list[SubscriptionTransactionSa
     out: list[SubscriptionTransactionSample] = []
     for row in samples.sort_values("booking_date", ascending=False).head(12).itertuples():
         booking_date = (
-            row.booking_date.date()
-            if hasattr(row.booking_date, "date")
-            else row.booking_date
+            row.booking_date.date() if hasattr(row.booking_date, "date") else row.booking_date
         )
         out.append(
             SubscriptionTransactionSample(
                 id=int(row.transaction_id),
                 booking_date=booking_date,
                 merchant=str(row.merchant or ""),
-                merchant_display=str(
-                    getattr(row, "merchant_display", "") or row.merchant or ""
-                ),
+                merchant_display=str(getattr(row, "merchant_display", "") or row.merchant or ""),
                 merchant_canonical_key=str(getattr(row, "merchant_norm", "") or ""),
                 title=str(row.title or ""),
                 amount=round(float(row.amount), 2),
@@ -240,6 +234,7 @@ def row_from_samples(
     preference: SubscriptionPreference | None,
     as_of: date,
     user_decision: SubscriptionUserDecision = "suggested",
+    include_details: bool = True,
 ) -> SubscriptionReviewRow:
     ordered = samples.sort_values("booking_date")
     last_seen_raw = ordered["booking_date"].max()
@@ -263,9 +258,7 @@ def row_from_samples(
     next_expected_date = next_expected(last_seen, cadence)
     is_confirmed = bool(preference and preference.confirmed) or source == "category"
     display_name = (
-        (preference.display_name if preference else None)
-        or merchant
-        or merchant_key.split("|")[0]
+        (preference.display_name if preference else None) or merchant or merchant_key.split("|")[0]
     )
     status = status_for(
         cadence=cadence,
@@ -299,16 +292,20 @@ def row_from_samples(
         current_amount=current_amount,
         price_change_pct=price_change_pct,
         price_change_annual_impact=annual_impact,
-        evidence=sample_evidence(
-            samples,
-            source=source,
-            cadence=cadence,
-            confidence=confidence,
+        evidence=(
+            sample_evidence(
+                samples,
+                source=source,
+                cadence=cadence,
+                confidence=confidence,
+            )
+            if include_details
+            else {}
         ),
         is_confirmed=is_confirmed,
         user_decision=user_decision,
         display_name=display_name,
-        transactions=transaction_samples(samples),
+        transactions=transaction_samples(samples) if include_details else [],
     )
 
 
@@ -318,11 +315,10 @@ def detected_subscription_row(
     preference: SubscriptionPreference | None,
     user_decision: SubscriptionUserDecision = "suggested",
     as_of: date,
+    include_details: bool = True,
 ) -> SubscriptionReviewRow:
     cadence = (
-        preference.cadence_override
-        if preference and preference.cadence_override
-        else sub.cadence
+        preference.cadence_override if preference and preference.cadence_override else sub.cadence
     )
     return row_from_samples(
         merchant=sub.merchant,
@@ -335,6 +331,7 @@ def detected_subscription_row(
         preference=preference,
         user_decision=user_decision,
         as_of=as_of,
+        include_details=include_details,
     )
 
 
@@ -345,6 +342,7 @@ def category_subscription_rows(
     feedback_decisions: dict[str, str],
     detected_keys: set[str],
     as_of: date,
+    include_details: bool = True,
 ) -> list[SubscriptionReviewRow]:
     if df.empty:
         return []
@@ -355,16 +353,16 @@ def category_subscription_rows(
     if d.empty:
         return []
     rows: list[SubscriptionReviewRow] = []
-    for (merchant_norm, currency), group in d.groupby(
-        ["merchant_norm", "currency"], dropna=False
-    ):
+    for (merchant_norm, currency), group in d.groupby(["merchant_norm", "currency"], dropna=False):
         key = subscription_key(str(merchant_norm), str(currency or ""))
         if key in detected_keys:
             continue
         display = ""
-        displays = group.sort_values("booking_date", ascending=False)[
-            "merchant_display"
-        ].fillna("").astype(str)
+        displays = (
+            group.sort_values("booking_date", ascending=False)["merchant_display"]
+            .fillna("")
+            .astype(str)
+        )
         for value in displays:
             if value.strip():
                 display = value.strip()
@@ -392,6 +390,7 @@ def category_subscription_rows(
                 preference=pref,
                 user_decision=decision,
                 as_of=as_of,
+                include_details=include_details,
             )
         )
     return rows
@@ -404,6 +403,7 @@ def preference_only_rows(
     feedback_decisions: dict[str, str],
     existing_keys: set[str],
     as_of: date,
+    include_details: bool = True,
 ) -> list[SubscriptionReviewRow]:
     if df.empty:
         return []
@@ -414,8 +414,7 @@ def preference_only_rows(
         if "|" in key:
             merchant_norm, currency = key.rsplit("|", 1)
             group = df[
-                (df["merchant_norm"] == merchant_norm)
-                & (df["currency"].str.lower() == currency)
+                (df["merchant_norm"] == merchant_norm) & (df["currency"].str.lower() == currency)
             ]
         else:
             merchant_norm = key
@@ -439,6 +438,7 @@ def preference_only_rows(
                     feedback_decisions=feedback_decisions,
                 ),
                 as_of=as_of,
+                include_details=include_details,
             )
         )
     return rows
@@ -463,8 +463,7 @@ def overview_from_rows(rows: list[SubscriptionReviewRow], *, as_of: date) -> Sub
                     amount_base=row.estimated_monthly_cost
                     if row.cadence == "monthly"
                     else round(
-                        row.estimated_monthly_cost
-                        / max(monthly_ratio(row.cadence), 1e-9),
+                        row.estimated_monthly_cost / max(monthly_ratio(row.cadence), 1e-9),
                         2,
                     ),
                     base_currency=row.base_currency,

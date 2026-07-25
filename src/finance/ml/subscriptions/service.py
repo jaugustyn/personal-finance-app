@@ -1,4 +1,5 @@
 """Shared subscription review service used by API and LLM tools."""
+
 from __future__ import annotations
 
 from datetime import date
@@ -56,6 +57,7 @@ def list_subscription_rows(
     min_confidence: float = 0.0,
     include_rejected: bool = False,
     as_of: date | None = None,
+    include_details: bool = True,
 ) -> list[SubscriptionReviewRow]:
     as_of = as_of or date.today()
     df = transaction_frame(session)
@@ -75,9 +77,7 @@ def list_subscription_rows(
         )
 
     active_preferences = {
-        key: pref
-        for key, pref in preferences.items()
-        if include_rejected or not is_rejected(key)
+        key: pref for key, pref in preferences.items() if include_rejected or not is_rejected(key)
     }
     subs = detect_subscriptions(
         df,
@@ -94,12 +94,15 @@ def list_subscription_rows(
         row = detected_subscription_row(
             sub,
             preference=pref,
-            user_decision="rejected" if rejected else user_decision(
+            user_decision="rejected"
+            if rejected
+            else user_decision(
                 sub.merchant_key,
                 preferences=preferences,
                 feedback_decisions=feedback_decisions,
             ),
             as_of=as_of,
+            include_details=include_details,
         )
         if (
             row.source == "detected"
@@ -118,6 +121,7 @@ def list_subscription_rows(
             feedback_decisions=feedback_decisions,
             detected_keys=detected_keys,
             as_of=as_of,
+            include_details=include_details,
         )
         if include_rejected or not is_rejected(row.merchant_key)
     )
@@ -129,6 +133,7 @@ def list_subscription_rows(
             feedback_decisions=feedback_decisions,
             existing_keys=existing_keys,
             as_of=as_of,
+            include_details=include_details,
         )
     )
     rows.sort(key=lambda row: row.estimated_monthly_cost, reverse=True)
@@ -143,7 +148,12 @@ def subscription_overview(
     as_of = as_of or date.today()
     rows = [
         row
-        for row in list_subscription_rows(session, min_confidence=0.0, as_of=as_of)
+        for row in list_subscription_rows(
+            session,
+            min_confidence=0.0,
+            as_of=as_of,
+            include_details=False,
+        )
         if row.status not in {"probably_cancelled", "paused_or_missing"}
     ]
     return overview_from_rows(rows, as_of=as_of)

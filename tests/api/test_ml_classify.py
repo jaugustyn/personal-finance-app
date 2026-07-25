@@ -1,4 +1,5 @@
 """API tests for classifier diagnostics and optional LLM fallback."""
+
 from __future__ import annotations
 
 import json
@@ -9,6 +10,7 @@ from types import SimpleNamespace
 import joblib
 import numpy as np
 import pytest
+from sqlalchemy import event
 
 from apps.api.routers import ml as ml_router
 from finance.domain.models import (
@@ -20,6 +22,7 @@ from finance.domain.models import (
 from finance.ml.classification import predict as predict_mod
 from finance.ml.classification.artifacts import build_model_artifact
 from finance.ml.classification.lifecycle import _artifact_sha256
+from finance.ml.review_queue import review_queue
 
 
 def _artifact(*, confidence: float = 0.8) -> dict:
@@ -223,7 +226,12 @@ def test_classify_uses_fixed_threshold_from_artifact(client, monkeypatch) -> Non
     assert body["recommended_action"] == "accept_candidate"
     assert body["threshold_used"] == 0.55
     assert body["classification_decision"]["action"] == "accept"
-    assert "threshold" not in client.get("/openapi.json").json()["components"]["schemas"]["ClassifyRequest"]["properties"]
+    assert (
+        "threshold"
+        not in client.get("/openapi.json").json()["components"]["schemas"]["ClassifyRequest"][
+            "properties"
+        ]
+    )
 
 
 def test_classify_uses_valid_llm_fallback_when_enabled(client, monkeypatch) -> None:
@@ -406,14 +414,16 @@ def test_retrain_does_not_schedule_second_job_while_running(
     db_session,
     monkeypatch,
 ) -> None:
-    db_session.add(MlTrainingJob(
-        id="running-job",
-        status="running",
-        message="Retrain started in background.",
-        execution_slot=1,
-        requested_variants=[],
-        result={},
-    ))
+    db_session.add(
+        MlTrainingJob(
+            id="running-job",
+            status="running",
+            message="Retrain started in background.",
+            execution_slot=1,
+            requested_variants=[],
+            result={},
+        )
+    )
     db_session.commit()
     monkeypatch.setattr(
         ml_router,
@@ -757,6 +767,44 @@ def test_review_queue_prioritizes_high_value_uncertain_rows(client, db_session) 
     assert body[0]["priority_score"] > body[1]["priority_score"]
     assert body[0]["priority_components"]["other_risk"] > 0
     assert "bank_model_conflict" in body[0]["reason_codes"]
+
+
+def test_review_queue_loads_personal_rules_once_for_batch(
+    db_engine,
+    db_session,
+) -> None:
+    for index in range(25):
+        db_session.add(
+            Transaction(
+                booking_date=date(2026, 1, 10),
+                amount=Decimal(f"-{index + 1}.00"),
+                amount_base=Decimal(f"-{index + 1}.00"),
+                base_currency="PLN",
+                currency="PLN",
+                direction="debit",
+                merchant=f"Merchant {index}",
+                title="purchase",
+                category=None,
+                source="pekao",
+                dedup_hash=f"review-query-count-{index}",
+                transaction_type="expense",
+                is_transfer=False,
+            )
+        )
+    db_session.commit()
+    statements: list[str] = []
+
+    def record_statement(_conn, _cursor, statement, _parameters, _context, _many) -> None:
+        statements.append(statement.lower())
+
+    event.listen(db_engine, "before_cursor_execute", record_statement)
+    try:
+        rows = review_queue(db_session, limit=5)
+    finally:
+        event.remove(db_engine, "before_cursor_execute", record_statement)
+
+    assert len(rows) == 5
+    assert sum("personal_rules" in statement for statement in statements) == 1
 
 
 def test_feedback_report_returns_merchant_and_category_breakdowns(

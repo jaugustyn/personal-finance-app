@@ -1,4 +1,5 @@
 """Hybrid anomaly detector: IsolationForest + heuristic rules."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -51,6 +52,8 @@ def _merchant_freq(df: pd.DataFrame) -> pd.Series:
 
 
 def _merchant_key(df: pd.DataFrame) -> pd.Series:
+    if "merchant_key" in df.columns:
+        return df["merchant_key"].fillna("").astype(str)
     merchant = df["merchant"].fillna("").astype(str)
     title = (
         df["title"].fillna("").astype(str)
@@ -204,6 +207,8 @@ def detect_anomalies(
         work["transaction_type"] = "expense"
     if "category" not in work.columns:
         work["category"] = None
+    if "merchant_key" not in work.columns:
+        work["merchant_key"] = _merchant_key(work)
 
     if excluded_categories:
         cat_lower = work["category"].fillna("").astype(str).str.lower()
@@ -221,9 +226,7 @@ def detect_anomalies(
     # Isolation Forest score (higher = more anomalous).
     n = len(work)
     if eligible.sum() >= 20:
-        iso = IsolationForest(
-            contamination=contamination, random_state=seed, n_estimators=200
-        )
+        iso = IsolationForest(contamination=contamination, random_state=seed, n_estimators=200)
         iso.fit(feats[eligible])
         iso_score = np.zeros(n)
         iso_score[eligible] = -iso.decision_function(feats[eligible])
