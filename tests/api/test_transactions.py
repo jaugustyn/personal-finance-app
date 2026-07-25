@@ -175,6 +175,43 @@ def test_list_amount_sort_is_global_and_uses_base_currency(client, db_session) -
     assert second_page[1]["amount_base"] is None
 
 
+def test_list_category_and_type_sort_are_global(client, db_session) -> None:
+    housing = _seed(
+        db_session,
+        category="housing",
+        transaction_type="expense",
+        dedup_hash="h-sort-housing",
+    )
+    income = _seed(
+        db_session,
+        amount=Decimal("50"),
+        direction="credit",
+        category="other",
+        transaction_type="income",
+        dedup_hash="h-sort-income",
+    )
+    food = _seed(
+        db_session,
+        category="food",
+        transaction_type="refund",
+        dedup_hash="h-sort-food",
+    )
+
+    category_first_page = client.get(
+        "/transactions?sort_by=category&sort_direction=asc&limit=2"
+    ).json()
+    category_second_page = client.get(
+        "/transactions?sort_by=category&sort_direction=asc&limit=2&offset=2"
+    ).json()
+    type_rows = client.get(
+        "/transactions?sort_by=transaction_type&sort_direction=asc"
+    ).json()
+
+    assert [row["id"] for row in category_first_page] == [food.id, housing.id]
+    assert [row["id"] for row in category_second_page] == [income.id]
+    assert [row["id"] for row in type_rows] == [housing.id, income.id, food.id]
+
+
 def test_filter_summary_reports_and_excludes_unconverted_amount(
     client, db_session
 ) -> None:
@@ -247,7 +284,7 @@ def test_list_merchant_sort_is_global(client, db_session) -> None:
 
 
 def test_list_rejects_unknown_sort_field(client) -> None:
-    response = client.get("/transactions?sort_by=category")
+    response = client.get("/transactions?sort_by=unknown")
 
     assert response.status_code == 422
 

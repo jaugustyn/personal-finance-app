@@ -131,6 +131,8 @@ export const queryKeys = {
     groups: (params: {
       onlyUncategorized: boolean;
       minCount: number;
+      page: number;
+      pageSize: number;
       sortBy: string;
       sortDirection: string;
     }) => ["transactions", "groups", params] as const,

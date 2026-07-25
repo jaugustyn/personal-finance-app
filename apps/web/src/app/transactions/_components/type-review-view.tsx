@@ -8,6 +8,11 @@ import { Money } from "@/components/money";
 import { TransactionTypeCombobox } from "@/components/transaction-type-combobox";
 import { TransactionTypeFilterSelect } from "@/components/transaction-type-filter-select";
 import { FilterField } from "@/components/filter-panel";
+import { SortableTableHead } from "@/components/sortable-table-head";
+import {
+  DEFAULT_TABLE_PAGE_SIZE,
+  TablePagination,
+} from "@/components/table-pagination";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ClearableInput } from "@/components/ui/clearable-input";
@@ -20,17 +25,25 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { api, apiErrorMessage } from "@/lib/api";
+import {
+  api,
+  apiErrorMessage,
+  type TransactionSortBy,
+} from "@/lib/api";
 import { useFormatters, useT } from "@/lib/i18n";
 import { queryKeys } from "@/lib/query-keys";
 import { useTransactionMutations } from "../_lib/use-transaction-mutations";
-
-const PAGE_SIZE = 50;
+import type { TransactionSort } from "./transactions-table";
 
 export function TypeReviewView() {
   const { t } = useT();
   const { formatDate } = useFormatters();
   const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState(DEFAULT_TABLE_PAGE_SIZE);
+  const [sort, setSort] = useState<TransactionSort>({
+    id: "date",
+    dir: "desc",
+  });
   const [search, setSearch] = useState("");
   const [type, setType] = useState("");
   const [selected, setSelected] = useState<Set<number>>(new Set());
@@ -42,8 +55,10 @@ export function TypeReviewView() {
   };
   const queryParams = {
     ...filters,
-    limit: PAGE_SIZE,
-    offset: page * PAGE_SIZE,
+    limit: pageSize,
+    offset: page * pageSize,
+    sort_by: sort.id,
+    sort_direction: sort.dir,
   };
   const query = useQuery({
     queryKey: queryKeys.transactions.list(queryParams),
@@ -61,7 +76,7 @@ export function TypeReviewView() {
     clearBulkCategory: () => undefined,
     clearBulkType: () => setBulkType(""),
   });
-  const rows = query.data ?? [];
+  const rows = (query.data ?? []).slice(0, pageSize);
   const allSelected = rows.length > 0 && rows.every((row) => selected.has(row.id));
   const reset = () => {
     setPage(0);
@@ -73,8 +88,15 @@ export function TypeReviewView() {
       next.delete(id);
       return next;
     });
+  const updateSort = (id: TransactionSortBy) => {
+    setSort((current) => ({
+      id,
+      dir: current.id === id && current.dir === "asc" ? "desc" : "asc",
+    }));
+    reset();
+  };
   return (
-    <div className="space-y-3">
+    <div className="space-y-6">
       <div className="flex flex-wrap items-end gap-3 rounded-lg border bg-card p-3 shadow-sm">
         <FilterField
           label={t("transactions.filterSearch")}
@@ -164,12 +186,26 @@ export function TypeReviewView() {
           <TableSkeleton rows={8} />
         </div>
       ) : rows.length === 0 ? (
-        <div className="flex h-40 items-center justify-center rounded-lg border bg-card text-sm text-muted-foreground">
-          {t("transactions.typeReview.empty")}
+        <div className="overflow-hidden rounded-lg border bg-card">
+          <div className="flex h-40 items-center justify-center text-sm text-muted-foreground">
+            {t("transactions.typeReview.empty")}
+          </div>
+          <TablePagination
+            page={page}
+            pageSize={pageSize}
+            currentCount={0}
+            total={summary.data?.count}
+            hasNext={false}
+            onPageChange={setPage}
+            onPageSizeChange={(nextPageSize) => {
+              setPageSize(nextPageSize);
+              reset();
+            }}
+          />
         </div>
       ) : (
         <div className="overflow-hidden rounded-lg border bg-card">
-          <Table className="min-w-[800px] table-fixed">
+          <Table className="min-w-[920px] table-fixed">
             <TableHeader>
               <TableRow className="divide-x divide-border/40 bg-muted/30 hover:bg-muted/30">
                 <TableHead className="w-10">
@@ -183,10 +219,30 @@ export function TypeReviewView() {
                     }
                   />
                 </TableHead>
-                <TableHead>{t("transactions.column.merchant")}</TableHead>
-                <TableHead className="w-32 text-right">
+                <SortableTableHead
+                  id="date"
+                  sort={sort}
+                  onSort={updateSort}
+                  className="w-28"
+                >
+                  {t("transactions.column.date")}
+                </SortableTableHead>
+                <SortableTableHead
+                  id="merchant"
+                  sort={sort}
+                  onSort={updateSort}
+                >
+                  {t("transactions.column.merchant")}
+                </SortableTableHead>
+                <SortableTableHead
+                  id="amount"
+                  sort={sort}
+                  onSort={updateSort}
+                  className="w-32 text-right"
+                  align="right"
+                >
                   {t("transactions.column.amount")}
-                </TableHead>
+                </SortableTableHead>
                 <TableHead className="w-56">
                   {t("transactions.typeReview.proposed")}
                 </TableHead>
@@ -213,12 +269,15 @@ export function TypeReviewView() {
                         }
                       />
                     </TableCell>
+                    <TableCell className="whitespace-nowrap text-muted-foreground">
+                      {formatDate(row.booking_date)}
+                    </TableCell>
                     <TableCell>
                       <div className="truncate font-medium">
                         {row.merchant_display || row.merchant || row.title}
                       </div>
                       <div className="truncate text-xs text-muted-foreground">
-                        {formatDate(row.booking_date)} · {row.title}
+                        {row.title}
                       </div>
                     </TableCell>
                     <TableCell className="text-right">
@@ -259,30 +318,17 @@ export function TypeReviewView() {
               })}
             </TableBody>
           </Table>
-          <div className="flex min-h-14 items-center justify-between border-t px-3 py-2 text-sm text-muted-foreground">
-            <span>
-              {t("pagination.page", { n: page + 1 })} · {rows.length} /{" "}
-              {summary.data?.count ?? rows.length}
-            </span>
-            <div className="flex gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={page === 0}
-                onClick={() => setPage((value) => Math.max(0, value - 1))}
-              >
-                {t("pagination.previous")}
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={rows.length < PAGE_SIZE}
-                onClick={() => setPage((value) => value + 1)}
-              >
-                {t("pagination.next")}
-              </Button>
-            </div>
-          </div>
+          <TablePagination
+            page={page}
+            pageSize={pageSize}
+            currentCount={rows.length}
+            total={summary.data?.count}
+            onPageChange={setPage}
+            onPageSizeChange={(nextPageSize) => {
+              setPageSize(nextPageSize);
+              reset();
+            }}
+          />
         </div>
       )}
     </div>

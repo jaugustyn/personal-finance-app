@@ -14,13 +14,13 @@ import {
 import { useT } from "@/lib/i18n";
 import { useConfirm } from "@/components/confirm-dialog";
 import { ErrorState } from "@/components/error-state";
+import { DEFAULT_TABLE_PAGE_SIZE } from "@/components/table-pagination";
 import {
   storedValueOneOf,
   useLocalStorageState,
 } from "@/hooks/use-local-storage-state";
 import { queryKeys } from "@/lib/query-keys";
 import {
-  PAGE_SIZE,
   hasCategorySuggestion,
   hasRejectedCategorySuggestion,
 } from "../_lib/constants";
@@ -35,6 +35,7 @@ import {
 interface ListViewProps {
   reviewMode: boolean;
   initialFilters?: TransactionInitialFilters;
+  onAddManualTransaction?: () => void;
   onEditManualTransaction?: (transaction: Transaction) => void;
 }
 
@@ -84,6 +85,7 @@ function clearUrlFilters() {
 export function ListView({
   reviewMode,
   initialFilters,
+  onAddManualTransaction,
   onEditManualTransaction,
 }: ListViewProps) {
   const { t } = useT();
@@ -115,6 +117,7 @@ export function ListView({
   const [reviewState, setReviewState] =
     useState<CategoryState>("needs_review");
   const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState(DEFAULT_TABLE_PAGE_SIZE);
   const [sort, setSort] = useState<TransactionSort>({
     id: "date",
     dir: "desc",
@@ -203,7 +206,6 @@ export function ListView({
         search: searchFilter,
         category: categoryFilter,
         category_state: reviewState,
-        review_priority: true,
       }
     : {
         search: searchFilter,
@@ -219,16 +221,14 @@ export function ListView({
         transaction_type: transactionType || undefined,
       };
 
-  const listParams = reviewMode
-    ? filterParams
-    : {
-        ...filterParams,
-        sort_by: sort.id,
-        sort_direction: sort.dir,
-      };
+  const listParams = {
+    ...filterParams,
+    sort_by: sort.id,
+    sort_direction: sort.dir,
+  };
   const queryParams = {
-    limit: PAGE_SIZE,
-    offset: page * PAGE_SIZE,
+    limit: pageSize,
+    offset: page * pageSize,
     ...listParams,
   };
 
@@ -362,7 +362,7 @@ export function ListView({
   };
 
   return (
-    <>
+    <div className="space-y-6">
       <TransactionFilters
         reviewMode={reviewMode}
         search={activeSearch}
@@ -378,6 +378,7 @@ export function ListView({
         includeTransfers={includeTransfers}
         hasActiveFilters={hasActiveFilters}
         filterSummary={summaryQuery.data}
+        onAddManualTransaction={onAddManualTransaction}
         onSearchChange={(value) => {
           if (reviewMode) setReviewSearch(value);
           else setSearch(value);
@@ -513,6 +514,7 @@ export function ListView({
           totalCount={summaryQuery.data?.count}
           isLoading={query.isLoading}
           page={page}
+          pageSize={pageSize}
           sort={sort}
           selected={selected}
           acceptPending={acceptSuggestions.isPending}
@@ -542,15 +544,20 @@ export function ListView({
             setSort((current) => ({
               id,
               dir:
-                current.id === id && current.dir === "desc" ? "asc" : "desc",
+                current.id === id && current.dir === "asc" ? "desc" : "asc",
             }));
             setPage(0);
           }}
           onPreviousPage={() => setPage((p) => Math.max(0, p - 1))}
           onNextPage={() => setPage((p) => p + 1)}
+          onPageSizeChange={(nextPageSize) => {
+            setPageSize(nextPageSize);
+            setPage(0);
+            setSelected(new Set());
+          }}
         />
       )}
-    </>
+    </div>
   );
 }
 

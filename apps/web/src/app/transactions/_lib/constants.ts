@@ -1,8 +1,6 @@
 import type { Transaction } from "@/lib/api";
 export { TRANSACTION_TYPE_OPTIONS } from "@/lib/transaction-types";
 
-export const PAGE_SIZE = 100;
-
 export type TransactionsView = "list" | "review" | "groups";
 export type TransactionsSubject = "category" | "transaction_type";
 export type TransactionsMode =

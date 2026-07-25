@@ -27,7 +27,7 @@ import {
 import { useFormatters, useT } from "@/lib/i18n";
 import { queryKeys } from "@/lib/query-keys";
 import { cn } from "@/lib/utils";
-import { Download, RotateCcw } from "lucide-react";
+import { Download, Plus, RotateCcw } from "lucide-react";
 
 interface TransactionFiltersProps {
   reviewMode: boolean;
@@ -44,6 +44,7 @@ interface TransactionFiltersProps {
   includeTransfers: boolean;
   hasActiveFilters: boolean;
   filterSummary?: FilterSummary;
+  onAddManualTransaction?: () => void;
   onSearchChange: (value: string) => void;
   onCategoryChange: (value: string) => void;
   onMinAmountChange: (value: string) => void;
@@ -73,6 +74,7 @@ export function TransactionFilters({
   includeTransfers,
   hasActiveFilters,
   filterSummary,
+  onAddManualTransaction,
   onSearchChange,
   onCategoryChange,
   onMinAmountChange,
@@ -386,12 +388,20 @@ export function TransactionFilters({
               </span>
             )}
           </div>
-          <Button size="sm" variant="outline" asChild>
-            <a href={exportHref} title={t("transactions.exportCsvHint")}>
-              <Download className="mr-2 h-4 w-4" />
-              {t("transactions.exportCsv")}
-            </a>
-          </Button>
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            {onAddManualTransaction ? (
+              <Button size="sm" onClick={onAddManualTransaction}>
+                <Plus className="mr-2 h-4 w-4" />
+                {t("transactions.manual.add")}
+              </Button>
+            ) : null}
+            <Button size="sm" variant="outline" asChild>
+              <a href={exportHref} title={t("transactions.exportCsvHint")}>
+                <Download className="mr-2 h-4 w-4" />
+                {t("transactions.exportCsv")}
+              </a>
+            </Button>
+          </div>
         </div>
       </div>
     </section>

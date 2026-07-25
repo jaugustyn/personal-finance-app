@@ -24,9 +24,15 @@ TransactionTypeState = Literal[
     "suggested",
 ]
 
-TransactionSortBy = Literal["date", "merchant", "amount"]
+TransactionSortBy = Literal[
+    "date",
+    "merchant",
+    "transaction_type",
+    "category",
+    "amount",
+]
 TransactionSortDirection = Literal["asc", "desc"]
-MerchantGroupSortBy = Literal["merchant", "amount", "count"]
+MerchantGroupSortBy = Literal["merchant", "amount", "count", "category"]
 
 
 @dataclass(frozen=True)

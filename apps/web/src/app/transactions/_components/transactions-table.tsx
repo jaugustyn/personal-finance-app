@@ -1,8 +1,9 @@
 "use client";
 
-import { type ReactNode, useState } from "react";
-import { Button } from "@/components/ui/button";
+import { useState } from "react";
 import { Checkbox } from "@/components/ui/checkbox";
+import { SortableTableHead } from "@/components/sortable-table-head";
+import { TablePagination } from "@/components/table-pagination";
 import { TableSkeleton } from "@/components/ui/skeleton";
 import {
   Table,
@@ -17,9 +18,6 @@ import type {
   TransactionSortDirection,
 } from "@/lib/api";
 import { useT } from "@/lib/i18n";
-import { cn } from "@/lib/utils";
-import { ArrowDown, ArrowUp, ChevronsUpDown } from "lucide-react";
-import { PAGE_SIZE } from "../_lib/constants";
 import { TransactionRow } from "./transaction-row";
 
 export type TransactionSort = {
@@ -34,6 +32,7 @@ interface TransactionsTableProps {
   totalCount?: number;
   isLoading: boolean;
   page: number;
+  pageSize: number;
   sort: TransactionSort;
   selected: Set<number>;
   acceptPending: boolean;
@@ -60,6 +59,7 @@ interface TransactionsTableProps {
   onSort: (id: TransactionSortBy) => void;
   onPreviousPage: () => void;
   onNextPage: () => void;
+  onPageSizeChange: (pageSize: number) => void;
 }
 
 export function TransactionsTable({
@@ -69,6 +69,7 @@ export function TransactionsTable({
   totalCount,
   isLoading,
   page,
+  pageSize,
   sort,
   selected,
   acceptPending,
@@ -87,6 +88,7 @@ export function TransactionsTable({
   onSort,
   onPreviousPage,
   onNextPage,
+  onPageSizeChange,
 }: TransactionsTableProps) {
   const { t } = useT();
   const [editing, setEditing] = useState<number | null>(null);
@@ -102,9 +104,21 @@ export function TransactionsTable({
           <TableSkeleton />
         </div>
       ) : rows.length === 0 ? (
-        <div className="flex h-40 items-center justify-center text-sm text-muted-foreground">
-          {t("transactions.empty")}
-        </div>
+        <>
+          <div className="flex h-40 items-center justify-center text-sm text-muted-foreground">
+            {t("transactions.empty")}
+          </div>
+          <TransactionsPagination
+            page={page}
+            pageSize={pageSize}
+            rowCount={0}
+            fetchedCount={0}
+            totalCount={totalCount}
+            onPreviousPage={onPreviousPage}
+            onNextPage={onNextPage}
+            onPageSizeChange={onPageSizeChange}
+          />
+        </>
       ) : (
         <>
           <Table className="table-fixed">
@@ -117,53 +131,47 @@ export function TransactionsTable({
                     aria-label={t("transactions.selectAll")}
                   />
                 </TableHead>
-                {reviewMode ? (
-                  <TableHead className="w-28">
-                    {t("transactions.column.date")}
-                  </TableHead>
-                ) : (
-                  <SortableTableHead
-                    id="date"
-                    sort={sort}
-                    onSort={onSort}
-                    className="w-28"
-                  >
-                    {t("transactions.column.date")}
-                  </SortableTableHead>
-                )}
-                {reviewMode ? (
-                  <TableHead>{t("transactions.column.merchant")}</TableHead>
-                ) : (
-                  <SortableTableHead
-                    id="merchant"
-                    sort={sort}
-                    onSort={onSort}
-                  >
-                    {t("transactions.column.merchant")}
-                  </SortableTableHead>
-                )}
-                <TableHead className="w-40">
+                <SortableTableHead
+                  id="date"
+                  sort={sort}
+                  onSort={onSort}
+                  className="w-28"
+                >
+                  {t("transactions.column.date")}
+                </SortableTableHead>
+                <SortableTableHead
+                  id="merchant"
+                  sort={sort}
+                  onSort={onSort}
+                >
+                  {t("transactions.column.merchant")}
+                </SortableTableHead>
+                <SortableTableHead
+                  id="transaction_type"
+                  sort={sort}
+                  onSort={onSort}
+                  className="w-40"
+                >
                   {t("transactions.column.type")}
-                </TableHead>
-                <TableHead className="w-64">
+                </SortableTableHead>
+                <SortableTableHead
+                  id="category"
+                  sort={sort}
+                  onSort={onSort}
+                  className="w-64"
+                >
                   {t("transactions.column.category")}
-                </TableHead>
-                {reviewMode ? (
-                  <TableHead className="w-32 text-right">
-                    {t("transactions.column.amount")}
-                  </TableHead>
-                ) : (
-                  <SortableTableHead
-                    id="amount"
-                    sort={sort}
-                    onSort={onSort}
-                    className="w-32 text-right"
-                    align="right"
-                  >
-                    {t("transactions.column.amount")}
-                  </SortableTableHead>
-                )}
-                <TableHead className="w-12" />
+                </SortableTableHead>
+                <SortableTableHead
+                  id="amount"
+                  sort={sort}
+                  onSort={onSort}
+                  className="w-32 text-right"
+                  align="right"
+                >
+                  {t("transactions.column.amount")}
+                </SortableTableHead>
+                <TableHead className="w-12 text-center" />
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -209,11 +217,13 @@ export function TransactionsTable({
           </Table>
           <TransactionsPagination
             page={page}
+            pageSize={pageSize}
             rowCount={rows.length}
             fetchedCount={fetchedCount}
             totalCount={totalCount}
             onPreviousPage={onPreviousPage}
             onNextPage={onNextPage}
+            onPageSizeChange={onPageSizeChange}
           />
         </>
       )}
@@ -223,94 +233,39 @@ export function TransactionsTable({
 
 function TransactionsPagination({
   page,
+  pageSize,
   rowCount,
   fetchedCount,
   totalCount,
   onPreviousPage,
   onNextPage,
+  onPageSizeChange,
 }: {
   page: number;
+  pageSize: number;
   rowCount: number;
   fetchedCount: number;
   totalCount?: number;
   onPreviousPage: () => void;
   onNextPage: () => void;
+  onPageSizeChange: (pageSize: number) => void;
 }) {
-  const { t } = useT();
-
   return (
-    <div className="flex min-h-14 items-center justify-between border-t px-3 py-2 text-sm text-muted-foreground">
-      <span>
-        {t("pagination.page", { n: page + 1 })} · {rowCount} /{" "}
-        {totalCount ?? fetchedCount}
-      </span>
-      <div className="flex gap-2">
-        <Button
-          variant="outline"
-          size="sm"
-          disabled={page === 0}
-          onClick={onPreviousPage}
-        >
-          {t("pagination.previous")}
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          disabled={fetchedCount < PAGE_SIZE}
-          onClick={onNextPage}
-        >
-          {t("pagination.next")}
-        </Button>
-      </div>
-    </div>
-  );
-}
-
-function SortableTableHead({
-  id,
-  sort,
-  onSort,
-  children,
-  className,
-  align = "left",
-}: {
-  id: TransactionSortBy;
-  sort: TransactionSort;
-  onSort: (id: TransactionSortBy) => void;
-  children: ReactNode;
-  className?: string;
-  align?: "left" | "right";
-}) {
-  const { t } = useT();
-  const active = sort.id === id;
-  return (
-    <TableHead
-      aria-sort={
-        active ? (sort.dir === "asc" ? "ascending" : "descending") : "none"
+    <TablePagination
+      page={page}
+      pageSize={pageSize}
+      currentCount={rowCount}
+      total={totalCount}
+      hasNext={
+        totalCount !== undefined
+          ? (page + 1) * pageSize < totalCount
+          : fetchedCount >= pageSize
       }
-      className={className}
-    >
-      <button
-        type="button"
-        onClick={() => onSort(id)}
-        title={t("table.sort")}
-        className={cn(
-          "inline-flex items-center gap-1 transition-colors hover:text-foreground",
-          active && "text-foreground",
-          align === "right" && "ml-auto flex-row-reverse",
-        )}
-      >
-        {children}
-        {active ? (
-          sort.dir === "asc" ? (
-            <ArrowUp className="h-3.5 w-3.5" />
-          ) : (
-            <ArrowDown className="h-3.5 w-3.5" />
-          )
-        ) : (
-          <ChevronsUpDown className="h-3.5 w-3.5 opacity-50" />
-        )}
-      </button>
-    </TableHead>
+      onPageChange={(nextPage) => {
+        if (nextPage < page) onPreviousPage();
+        else if (nextPage > page) onNextPage();
+      }}
+      onPageSizeChange={onPageSizeChange}
+    />
   );
 }

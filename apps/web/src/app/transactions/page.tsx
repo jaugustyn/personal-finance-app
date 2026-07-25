@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus } from "lucide-react";
 import { toast } from "sonner";
 import { useT } from "@/lib/i18n";
 import {
@@ -13,7 +12,6 @@ import {
   type Transaction,
 } from "@/lib/api";
 import { PageHeader } from "@/components/page-header";
-import { Button } from "@/components/ui/button";
 import {
   storedValueOneOf,
   useLocalStorageState,
@@ -168,17 +166,7 @@ export default function TransactionsPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        title={t("transactions.title")}
-        actions={
-          activeMode === "list" ? (
-            <Button type="button" onClick={openCreate}>
-              <Plus className="h-4 w-4" />
-              {t("transactions.manual.add")}
-            </Button>
-          ) : null
-        }
-      />
+      <PageHeader title={t("transactions.title")} />
       <ViewSwitcher value={activeMode} onChange={handleModeChange} />
 
       {view === "groups" ? (
@@ -190,6 +178,7 @@ export default function TransactionsPage() {
           key={`${view}:${initialFilters.key}`}
           reviewMode={view === "review"}
           initialFilters={initialFilters}
+          onAddManualTransaction={openCreate}
           onEditManualTransaction={openEdit}
         />
       )}

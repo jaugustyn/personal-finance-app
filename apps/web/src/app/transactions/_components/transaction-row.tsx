@@ -130,7 +130,7 @@ export function TransactionRow({
       <TableCell className="text-muted-foreground">
         {formatDate(tx.booking_date)}
       </TableCell>
-      <TableCell className="font-medium">
+      <TableCell className="overflow-hidden font-medium">
         <div className="min-w-0 space-y-0.5">
           <div className="flex min-w-0 items-center gap-2">
             <span className="truncate">{merchantDisplay}</span>
@@ -176,6 +176,7 @@ export function TransactionRow({
         )}
       </TableCell>
       <TableCell
+        className="overflow-hidden"
         onDoubleClick={() => {
           if (!editingType) onEditType();
         }}
@@ -201,6 +202,7 @@ export function TransactionRow({
         )}
       </TableCell>
       <TableCell
+        className="overflow-hidden"
         onDoubleClick={() => {
           if (canEditCategory && !editing) onEdit();
         }}
@@ -240,7 +242,7 @@ export function TransactionRow({
           ) : null}
         </div>
       </TableCell>
-      <TableCell className="text-right">
+      <TableCell className="px-1 text-center">
         {editing ? (
           <Button
             size="icon"

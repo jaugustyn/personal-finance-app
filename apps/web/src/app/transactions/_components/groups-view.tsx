@@ -10,6 +10,7 @@ import {
 import { CategoryCombobox } from "@/components/category-combobox";
 import { FilterField } from "@/components/filter-panel";
 import { FilterSelect } from "@/components/filter-select";
+import { DEFAULT_TABLE_PAGE_SIZE } from "@/components/table-pagination";
 import {
   DataTable,
   type DataTableColumn,
@@ -32,6 +33,8 @@ export function GroupsView() {
   const { formatCurrency } = useFormatters();
   const qc = useQueryClient();
   const [onlyUncat, setOnlyUncat] = useState(true);
+  const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState(DEFAULT_TABLE_PAGE_SIZE);
   const [sort, setSort] = useState<Exclude<DataTableSortState, null>>({
     id: "count",
     dir: "desc",
@@ -42,6 +45,8 @@ export function GroupsView() {
     queryKey: queryKeys.transactions.groups({
       onlyUncategorized: onlyUncat,
       minCount: 2,
+      page,
+      pageSize,
       sortBy: sort.id,
       sortDirection: sort.dir,
     }),
@@ -49,6 +54,8 @@ export function GroupsView() {
       api.merchantGroups({
         only_uncategorized: onlyUncat,
         min_count: 2,
+        limit: pageSize + 1,
+        offset: page * pageSize,
         sort_by: sort.id as MerchantGroupSortBy,
         sort_direction: sort.dir as TransactionSortDirection,
       }),
@@ -79,6 +86,8 @@ export function GroupsView() {
     const credit = Math.abs(Number(g.total_credit) || 0);
     return credit - debit;
   };
+  const rows = (query.data ?? []).slice(0, pageSize);
+  const hasNextPage = (query.data?.length ?? 0) > pageSize;
   const columns: DataTableColumn<MerchantGroup>[] = [
     {
       id: "merchant",
@@ -137,14 +146,15 @@ export function GroupsView() {
       id: "count",
       header: "#",
       sortable: true,
-      align: "center",
+      align: "right",
       headerClassName: "w-16",
-      className: "w-16 text-muted-foreground",
+      className: "w-16 tabular-nums text-muted-foreground",
       cell: (g) => g.count,
     },
     {
       id: "category",
       header: t("transactions.column.category"),
+      sortable: true,
       headerClassName: "w-64",
       className: "w-64",
       cell: (g) => {
@@ -171,6 +181,7 @@ export function GroupsView() {
     {
       id: "actions",
       header: "",
+      align: "center",
       headerClassName: "w-28",
       className: "w-28",
       cell: (g) => {
@@ -179,25 +190,27 @@ export function GroupsView() {
             ? pickers[g.merchant_canonical_key]
             : (g.common_category ?? null);
         return (
-          <Button
-            size="sm"
-            disabled={apply.isPending || !picked}
-            onClick={() =>
-              apply.mutate({
-                merchantCanonicalKey: g.merchant_canonical_key,
-                category: picked,
-              })
-            }
-          >
-            {t("transactions.groups.apply")}
-          </Button>
+          <div className="flex justify-center">
+            <Button
+              size="sm"
+              disabled={apply.isPending || !picked}
+              onClick={() =>
+                apply.mutate({
+                  merchantCanonicalKey: g.merchant_canonical_key,
+                  category: picked,
+                })
+              }
+            >
+              {t("transactions.groups.apply")}
+            </Button>
+          </div>
         );
       },
     },
   ];
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-6">
       <div className="flex flex-wrap items-end gap-3 rounded-lg border bg-card p-3 shadow-sm">
         <FilterField
           label={t("transactions.groups.scopeLabel")}
@@ -205,7 +218,10 @@ export function GroupsView() {
         >
           <FilterSelect
             value={onlyUncat ? "unassigned" : "all"}
-            onValueChange={(value) => setOnlyUncat(value === "unassigned")}
+            onValueChange={(value) => {
+              setOnlyUncat(value === "unassigned");
+              setPage(0);
+            }}
             ariaLabel={t("transactions.groups.scopeLabel")}
             options={[
               {
@@ -228,13 +244,14 @@ export function GroupsView() {
         </div>
       ) : query.isError ? (
         <DataTable
+          key={onlyUncat ? "unassigned" : "all"}
           columns={columns}
           data={undefined}
           rowKey={(g) => g.merchant_canonical_key}
           isError
           onRetry={() => void query.refetch()}
         />
-      ) : (query.data ?? []).length === 0 ? (
+      ) : rows.length === 0 && page === 0 ? (
         <div className="flex h-40 items-center justify-center rounded-lg border bg-card text-sm text-muted-foreground">
           <p>
             {t(
@@ -247,12 +264,26 @@ export function GroupsView() {
       ) : (
         <DataTable
           columns={columns}
-          data={query.data ?? []}
+          data={rows}
           rowKey={(g) => g.merchant_canonical_key}
           className="bg-card [&_tbody_tr]:divide-x [&_tbody_tr]:divide-border/40 [&_thead_tr]:divide-x [&_thead_tr]:divide-border/40 [&_thead_tr]:bg-muted/30 [&_thead_tr:hover]:bg-muted/30"
           tableClassName="min-w-[760px] table-fixed"
           sort={sort}
-          onSortChange={setSort}
+          onSortChange={(nextSort) => {
+            setSort(nextSort);
+            setPage(0);
+          }}
+          pagination={{
+            mode: "server",
+            page,
+            pageSize,
+            hasNext: hasNextPage,
+            onPageChange: setPage,
+            onPageSizeChange: (nextPageSize) => {
+              setPageSize(nextPageSize);
+              setPage(0);
+            },
+          }}
         />
       )}
     </div>

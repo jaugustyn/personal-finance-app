@@ -30,9 +30,14 @@ export type TransactionFilterParams = {
   review_priority?: boolean;
 };
 
-export type TransactionSortBy = "date" | "merchant" | "amount";
+export type TransactionSortBy =
+  | "date"
+  | "merchant"
+  | "transaction_type"
+  | "category"
+  | "amount";
 export type TransactionSortDirection = "asc" | "desc";
-export type MerchantGroupSortBy = "merchant" | "amount" | "count";
+export type MerchantGroupSortBy = "merchant" | "amount" | "count" | "category";
 
 export interface ManualTransactionInput {
   booking_date: string;
@@ -195,6 +200,7 @@ export const transactionsApi = {
       only_uncategorized?: boolean;
       min_count?: number;
       limit?: number;
+      offset?: number;
       sort_by?: MerchantGroupSortBy;
       sort_direction?: TransactionSortDirection;
     } = {},
@@ -204,6 +210,7 @@ export const transactionsApi = {
         only_uncategorized: params.only_uncategorized,
         min_count: params.min_count,
         limit: params.limit,
+        offset: params.offset,
         sort_by: params.sort_by,
         sort_direction: params.sort_direction,
       }),

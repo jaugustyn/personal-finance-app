@@ -151,6 +151,7 @@ def test_list_and_groups_reject_non_positive_pagination(client) -> None:
     assert client.get("/transactions?limit=0").status_code == 422
     assert client.get("/transactions?offset=-1").status_code == 422
     assert client.get("/transactions/groups?limit=0").status_code == 422
+    assert client.get("/transactions/groups?offset=-1").status_code == 422
 
 
 def test_groups_returns_uncategorized_merchants(client, db_session) -> None:

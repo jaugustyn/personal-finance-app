@@ -233,6 +233,7 @@ def merchant_groups(
     only_uncategorized: bool = Query(default=True),
     min_count: int = Query(default=2, ge=1, le=100),
     limit: int = Query(default=50, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
     sort_by: tx_service.MerchantGroupSortBy = Query(default="count"),
     sort_direction: tx_service.TransactionSortDirection = Query(default="desc"),
 ) -> list[MerchantGroup]:
@@ -245,6 +246,7 @@ def merchant_groups(
         only_uncategorized=only_uncategorized,
         min_count=min_count,
         limit=limit,
+        offset=offset,
         sort_by=sort_by,
         sort_direction=sort_direction,
     )

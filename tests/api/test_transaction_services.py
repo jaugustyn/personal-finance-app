@@ -286,6 +286,45 @@ def test_merchant_groups_sort_before_limit(db_session) -> None:
 
     assert [group.merchant for group in groups] == ["Duży wydatek"]
 
+    second_page = service.merchant_groups(
+        db_session,
+        only_uncategorized=True,
+        min_count=2,
+        limit=1,
+        offset=1,
+        sort_by="count",
+        sort_direction="desc",
+    )
+
+    assert [group.merchant for group in second_page] == ["Duży wydatek"]
+
+
+def test_merchant_groups_can_sort_by_common_category(db_session) -> None:
+    for index in range(2):
+        _tx(
+            db_session,
+            dedup_hash=f"group-housing-{index}",
+            merchant="Czynsz",
+            category="housing",
+        )
+        _tx(
+            db_session,
+            dedup_hash=f"group-food-{index}",
+            merchant="Sklep",
+            category="food",
+        )
+
+    groups = service.merchant_groups(
+        db_session,
+        only_uncategorized=False,
+        min_count=2,
+        limit=10,
+        sort_by="category",
+        sort_direction="asc",
+    )
+
+    assert [group.common_category for group in groups] == ["food", "housing"]
+
 
 def test_merchant_sort_hydrates_only_the_requested_page(db_session) -> None:
     for index, merchant in enumerate(["Zulu", "Alfa", "Market", "Beta", "Omega"]):

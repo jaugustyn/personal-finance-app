@@ -136,6 +136,7 @@ def _review_priority(tx: Transaction, policy: ClassificationPolicy) -> int:
 
 
 def _transaction_order_by(
+    filters: TransactionFilters,
     sort_by: TransactionSortBy,
     sort_direction: TransactionSortDirection,
 ) -> tuple[Any, ...]:
@@ -144,6 +145,31 @@ def _transaction_order_by(
         amount = amount_base_expr()
         return (
             getattr(amount, direction)().nulls_last(),
+            Transaction.booking_date.desc(),
+            Transaction.id.desc(),
+        )
+    if sort_by == "transaction_type":
+        transaction_type = effective_transaction_type_expr()
+        return (
+            getattr(transaction_type, direction)(),
+            Transaction.booking_date.desc(),
+            Transaction.id.desc(),
+        )
+    if sort_by == "category":
+        review_category = filters.category_state in {
+            "assignable",
+            "needs_review",
+            "rejected",
+            "suggested",
+        }
+        category_value = (
+            func.coalesce(Transaction.category, Transaction.category_predicted, "")
+            if review_category
+            else func.coalesce(Transaction.category, "")
+        )
+        category = func.lower(category_value)
+        return (
+            getattr(category, direction)(),
             Transaction.booking_date.desc(),
             Transaction.id.desc(),
         )
@@ -282,7 +308,7 @@ def filtered_transactions_stmt(
         stmt = stmt.where(Transaction.category_confidence >= filters.min_confidence)
     if filters.max_confidence is not None:
         stmt = stmt.where(Transaction.category_confidence <= filters.max_confidence)
-    stmt = stmt.order_by(*_transaction_order_by(sort_by, sort_direction))
+    stmt = stmt.order_by(*_transaction_order_by(filters, sort_by, sort_direction))
     return stmt
 
 
@@ -498,6 +524,7 @@ def merchant_groups(
     only_uncategorized: bool,
     min_count: int,
     limit: int,
+    offset: int = 0,
     sort_by: MerchantGroupSortBy = "count",
     sort_direction: TransactionSortDirection = "desc",
 ) -> list[MerchantGroupSummary]:
@@ -587,6 +614,8 @@ def merchant_groups(
             return abs(Decimal(group["total_credit"])) - abs(
                 Decimal(group["total_debit"])
             )
+        if sort_by == "category":
+            return str(group["common_category"] or "").casefold()
         return int(group["count"])
 
     # A stable first pass keeps ties deterministic without reversing the
@@ -596,7 +625,7 @@ def merchant_groups(
         key=sort_value,
         reverse=sort_direction == "desc",
     )
-    sorted_groups = eligible_groups[:limit]
+    sorted_groups = eligible_groups[offset : offset + limit]
     out: list[MerchantGroupSummary] = []
     for group in sorted_groups:
         merchants = [
