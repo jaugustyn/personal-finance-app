@@ -7,6 +7,7 @@ import { useFormatters, useT } from "@/lib/i18n";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DataTable, type DataTableColumn } from "@/components/data-table";
+import { HelpTooltip } from "@/components/help-tooltip";
 import { candidateVariants } from "../_lib/merchant-aliases";
 
 export type MerchantCandidateSort = {
@@ -114,9 +115,11 @@ export function CandidateTable({
   return (
     <section className="space-y-3">
       <div className="flex min-h-9 items-center gap-2">
-        <h2 className="text-base font-semibold">
-          {t("merchants.candidatesTitle")}
-        </h2>
+        <HelpTooltip content={t("merchants.candidatesHelp")}>
+          <h2 className="text-base font-semibold">
+            {t("merchants.candidatesTitle")}
+          </h2>
+        </HelpTooltip>
         <Badge variant="secondary">{candidates.length}</Badge>
         {isUpdating ? (
           <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />

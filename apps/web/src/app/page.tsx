@@ -74,6 +74,27 @@ export default function DashboardPage() {
     queryKey: queryKeys.dashboard.currencyStatus,
     queryFn: api.currencyStatus,
   });
+  const reviewQueue = useQuery({
+    queryKey: queryKeys.dashboard.reviewQueue(8),
+    queryFn: () => api.reviewQueue(8),
+  });
+  const anomalies = useQuery({
+    queryKey: queryKeys.dashboard.anomalies({
+      direction: "all",
+      reviewState: "pending",
+      limit: 5,
+    }),
+    queryFn: () =>
+      api.anomalies({
+        direction: "all",
+        review_state: "pending",
+        limit: 5,
+      }),
+  });
+  const subscriptionsOverview = useQuery({
+    queryKey: queryKeys.dashboard.subscriptionsOverview,
+    queryFn: () => api.subscriptionsOverview(),
+  });
   const cashflow = useQuery({
     queryKey: queryKeys.dashboard.cashflow(rangeKey),
     queryFn: () => api.cashflow(months, allData, includeTransfers),
@@ -158,28 +179,6 @@ export default function DashboardPage() {
         includeTransfers,
       ),
   });
-  const reviewQueue = useQuery({
-    queryKey: queryKeys.dashboard.reviewQueue(8),
-    queryFn: () => api.reviewQueue(8),
-  });
-  const anomalies = useQuery({
-    queryKey: queryKeys.dashboard.anomalies({
-      direction: "all",
-      reviewState: "pending",
-      limit: 5,
-    }),
-    queryFn: () =>
-      api.anomalies({
-        direction: "all",
-        review_state: "pending",
-        limit: 5,
-      }),
-  });
-  const subscriptionsOverview = useQuery({
-    queryKey: queryKeys.dashboard.subscriptionsOverview,
-    queryFn: () => api.subscriptionsOverview(),
-  });
-
   const overviewData = overview.data;
   const baseCurrency = overviewData?.base_currency ?? "PLN";
   const totalIncome = overviewData ? Number(overviewData.total_income) : 0;
@@ -188,6 +187,13 @@ export default function DashboardPage() {
   const savingsRate = overviewData ? Number(overviewData.savings_rate) : 0;
   const unconvertedCount = currencyStatus.data?.missing_rate_count ?? 0;
   const cashflowData = normalizeCashflowMonths(cashflow.data ?? [], range, months);
+  const categoryTrendsEmpty =
+    !categoryDeltaTrend.isLoading &&
+    !categoryDeltaTrend.isError &&
+    !categoryTrend.isLoading &&
+    !categoryTrend.isError &&
+    (categoryDeltaTrend.data?.length ?? 0) === 0 &&
+    (categoryTrend.data?.length ?? 0) === 0;
 
   return (
     <div>
@@ -326,49 +332,62 @@ export default function DashboardPage() {
             description={t("dashboard.trends.description")}
             separated
           >
-            <div className="grid gap-4 2xl:grid-cols-2">
-              <ChartCard
-                title={
-                  periodComparison
-                    ? t("dashboard.periodDeltaTitle")
-                    : t("dashboard.momTitle")
-                }
-              >
-                {categoryDeltaTrend.isLoading ? (
-                  <ChartSkeleton />
-                ) : categoryDeltaTrend.isError ? (
-                  <ErrorState
-                    variant="compact"
-                    onRetry={() => void categoryDeltaTrend.refetch()}
-                  />
-                ) : categoryDeltaTrend.data && categoryDeltaTrend.data.length > 0 ? (
-                  <CategoryMoMChart
-                    data={categoryDeltaTrend.data}
-                    currency={baseCurrency}
-                    comparisonMode={periodComparison ? "period" : "latest"}
-                  />
-                ) : (
-                  <EmptyState title={t("common.empty")} />
-                )}
-              </ChartCard>
-              <ChartCard title={t("dashboard.categoryTrendTitle")}>
-                {categoryTrend.isLoading ? (
-                  <ChartSkeleton />
-                ) : categoryTrend.isError ? (
-                  <ErrorState
-                    variant="compact"
-                    onRetry={() => void categoryTrend.refetch()}
-                  />
-                ) : categoryTrend.data && categoryTrend.data.length > 0 ? (
-                  <CategoryTrendChart
-                    data={categoryTrend.data}
-                    currency={baseCurrency}
-                  />
-                ) : (
-                  <EmptyState title={t("common.empty")} />
-                )}
-              </ChartCard>
-            </div>
+            {categoryTrendsEmpty ? (
+              <EmptyState
+                title={t("dashboard.categoryTrendsEmptyTitle")}
+                description={t("dashboard.categoryTrendsEmptyDescription")}
+              />
+            ) : (
+              <div className="grid gap-4 2xl:grid-cols-2">
+                <ChartCard
+                  title={
+                    periodComparison
+                      ? t("dashboard.periodDeltaTitle")
+                      : t("dashboard.momTitle")
+                  }
+                >
+                  {categoryDeltaTrend.isLoading ? (
+                    <ChartSkeleton />
+                  ) : categoryDeltaTrend.isError ? (
+                    <ErrorState
+                      variant="compact"
+                      onRetry={() => void categoryDeltaTrend.refetch()}
+                    />
+                  ) : categoryDeltaTrend.data && categoryDeltaTrend.data.length > 0 ? (
+                    <CategoryMoMChart
+                      data={categoryDeltaTrend.data}
+                      currency={baseCurrency}
+                      comparisonMode={periodComparison ? "period" : "latest"}
+                    />
+                  ) : (
+                    <EmptyState
+                      title={t("dashboard.categoryTrendsEmptyTitle")}
+                      description={t("dashboard.categoryTrendsEmptyDescription")}
+                    />
+                  )}
+                </ChartCard>
+                <ChartCard title={t("dashboard.categoryTrendTitle")}>
+                  {categoryTrend.isLoading ? (
+                    <ChartSkeleton />
+                  ) : categoryTrend.isError ? (
+                    <ErrorState
+                      variant="compact"
+                      onRetry={() => void categoryTrend.refetch()}
+                    />
+                  ) : categoryTrend.data && categoryTrend.data.length > 0 ? (
+                    <CategoryTrendChart
+                      data={categoryTrend.data}
+                      currency={baseCurrency}
+                    />
+                  ) : (
+                    <EmptyState
+                      title={t("dashboard.categoryTrendsEmptyTitle")}
+                      description={t("dashboard.categoryTrendsEmptyDescription")}
+                    />
+                  )}
+                </ChartCard>
+              </div>
+            )}
             <ChartCard title={t("dashboard.networthTitle")}>
               {networth.isLoading ? (
                 <ChartSkeleton />

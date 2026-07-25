@@ -34,6 +34,8 @@ export function useMerchantAliases({
   const aliasesQuery = useQuery<MerchantAlias[]>({
     queryKey: queryKeys.merchants.aliases,
     queryFn: () => api.merchantAliases(),
+    refetchOnMount: "always",
+    refetchOnWindowFocus: "always",
   });
   const candidatesQuery = useQuery<MerchantCandidate[]>({
     queryKey: queryKeys.merchants.candidates({
@@ -48,6 +50,8 @@ export function useMerchantAliases({
         sortDir: candidateSort.dir,
       }),
     placeholderData: keepPreviousData,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: "always",
   });
 
   const createAliases = useMutation({
