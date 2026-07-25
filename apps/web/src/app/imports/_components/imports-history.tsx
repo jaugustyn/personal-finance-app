@@ -98,11 +98,11 @@ export function ImportsHistory() {
     {
       id: "actions",
       header: "",
-      align: "right",
+      align: "center",
       headerClassName: "w-24",
       className: "w-24",
       cell: (row) => (
-        <div className="flex justify-end gap-1">
+        <div className="flex justify-center gap-1">
           <Button
             size="icon"
             variant="ghost"
@@ -144,6 +144,7 @@ export function ImportsHistory() {
           onRetry={() => void refetch()}
           emptyTitle={t("imports.history.empty")}
           initialSort={{ id: "created_at", dir: "desc" }}
+          pagination={{ mode: "client" }}
           className="rounded-none border-0"
         />
       </CardContent>

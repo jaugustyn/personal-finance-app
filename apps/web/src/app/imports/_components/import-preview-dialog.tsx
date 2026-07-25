@@ -3,8 +3,6 @@
 import { useMemo, useState } from "react";
 import {
   AlertCircle,
-  ChevronLeft,
-  ChevronRight,
   FileSpreadsheet,
   HelpCircle,
   Loader2,
@@ -15,6 +13,10 @@ import { useT, type TranslationKey } from "@/lib/i18n";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  DEFAULT_TABLE_PAGE_SIZE,
+  TablePagination,
+} from "@/components/table-pagination";
 import {
   Dialog,
   DialogContent,
@@ -312,83 +314,67 @@ function ColumnMappingPanel({
 
 function PreviewRowsTable({ preview }: { preview: ImportPreview }) {
   const { t } = useT();
-  const pageSize = 10;
-  const [page, setPage] = useState(1);
-  const pageCount = Math.max(1, Math.ceil(preview.sample_rows.length / pageSize));
-  const currentPage = Math.min(page, pageCount);
+  const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState(DEFAULT_TABLE_PAGE_SIZE);
+  const maxPage = Math.max(
+    0,
+    Math.ceil(preview.sample_rows.length / pageSize) - 1,
+  );
+  const currentPage = Math.min(page, maxPage);
   const visibleRows = useMemo(() => {
-    const start = (currentPage - 1) * pageSize;
+    const start = currentPage * pageSize;
     return preview.sample_rows.slice(start, start + pageSize);
-  }, [currentPage, preview.sample_rows]);
+  }, [currentPage, pageSize, preview.sample_rows]);
 
   return (
     <section className="min-w-0 space-y-3 rounded-md border p-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h3 className="text-sm font-semibold">{t("imports.rowsPreview.title")}</h3>
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <Button
-            type="button"
-            variant="outline"
-            size="icon"
-            className="h-7 w-7"
-            disabled={currentPage <= 1}
-            onClick={() => setPage((value) => Math.max(1, value - 1))}
-            aria-label={t("common.previous")}
-          >
-            <ChevronLeft className="h-4 w-4" />
-          </Button>
-          <span className="min-w-20 text-center tabular-nums">
-            {t("imports.rowsPreview.page", {
-              page: currentPage,
-              pages: pageCount,
-            })}
-          </span>
-          <Button
-            type="button"
-            variant="outline"
-            size="icon"
-            className="h-7 w-7"
-            disabled={currentPage >= pageCount}
-            onClick={() => setPage((value) => Math.min(pageCount, value + 1))}
-            aria-label={t("common.next")}
-          >
-            <ChevronRight className="h-4 w-4" />
-          </Button>
-        </div>
-      </div>
-      <div className="max-h-[56vh] overflow-x-scroll overflow-y-auto rounded-md border">
-        <table className="min-w-full caption-bottom text-sm">
-          <thead className="sticky top-0 z-10 bg-background shadow-sm">
-            <tr className="border-b">
-              {preview.headers.map((header) => (
-                <th
-                  key={header}
-                  className="h-10 whitespace-nowrap px-3 text-left align-middle font-medium text-muted-foreground"
-                >
-                  {header}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {visibleRows.map((row, index) => (
-              <tr
-                key={`${currentPage}:${index}`}
-                className="border-b transition-colors last:border-0 hover:bg-muted/50"
-              >
+      <h3 className="text-sm font-semibold">{t("imports.rowsPreview.title")}</h3>
+      <div className="overflow-hidden rounded-md border">
+        <div className="max-h-[56vh] overflow-x-auto overflow-y-auto">
+          <table className="min-w-full caption-bottom text-sm">
+            <thead className="sticky top-0 z-10 bg-background shadow-sm">
+              <tr className="border-b">
                 {preview.headers.map((header) => (
-                  <td
+                  <th
                     key={header}
-                    className="max-w-64 whitespace-nowrap p-3 align-middle text-xs"
-                    title={row[header] ?? ""}
+                    className="h-10 whitespace-nowrap px-3 text-left align-middle font-medium text-muted-foreground"
                   >
-                    <span className="block truncate">{row[header] ?? ""}</span>
-                  </td>
+                    {header}
+                  </th>
                 ))}
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {visibleRows.map((row, index) => (
+                <tr
+                  key={`${currentPage}:${index}`}
+                  className="border-b transition-colors last:border-0 hover:bg-muted/50"
+                >
+                  {preview.headers.map((header) => (
+                    <td
+                      key={header}
+                      className="max-w-64 whitespace-nowrap p-3 align-middle text-xs"
+                      title={row[header] ?? ""}
+                    >
+                      <span className="block truncate">{row[header] ?? ""}</span>
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <TablePagination
+          page={currentPage}
+          pageSize={pageSize}
+          currentCount={visibleRows.length}
+          total={preview.sample_rows.length}
+          onPageChange={setPage}
+          onPageSizeChange={(nextPageSize) => {
+            setPageSize(nextPageSize);
+            setPage(0);
+          }}
+        />
       </div>
     </section>
   );

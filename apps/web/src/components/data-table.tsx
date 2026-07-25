@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { ArrowDown, ArrowUp, ChevronsUpDown, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import {
   Table,
   TableBody,
@@ -12,6 +12,11 @@ import {
 } from "@/components/ui/table";
 import { EmptyState } from "@/components/empty-state";
 import { ErrorState } from "@/components/error-state";
+import { SortableTableHead } from "@/components/sortable-table-head";
+import {
+  DEFAULT_TABLE_PAGE_SIZE,
+  TablePagination,
+} from "@/components/table-pagination";
 import { cn } from "@/lib/utils";
 import { useFormatters, useT } from "@/lib/i18n";
 
@@ -23,6 +28,7 @@ export interface DataTableColumn<T> {
   sortValue?: (row: T) => string | number | null | undefined;
   /** Marks a column as sortable when sorting is handled by the caller. */
   sortable?: boolean;
+  /** Text and dates use left; numbers right; actions and compact controls center. */
   align?: "left" | "right" | "center";
   className?: string;
   headerClassName?: string;
@@ -50,7 +56,25 @@ interface DataTableProps<T> {
   toolbar?: React.ReactNode;
   toolbarPosition?: "top" | "bottom";
   rowCountLabel?: string;
+  pagination?: DataTablePagination;
 }
+
+export type DataTablePagination =
+  | {
+      mode: "client";
+      defaultPageSize?: number;
+      pageSizeOptions?: readonly number[];
+    }
+  | {
+      mode: "server";
+      page: number;
+      pageSize: number;
+      total?: number;
+      hasNext?: boolean;
+      onPageChange: (page: number) => void;
+      onPageSizeChange: (pageSize: number) => void;
+      pageSizeOptions?: readonly number[];
+    };
 
 export type DataTableSortState = {
   id: string;
@@ -85,10 +109,17 @@ export function DataTable<T>({
   toolbar,
   toolbarPosition = "top",
   rowCountLabel,
+  pagination,
 }: DataTableProps<T>) {
   const { t } = useT();
   const { compare } = useFormatters();
   const [internalSort, setInternalSort] = React.useState<SortState>(initialSort);
+  const [clientPage, setClientPage] = React.useState(0);
+  const [clientPageSize, setClientPageSize] = React.useState(
+    pagination?.mode === "client"
+      ? (pagination.defaultPageSize ?? DEFAULT_TABLE_PAGE_SIZE)
+      : DEFAULT_TABLE_PAGE_SIZE,
+  );
   const activeSort = onSortChange ? (controlledSort ?? null) : internalSort;
 
   const sorted = React.useMemo(() => {
@@ -110,6 +141,7 @@ export function DataTable<T>({
   }, [activeSort, columns, compare, data, onSortChange]);
 
   const toggleSort = (id: string) => {
+    if (pagination?.mode === "client") setClientPage(0);
     if (onSortChange) {
       onSortChange({
         id,
@@ -119,11 +151,49 @@ export function DataTable<T>({
       return;
     }
     setInternalSort((prev) => {
-      if (prev?.id !== id) return { id, dir: "asc" };
-      if (prev.dir === "asc") return { id, dir: "desc" };
-      return null;
+      if (prev?.id === id && prev.dir === "asc") {
+        return { id, dir: "desc" };
+      }
+      return { id, dir: "asc" };
     });
   };
+
+  const clientTotal = sorted?.length ?? 0;
+  const clientMaxPage = Math.max(0, Math.ceil(clientTotal / clientPageSize) - 1);
+  const effectiveClientPage = Math.min(clientPage, clientMaxPage);
+  const visibleRows =
+    pagination?.mode === "client" && sorted
+      ? sorted.slice(
+          effectiveClientPage * clientPageSize,
+          (effectiveClientPage + 1) * clientPageSize,
+        )
+      : sorted;
+  const paginationFooter =
+    pagination?.mode === "client" ? (
+      <TablePagination
+        page={effectiveClientPage}
+        pageSize={clientPageSize}
+        currentCount={visibleRows?.length ?? 0}
+        total={clientTotal}
+        pageSizeOptions={pagination.pageSizeOptions}
+        onPageChange={setClientPage}
+        onPageSizeChange={(nextPageSize) => {
+          setClientPageSize(nextPageSize);
+          setClientPage(0);
+        }}
+      />
+    ) : pagination?.mode === "server" ? (
+      <TablePagination
+        page={pagination.page}
+        pageSize={pagination.pageSize}
+        currentCount={visibleRows?.length ?? 0}
+        total={pagination.total}
+        hasNext={pagination.hasNext}
+        pageSizeOptions={pagination.pageSizeOptions}
+        onPageChange={pagination.onPageChange}
+        onPageSizeChange={pagination.onPageSizeChange}
+      />
+    ) : null;
 
   if (isLoading) {
     return (
@@ -156,8 +226,8 @@ export function DataTable<T>({
     );
   }
 
-  if (!sorted || sorted.length === 0) {
-    if (tableToolbar) {
+  if (!visibleRows || visibleRows.length === 0) {
+    if (tableToolbar || paginationFooter) {
       return (
         <div className={cn("overflow-hidden rounded-lg border", className)}>
           {toolbarPosition === "top" ? tableToolbar : null}
@@ -167,6 +237,7 @@ export function DataTable<T>({
             className="rounded-none border-0"
           />
           {toolbarPosition === "bottom" ? tableToolbar : null}
+          {paginationFooter}
         </div>
       );
     }
@@ -179,7 +250,7 @@ export function DataTable<T>({
   }
 
   return (
-    <div className={cn("overflow-x-auto rounded-lg border", className)}>
+    <div className={cn("overflow-hidden rounded-lg border", className)}>
       {toolbarPosition === "top" ? tableToolbar : null}
       <Table className={tableClassName}>
         <TableHeader
@@ -190,56 +261,35 @@ export function DataTable<T>({
               const sortable = Boolean(
                 col.sortValue || (onSortChange && col.sortable),
               );
-              const active = activeSort?.id === col.id;
               return (
-                <TableHead
-                  key={col.id}
-                  aria-sort={
-                    active
-                      ? activeSort!.dir === "asc"
-                        ? "ascending"
-                        : "descending"
-                      : sortable
-                        ? "none"
-                        : undefined
-                  }
-                  className={cn(
-                    alignClass[col.align ?? "left"],
-                    col.headerClassName,
-                  )}
-                >
-                  {sortable ? (
-                    <button
-                      type="button"
-                      onClick={() => toggleSort(col.id)}
-                      title={t("table.sort")}
-                      className={cn(
-                        "inline-flex items-center gap-1 transition-colors hover:text-foreground",
-                        active && "text-foreground",
-                        col.align === "right" && "flex-row-reverse",
-                      )}
-                    >
-                      {col.header}
-                      {active ? (
-                        activeSort?.dir === "asc" ? (
-                          <ArrowUp className="h-3.5 w-3.5" />
-                        ) : (
-                          <ArrowDown className="h-3.5 w-3.5" />
-                        )
-                      ) : (
-                        <ChevronsUpDown className="h-3.5 w-3.5 opacity-50" />
-                      )}
-                    </button>
-                  ) : (
-                    col.header
-                  )}
-                </TableHead>
+                sortable ? (
+                  <SortableTableHead
+                    key={col.id}
+                    id={col.id}
+                    sort={activeSort}
+                    onSort={toggleSort}
+                    align={col.align}
+                    className={col.headerClassName}
+                  >
+                    {col.header}
+                  </SortableTableHead>
+                ) : (
+                  <TableHead
+                    key={col.id}
+                    className={cn(
+                      alignClass[col.align ?? "left"],
+                      col.headerClassName,
+                    )}
+                  >
+                    {col.header}
+                  </TableHead>
+                )
               );
             })}
           </TableRow>
         </TableHeader>
         <TableBody>
-          {sorted.map((row) => (
+          {visibleRows.map((row) => (
             <TableRow
               key={rowKey(row)}
               onClick={onRowClick ? () => onRowClick(row) : undefined}
@@ -261,6 +311,7 @@ export function DataTable<T>({
         </TableBody>
       </Table>
       {toolbarPosition === "bottom" ? tableToolbar : null}
+      {paginationFooter}
     </div>
   );
 }

@@ -115,6 +115,7 @@ export default function MerchantsPage() {
         <ErrorState onRetry={() => candidatesQuery.refetch()} />
       ) : (
         <CandidateTable
+          key={candidateSearch}
           candidates={candidatesQuery.data ?? []}
           isLoading={candidatesQuery.isLoading}
           isUpdating={candidatesQuery.isFetching && !candidatesQuery.isLoading}

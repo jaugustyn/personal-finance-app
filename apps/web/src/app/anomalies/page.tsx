@@ -182,7 +182,7 @@ export default function AnomaliesPage() {
     {
       id: "merchant",
       header: t("transactions.column.merchant"),
-      headerClassName: "w-[25%] min-w-64",
+      headerClassName: "w-64",
       sortValue: (a) => a.merchant_display || a.merchant || a.title,
       className: "font-medium",
       cell: (a) => (
@@ -216,7 +216,7 @@ export default function AnomaliesPage() {
     {
       id: "reason",
       header: t("anomalies.reason"),
-      headerClassName: "w-[38%] min-w-80",
+      headerClassName: "min-w-80",
       sortValue: (a) =>
         a.anomaly_type ? anomalyTypeLabel(a.anomaly_type, t) : "",
       cell: (a) => (
@@ -270,6 +270,7 @@ export default function AnomaliesPage() {
         </Tooltip>
       ),
       headerClassName: "w-28",
+      align: "center",
       sortValue: (a) => a.priority_score,
       cell: (a) =>
         a.priority_score == null ? (
@@ -479,6 +480,7 @@ export default function AnomaliesPage() {
                   ? { id: "priority", dir: "desc" }
                   : { id: "assessment", dir: "desc" }
               }
+              pagination={{ mode: "client" }}
               tableClassName="min-w-[72rem] [&_td]:px-4 [&_th]:px-4"
             />
           </TooltipProvider>

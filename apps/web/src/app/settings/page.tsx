@@ -404,6 +404,7 @@ export default function SettingsPage() {
                     rowKey={(rule) => rule.id}
                     isLoading={rulesQuery.isLoading}
                     initialSort={{ id: "pattern", dir: "asc" }}
+                    pagination={{ mode: "client" }}
                     emptyTitle={t("settings.rulesEmpty")}
                     emptyDescription={t("settings.rulesEmptyHelp")}
                   />

@@ -78,6 +78,7 @@ export function AssetValuationHistoryDialog({
       {
         id: "method",
         header: t("assets.valueChange"),
+        sortValue: (row) => row.growth_mode,
         cell: (row) =>
           row.growth_mode === "fixed_rate" ? (
             <div className="text-sm">
@@ -101,8 +102,9 @@ export function AssetValuationHistoryDialog({
       {
         id: "actions",
         header: "",
+        align: "center",
         cell: (row) => (
-          <div className="flex justify-end gap-1">
+          <div className="flex justify-center gap-1">
             <Button
               type="button"
               variant="ghost"
@@ -152,6 +154,7 @@ export function AssetValuationHistoryDialog({
               data={query.data}
               rowKey={(row) => row.id}
               initialSort={{ id: "date", dir: "desc" }}
+              pagination={{ mode: "client" }}
             />
           ) : null}
         </div>

@@ -71,6 +71,7 @@ export function CandidateTable({
       id: "count",
       header: t("merchants.transactionsCount"),
       sortable: true,
+      align: "right",
       headerClassName: "w-32 min-w-32 max-w-32",
       className: "w-32 min-w-32 max-w-32 tabular-nums",
       cell: (row) => row.count,
@@ -79,6 +80,7 @@ export function CandidateTable({
       id: "total_debit",
       header: t("merchants.totalExpenses"),
       sortable: true,
+      align: "right",
       headerClassName: "w-32 min-w-32 max-w-32",
       className: "w-32 min-w-32 max-w-32 tabular-nums",
       cell: (row) =>
@@ -140,6 +142,7 @@ export function CandidateTable({
             dir: nextSort.dir,
           })
         }
+        pagination={{ mode: "client" }}
       />
     </section>
   );

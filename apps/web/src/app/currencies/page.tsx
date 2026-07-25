@@ -117,9 +117,11 @@ export default function CurrenciesPage() {
         id: "rate",
         header: t("currencies.rate"),
         headerClassName: "w-[22%]",
+        align: "right",
+        className: "tabular-nums",
         sortValue: (row) => Number(row.rate),
         cell: (row) => (
-          <span className="tabular-nums">
+          <span>
             {formatNumber(Number(row.rate), 4)}
           </span>
         ),
@@ -391,6 +393,7 @@ export default function CurrenciesPage() {
             columns={rateColumns}
             rowKey={(row) => row.id}
             initialSort={{ id: "date", dir: "desc" }}
+            pagination={{ mode: "client" }}
             emptyTitle={t("currencies.noRates")}
             tableClassName="min-w-[34rem]"
             toolbarPosition="bottom"
