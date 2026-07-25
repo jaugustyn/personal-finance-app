@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from finance.currencies import (
     MissingFxRate,
     convert_amount,
+    load_fx_rate_lookup,
     prefetch_nbp_rates,
     resolve_base_currency,
 )
@@ -24,7 +25,7 @@ from finance.ml.feedback import (
     FeedbackEventInput,
     record_feedback_event,
 )
-from finance.profile.service import effect_for_transaction
+from finance.profile.service import effect_for_transaction, load_rule_matcher
 from finance.transactions.normalization import normalize_merchant, normalize_text
 
 
@@ -88,6 +89,27 @@ def ingest_file(
 ) -> ImportSummary:
     parser = parser or get_parser(source)
     dtos = parser.parse(stream, filename=filename)
+    return ingest_transactions(
+        session,
+        source=source,
+        filename=filename,
+        dtos=dtos,
+        skip_categories=skip_categories,
+        fx_mode=fx_mode,
+    )
+
+
+def ingest_transactions(
+    session: Session,
+    *,
+    source: BankSource,
+    filename: str,
+    dtos: list[TransactionDTO],
+    skip_categories: bool = False,
+    fx_mode: FxRateMode = "prefetch_missing",
+) -> ImportSummary:
+    """Persist an already parsed batch without repeating parser work."""
+
     base_currency = resolve_base_currency(session)
     if fx_mode == "prefetch_missing":
         prefetch_nbp_rates(
@@ -97,6 +119,13 @@ def ingest_file(
         )
     elif fx_mode != "require_existing":
         raise ValueError(f"Unsupported FX mode: {fx_mode}")
+
+    fx_lookup = load_fx_rate_lookup(
+        session,
+        rate_requests=((dto.currency, dto.booking_date) for dto in dtos),
+        base_currency=base_currency,
+    )
+    rule_matcher = load_rule_matcher(session)
 
     repository = TransactionImportRepository(session)
     policy = TransactionImportPolicy(skip_categories=skip_categories)
@@ -111,19 +140,16 @@ def ingest_file(
     for dto in dtos:
         h = compute_dedup_hash(dto)
         try:
-            converted = convert_amount(
-                session,
+            converted = fx_lookup.convert(
                 amount=dto.amount,
                 currency=dto.currency,
                 rate_date=dto.booking_date,
-                base_currency=base_currency,
-                allow_fetch=False,
             )
         except MissingFxRate:
             if fx_mode == "require_existing":
                 raise
             converted = None
-        personal = effect_for_transaction(session, merchant=dto.merchant, title=dto.title)
+        personal = rule_matcher.effect(merchant=dto.merchant, title=dto.title)
         values = policy.build_transaction_values(
             dto,
             converted=converted,

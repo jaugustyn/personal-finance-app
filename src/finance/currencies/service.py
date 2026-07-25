@@ -7,7 +7,9 @@ silently falling back to ``1``.
 """
 from __future__ import annotations
 
+from bisect import bisect_right
 from collections.abc import Iterable
+from dataclasses import dataclass
 from datetime import date, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
@@ -27,6 +29,54 @@ from finance.domain.models import FxRate, Transaction
 BASE_CURRENCY = "PLN"
 RATE_QUANT = Decimal("0.00000001")
 AMOUNT_QUANT = Decimal("0.01")
+
+
+@dataclass(frozen=True)
+class FxRateLookup:
+    """Request-scoped lookup for already persisted PLN exchange rates."""
+
+    base_currency: str
+    rates_by_currency: dict[str, tuple[FxRate, ...]]
+    dates_by_currency: dict[str, tuple[date, ...]]
+
+    def rate_for(self, currency: str, rate_date: date) -> FxRate | None:
+        code = normalize_currency(currency)
+        rows = self.rates_by_currency.get(code, ())
+        dates = self.dates_by_currency.get(code, ())
+        index = bisect_right(dates, rate_date) - 1
+        if index < 0:
+            return None
+        row = rows[index]
+        if row.rate_date < rate_date - timedelta(days=NBP_LOOKBACK_DAYS):
+            return None
+        return row
+
+    def convert(
+        self,
+        *,
+        amount: Decimal,
+        currency: str,
+        rate_date: date,
+    ) -> ConversionResult:
+        code = normalize_currency(currency)
+        if code == self.base_currency:
+            return ConversionResult(
+                amount_base=_quant_amount(amount),
+                base_currency=self.base_currency,
+                fx_rate=Decimal("1.00000000"),
+                fx_rate_date=rate_date,
+                fx_rate_source="same_currency",
+            )
+        row = self.rate_for(code, rate_date)
+        if row is None:
+            raise MissingFxRate(code, self.base_currency, rate_date)
+        return ConversionResult(
+            amount_base=_quant_amount(Decimal(amount) * Decimal(row.rate)),
+            base_currency=self.base_currency,
+            fx_rate=_quant_rate(Decimal(row.rate)),
+            fx_rate_date=row.rate_date,
+            fx_rate_source=row.source,
+        )
 
 
 def normalize_currency(value: str | None) -> str:
@@ -207,6 +257,53 @@ def list_rates(
     )
 
 
+def load_fx_rate_lookup(
+    session: Session,
+    *,
+    rate_requests: Iterable[tuple[str, date]],
+    base_currency: str | None = None,
+) -> FxRateLookup:
+    """Load all rates needed by a batch, including the NBP fallback window."""
+
+    base = normalize_currency(base_currency or BASE_CURRENCY)
+    if base != BASE_CURRENCY:
+        raise ValueError(f"Base currency must be {BASE_CURRENCY}.")
+    requests: set[tuple[str, date]] = set()
+    for currency, requested_date in rate_requests:
+        normalized = normalize_currency(currency)
+        if normalized != base:
+            requests.add((normalized, requested_date))
+    if not requests:
+        return FxRateLookup(base, {}, {})
+    currencies = {currency for currency, _ in requests}
+    requested_dates = [requested_date for _, requested_date in requests]
+    rows = list(
+        session.execute(
+            select(FxRate)
+            .where(
+                FxRate.base_currency == base,
+                FxRate.currency.in_(currencies),
+                FxRate.rate_date
+                >= min(requested_dates) - timedelta(days=NBP_LOOKBACK_DAYS),
+                FxRate.rate_date <= max(requested_dates),
+            )
+            .order_by(FxRate.currency, FxRate.rate_date, FxRate.id)
+        ).scalars()
+    )
+    grouped: dict[str, list[FxRate]] = {}
+    for row in rows:
+        grouped.setdefault(row.currency, []).append(row)
+    rates_by_currency = {
+        currency: tuple(currency_rows)
+        for currency, currency_rows in grouped.items()
+    }
+    dates_by_currency = {
+        currency: tuple(row.rate_date for row in currency_rows)
+        for currency, currency_rows in grouped.items()
+    }
+    return FxRateLookup(base, rates_by_currency, dates_by_currency)
+
+
 def ensure_nbp_rate(
     session: Session,
     *,
@@ -247,36 +344,63 @@ def prefetch_nbp_rates(
     existing = 0
     fetched = 0
     missing = 0
+    normalized_requests = {
+        (normalize_currency(currency), rate_date)
+        for currency, rate_date in rate_requests
+    }
     unique_requests = sorted(
-        {
-            (normalize_currency(currency), rate_date)
-            for currency, rate_date in rate_requests
-            if normalize_currency(currency) != base
-        },
+        {request for request in normalized_requests if request[0] != base},
         key=lambda item: (item[1], item[0]),
     )
+    existing_rates: dict[tuple[str, date], FxRate] = {}
+    if unique_requests:
+        currencies = {currency for currency, _ in unique_requests}
+        dates = [rate_date for _, rate_date in unique_requests]
+        existing_rows = session.execute(
+            select(FxRate).where(
+                FxRate.base_currency == base,
+                FxRate.currency.in_(currencies),
+                FxRate.rate_date >= min(dates) - timedelta(days=NBP_LOOKBACK_DAYS),
+                FxRate.rate_date <= max(dates),
+            )
+        ).scalars()
+        existing_rates = {
+            (row.currency, row.rate_date): row for row in existing_rows
+        }
+    rate_provider = provider or NbpFxRateProvider()
     for currency, rate_date in unique_requests:
         # A historical rate may be used as a weekend/holiday fallback, but it
         # must not suppress fetching a distinct rate requested for a later day.
-        if _rate_on_date(
-            session,
-            currency=currency,
-            base_currency=base,
-            rate_date=rate_date,
-        ):
+        if (currency, rate_date) in existing_rates:
             existing += 1
             continue
-        rate = ensure_nbp_rate(
-            session,
-            currency=currency,
-            base_currency=base,
-            rate_date=rate_date,
-            provider=provider,
-        )
-        if rate is None:
+        result = rate_provider.fetch_rate(currency, rate_date)
+        if result is None:
             missing += 1
+            continue
+        raw_rate, effective_date = result
+        normalized_rate = _quant_rate(raw_rate)
+        if normalized_rate <= 0:
+            missing += 1
+            continue
+        key = (currency, effective_date)
+        row = existing_rates.get(key)
+        if row is None:
+            row = FxRate(
+                currency=currency,
+                base_currency=base,
+                rate_date=effective_date,
+                rate=normalized_rate,
+                source="nbp",
+            )
+            session.add(row)
+            existing_rates[key] = row
         else:
-            fetched += 1
+            row.rate = normalized_rate
+            row.source = "nbp"
+        fetched += 1
+    if fetched:
+        session.flush()
     return {"existing": existing, "fetched": fetched, "missing": missing}
 
 

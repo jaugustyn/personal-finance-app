@@ -17,7 +17,7 @@ from finance.ingestion.generic import CsvPreview, GenericCsvParser, preview_csv
 from finance.ingestion.quality import assess_import_quality
 from finance.ingestion.registry import available_sources, detect_source, get_parser
 from finance.ingestion.schema import clean_column_map, import_quality_warnings, validate_column_map
-from finance.ingestion.service import ingest_file
+from finance.ingestion.service import ingest_transactions
 from finance.ingestion.types import FxRateMode, ImportQualityReport
 
 
@@ -102,20 +102,21 @@ def upload_import(
         requested_source=requested_source,
         column_map=column_map,
     )
+    dtos = parser.parse(io.BytesIO(raw), filename=filename)
     quality_report = assess_import_quality(
         session,
         filename=filename,
         raw=raw,
         parser=parser,
         missing_fx_severity="error" if fx_mode == "require_existing" else "warning",
+        parsed_dtos=dtos,
     )
     with command_transaction(session):
-        summary = ingest_file(
+        summary = ingest_transactions(
             session,
             source=chosen_source,
             filename=filename,
-            stream=io.BytesIO(raw),
-            parser=parser,
+            dtos=dtos,
             skip_categories=skip_categories,
             fx_mode=fx_mode,
         )

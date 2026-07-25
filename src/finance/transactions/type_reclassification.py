@@ -10,7 +10,7 @@ from finance.db import command_transaction
 from finance.domain.dto import TransactionDTO
 from finance.domain.enums import BankSource, TransactionDirection
 from finance.domain.models import Transaction
-from finance.profile.service import effect_for_transaction
+from finance.profile.service import load_rule_matcher
 from finance.transactions.type_decision import (
     TYPE_GOLD_METHODS,
     decide_transaction_type,
@@ -48,6 +48,7 @@ def _reclassify_transaction_types(
         stmt = stmt.where(Transaction.import_id == import_id)
     rows = list(session.execute(stmt).scalars())
     service = TransactionTypeService(session)
+    rule_matcher = load_rule_matcher(session)
     updated = 0
     for tx in rows:
         dto = TransactionDTO(
@@ -63,8 +64,7 @@ def _reclassify_transaction_types(
             source=BankSource(str(tx.source)),
             external_id=tx.external_id,
         )
-        personal = effect_for_transaction(
-            session,
+        personal = rule_matcher.effect(
             merchant=tx.merchant,
             title=tx.title,
         )

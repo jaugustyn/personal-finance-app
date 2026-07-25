@@ -8,7 +8,7 @@ from collections import Counter, defaultdict
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from finance.currencies import MissingFxRate, convert_amount, resolve_base_currency
+from finance.currencies import load_fx_rate_lookup, resolve_base_currency
 from finance.domain.dto import TransactionDTO
 from finance.domain.models import Transaction
 from finance.ingestion.base import BankParser
@@ -36,11 +36,12 @@ def assess_import_quality(
     raw: bytes,
     parser: BankParser,
     missing_fx_severity: IssueSeverity = "error",
+    parsed_dtos: list[TransactionDTO] | None = None,
 ) -> ImportQualityReport:
     """Inspect an upload before committing it to the database."""
     total_rows = _csv_data_row_count(raw)
     issues: list[ImportQualityIssue] = []
-    dtos: list[TransactionDTO] = []
+    dtos: list[TransactionDTO] = parsed_dtos or []
     generic_mapping: dict[str, str] | None = None
 
     if isinstance(parser, GenericCsvParser):
@@ -56,11 +57,12 @@ def assess_import_quality(
         ):
             return _report(total_rows=total_rows, valid_rows=0, issues=issues)
 
-    try:
-        dtos = parser.parse(io.BytesIO(raw), filename=filename)
-    except Exception:  # noqa: BLE001 - quality should report, not crash preview
-        issues.append(ImportQualityIssue("parse_error", "error", 1, []))
-        dtos = []
+    if parsed_dtos is None:
+        try:
+            dtos = parser.parse(io.BytesIO(raw), filename=filename)
+        except Exception:  # noqa: BLE001 - quality should report, not crash preview
+            issues.append(ImportQualityIssue("parse_error", "error", 1, []))
+            dtos = []
 
     issues.extend(
         _dto_issues(
@@ -264,11 +266,22 @@ def _dto_issues(
     if len(currencies) > 1:
         issues.append(ImportQualityIssue("multiple_currencies", "warning", len(currencies), []))
     base_currency = resolve_base_currency(session)
-    missing_fx = {
-        (dto.currency, dto.booking_date)
+    fx_dtos = [
+        dto
         for dto in dtos
-        if dto.currency != base_currency and _conversion_missing(session, dto, base_currency)
-    }
+        if len(dto.currency.strip()) == 3 and dto.currency.strip().isalpha()
+    ]
+    lookup = load_fx_rate_lookup(
+        session,
+        rate_requests=((dto.currency, dto.booking_date) for dto in fx_dtos),
+        base_currency=base_currency,
+    )
+    missing_fx = set()
+    for dto in fx_dtos:
+        if dto.currency.strip().upper() == base_currency:
+            continue
+        if lookup.rate_for(dto.currency, dto.booking_date) is None:
+            missing_fx.add((dto.currency, dto.booking_date))
     if missing_fx:
         issues.append(
             ImportQualityIssue(
@@ -280,27 +293,6 @@ def _dto_issues(
         )
 
     return issues
-
-
-def _conversion_missing(
-    session: Session,
-    dto: TransactionDTO,
-    base_currency: str,
-) -> bool:
-    try:
-        convert_amount(
-            session,
-            amount=dto.amount,
-            currency=dto.currency,
-            rate_date=dto.booking_date,
-            base_currency=base_currency,
-            allow_fetch=False,
-        )
-    except MissingFxRate:
-        return True
-    except ValueError:
-        return False
-    return False
 
 
 def _missing_counterparty(dto: TransactionDTO) -> bool:

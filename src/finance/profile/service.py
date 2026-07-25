@@ -28,6 +28,25 @@ class RuleEffect:
     confidence: float
 
 
+@dataclass(frozen=True)
+class PersonalRuleMatcher:
+    """Request-scoped matcher backed by one active-rules query."""
+
+    rules: tuple[PersonalRule, ...]
+
+    def find(self, *, merchant: str | None, title: str | None) -> PersonalRule | None:
+        merchant_norm = normalize_text(merchant)
+        title_norm = normalize_text(title)
+        for rule in self.rules:
+            if _matches(rule, merchant_norm=merchant_norm, title_norm=title_norm):
+                return rule
+        return None
+
+    def effect(self, *, merchant: str | None, title: str | None) -> RuleEffect | None:
+        rule = self.find(merchant=merchant, title=title)
+        return _effect_for_rule(rule) if rule is not None else None
+
+
 def get_profile(session: Session) -> UserProfile | None:
     """Return the singleton profile without creating state during a read."""
     return session.get(UserProfile, PROFILE_ID)
@@ -204,18 +223,19 @@ def list_rules(session: Session, *, active_only: bool = False) -> list[PersonalR
     return list(session.execute(stmt).scalars().all())
 
 
+def load_rule_matcher(session: Session) -> PersonalRuleMatcher:
+    """Load active personal rules once for a batch operation."""
+
+    return PersonalRuleMatcher(tuple(list_rules(session, active_only=True)))
+
+
 def find_matching_rule(
     session: Session,
     *,
     merchant: str | None,
     title: str | None,
 ) -> PersonalRule | None:
-    merchant_norm = normalize_text(merchant)
-    title_norm = normalize_text(title)
-    for rule in list_rules(session, active_only=True):
-        if _matches(rule, merchant_norm=merchant_norm, title_norm=title_norm):
-            return rule
-    return None
+    return load_rule_matcher(session).find(merchant=merchant, title=title)
 
 
 def effect_for_transaction(
@@ -224,9 +244,10 @@ def effect_for_transaction(
     merchant: str | None,
     title: str | None,
 ) -> RuleEffect | None:
-    rule = find_matching_rule(session, merchant=merchant, title=title)
-    if rule is None:
-        return None
+    return load_rule_matcher(session).effect(merchant=merchant, title=title)
+
+
+def _effect_for_rule(rule: PersonalRule) -> RuleEffect:
     return RuleEffect(
         rule=rule,
         category=rule.category,
