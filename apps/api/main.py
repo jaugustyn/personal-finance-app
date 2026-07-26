@@ -14,6 +14,7 @@ from apps.api.middleware import (
     SecurityHeadersMiddleware,
 )
 from apps.api.routers import (
+    accounts,
     anomalies,
     app_lock,
     assets,
@@ -125,6 +126,7 @@ def health_ready(session: Session = Depends(get_session)):
 _app_lock_access = [Depends(require_auth)]
 _protected = [Depends(require_auth), Depends(require_app_unlock)]
 app.include_router(app_lock.router, dependencies=_app_lock_access)
+app.include_router(accounts.router, dependencies=_protected)
 app.include_router(imports.router, dependencies=_protected)
 app.include_router(transactions.router, dependencies=_protected)
 app.include_router(merchants.router, dependencies=_protected)

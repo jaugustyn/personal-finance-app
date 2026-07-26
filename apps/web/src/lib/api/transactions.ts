@@ -14,6 +14,7 @@ export type TransactionFilterParams = {
   date_to?: string;
   include_transfers?: boolean;
   import_id?: number;
+  account_id?: number;
   merchant?: string;
   search?: string;
   min_amount?: number;
@@ -40,6 +41,7 @@ export type TransactionSortDirection = "asc" | "desc";
 export type MerchantGroupSortBy = "merchant" | "amount" | "count" | "category";
 
 export interface ManualTransactionInput {
+  account_id: number;
   booking_date: string;
   amount: number;
   direction: "debit" | "credit";
@@ -65,6 +67,7 @@ function transactionFilterQueryValues(
     date_to: params.date_to,
     include_transfers: params.include_transfers,
     import_id: params.import_id,
+    account_id: params.account_id,
     merchant: params.merchant,
     search: params.search,
     min_amount: params.min_amount,

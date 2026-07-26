@@ -15,7 +15,8 @@ from sqlalchemy.orm import Session
 
 from finance.currencies import MissingFxRate, add_manual_rate, convert_amount
 from finance.domain.dto import TransactionDTO
-from finance.domain.models import Import, Transaction
+from finance.domain.enums import AccountKind, BankSource
+from finance.domain.models import Account, Import, Transaction
 from finance.ingestion.generic import GenericCsvParser
 from finance.ingestion.policy import build_transaction_values
 from finance.ingestion.revolut import RevolutParser
@@ -26,6 +27,8 @@ from finance.ml.classification.dataset import load_training_set
 DATE_FROM = date(2026, 4, 1)
 DATE_TO = date(2026, 4, 30)
 EUR_RATE_DATE = date(2026, 4, 5)
+MAIN_ACCOUNT_NAME = "Rachunek główny"
+REVOLUT_ACCOUNT_NAME = "Revolut"
 
 GENERIC_COLUMN_MAP = {
     "date": "Date",
@@ -237,12 +240,39 @@ def seed_sqlite_reference_scenario(session: Session) -> None:
         rate_date=EUR_RATE_DATE,
         rate=Decimal("4.50"),
     )
+    main_account = session.get(Account, 1)
+    if main_account is None:
+        main_account = Account(
+            name=MAIN_ACCOUNT_NAME,
+            kind=AccountKind.BANK,
+            source=BankSource.UNKNOWN,
+            currency="PLN",
+        )
+        session.add(main_account)
+    else:
+        main_account.name = MAIN_ACCOUNT_NAME
+        main_account.kind = AccountKind.BANK
+        main_account.source = BankSource.UNKNOWN
+    revolut_account = session.scalar(
+        select(Account).where(Account.name == REVOLUT_ACCOUNT_NAME)
+    )
+    if revolut_account is None:
+        revolut_account = Account(
+            name=REVOLUT_ACCOUNT_NAME,
+            kind=AccountKind.BANK,
+            source=BankSource.REVOLUT,
+            currency="PLN",
+        )
+        session.add(revolut_account)
+    session.flush()
+
     generic_dtos, revolut_dtos = _parsed_transactions()
-    for source, filename, dtos in (
-        ("unknown", "reference-generic.csv", generic_dtos),
-        ("revolut", "reference-revolut.csv", revolut_dtos),
+    for source, filename, account, dtos in (
+        ("unknown", "reference-generic.csv", main_account, generic_dtos),
+        ("revolut", "reference-revolut.csv", revolut_account, revolut_dtos),
     ):
         import_row = Import(
+            account_id=account.id,
             source=source,
             filename=filename,
             total_rows=len(dtos),
@@ -266,6 +296,7 @@ def seed_sqlite_reference_scenario(session: Session) -> None:
                 dto,
                 converted=converted,
                 personal=None,
+                account_id=account.id,
                 import_id=import_row.id,
                 dedup_hash=compute_dedup_hash(dto),
             )
@@ -365,6 +396,12 @@ def assert_transaction_contract(
     rows = response.json()
     assert len(rows) == EXPECTED.transaction_count
     assert rows[-1]["merchant_raw"] == "Sklep USD"
+    assert {
+        row["account_name"] for row in rows if row["source"] == "revolut"
+    } == {REVOLUT_ACCOUNT_NAME}
+    assert {
+        row["account_name"] for row in rows if row["source"] != "revolut"
+    } == {MAIN_ACCOUNT_NAME}
 
     response = client.get(
         "/transactions",
@@ -545,6 +582,11 @@ def assert_export_contract(client: TestClient) -> None:
     assert response.status_code == 200
     rows = list(csv.DictReader(io.StringIO(response.text)))
     assert len(rows) == EXPECTED.transaction_count
+    assert {row["account_name"] for row in rows} == {
+        MAIN_ACCOUNT_NAME,
+        REVOLUT_ACCOUNT_NAME,
+    }
+    assert all(row["account_id"] for row in rows)
     by_external_id = {row["external_id"]: row for row in rows if row["external_id"]}
     assert by_external_id["ref-eur"]["amount_base"] == "-90.00"
     assert by_external_id["ref-eur"]["base_currency"] == "PLN"

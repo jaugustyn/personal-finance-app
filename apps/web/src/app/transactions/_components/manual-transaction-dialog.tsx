@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Loader2 } from "lucide-react";
 
 import { CategorySelect } from "@/components/category-select";
+import { AccountSelect } from "@/components/account-select";
 import { DatePicker } from "@/components/date-range-picker";
 import { FilterSelect } from "@/components/filter-select";
 import { TransactionTypeCombobox } from "@/components/transaction-type-combobox";
@@ -22,6 +23,7 @@ import type { ManualTransactionInput } from "@/lib/api";
 import { useT } from "@/lib/i18n";
 
 interface ManualTransactionForm {
+  accountId: number | null;
   bookingDate: string;
   amount: string;
   direction: "debit" | "credit";
@@ -53,6 +55,7 @@ function formFromInitial(
   initialValue?: Partial<ManualTransactionInput>,
 ): ManualTransactionForm {
   return {
+    accountId: initialValue?.account_id ?? null,
     bookingDate: initialValue?.booking_date ?? localDateValue(),
     amount:
       initialValue?.amount == null
@@ -105,6 +108,7 @@ export function ManualTransactionDialog({
     [form.amount],
   );
   const canSubmit =
+    form.accountId !== null &&
     form.bookingDate !== "" &&
     Number.isFinite(parsedAmount) &&
     parsedAmount > 0 &&
@@ -113,6 +117,7 @@ export function ManualTransactionDialog({
   const submit = () => {
     if (!canSubmit) return;
     onSubmit({
+      account_id: form.accountId!,
       booking_date: form.bookingDate,
       amount: parsedAmount,
       direction: form.direction,
@@ -146,6 +151,22 @@ export function ManualTransactionDialog({
         </DialogHeader>
 
         <div className="grid gap-4 py-1 sm:grid-cols-2">
+          <div className="space-y-1.5 sm:col-span-2">
+            <Label htmlFor="manual-transaction-account">
+              {t("accounts.selectLabel")}
+            </Label>
+            <AccountSelect
+              id="manual-transaction-account"
+              value={form.accountId}
+              onChange={(accountId) =>
+                setForm((current) => ({ ...current, accountId }))
+              }
+              disabled={pending}
+              allowedArchivedAccountId={
+                mode === "edit" ? initialValue?.account_id : undefined
+              }
+            />
+          </div>
           <div className="space-y-1.5">
             <Label htmlFor="manual-transaction-date">
               {t("transactions.manual.date")}

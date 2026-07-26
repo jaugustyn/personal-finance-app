@@ -4,9 +4,9 @@ import type {
   CashflowPoint,
   CategoryBreakdown,
   CategoryTrendPoint,
+  CumulativeCashflowPoint,
   Direction,
   MerchantStat,
-  NetWorthPoint,
   OverviewStats,
   Recap,
 } from "./types";
@@ -88,9 +88,16 @@ export const statsApi = {
         limit,
       }),
     ),
-  networth: (months = 12, allData = false, includeTransfers = false) =>
-    request<NetWorthPoint[]>(
-      withQuery("/stats/networth", rangeQueryValues(months, { allData, includeTransfers })),
+  cumulativeCashflow: (
+    months = 12,
+    allData = false,
+    includeTransfers = false,
+  ) =>
+    request<CumulativeCashflowPoint[]>(
+      withQuery(
+        "/stats/cumulative-cashflow",
+        rangeQueryValues(months, { allData, includeTransfers }),
+      ),
     ),
   topMerchants: (
     months = 3,

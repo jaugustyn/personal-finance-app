@@ -26,6 +26,7 @@ class TransactionFilterParams:
         date_to: date | None = None,
         include_transfers: bool = Query(default=True),
         import_id: int | None = None,
+        account_id: int | None = Query(default=None, gt=0),
         merchant: str | None = None,
         merchant_canonical_key: str | None = None,
         search: str | None = None,
@@ -46,6 +47,7 @@ class TransactionFilterParams:
         self.date_to = date_to
         self.include_transfers = include_transfers
         self.import_id = import_id
+        self.account_id = account_id
         self.merchant = merchant
         self.merchant_canonical_key = merchant_canonical_key
         self.search = search
@@ -68,6 +70,7 @@ class TransactionFilterParams:
             date_to=self.date_to,
             include_transfers=self.include_transfers,
             import_id=self.import_id,
+            account_id=self.account_id,
             merchant=self.merchant,
             merchant_canonical_key=self.merchant_canonical_key,
             search=self.search,

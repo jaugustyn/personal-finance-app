@@ -23,6 +23,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 from finance.domain.enums import (
+    AccountKind,
     BankSource,
     Category,
     TransactionDirection,
@@ -36,20 +37,45 @@ class Base(DeclarativeBase):
 
 class Account(Base):
     __tablename__ = "accounts"
+    __table_args__ = (
+        Index("uq_accounts_name_ci", text("lower(name)"), unique=True),
+        CheckConstraint(
+            "kind IN ('bank', 'savings', 'credit_card', 'cash', 'other')",
+            name="ck_accounts_kind",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(128))
-    source: Mapped[BankSource] = mapped_column(String(32))
-    currency: Mapped[str] = mapped_column(String(3))
+    kind: Mapped[AccountKind] = mapped_column(
+        String(24), default=AccountKind.BANK, server_default=AccountKind.BANK.value
+    )
+    source: Mapped[BankSource] = mapped_column(
+        String(32), default=BankSource.UNKNOWN, server_default=BankSource.UNKNOWN.value
+    )
+    currency: Mapped[str] = mapped_column(String(3), default="PLN", server_default="PLN")
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
 
-    transactions: Mapped[list[Transaction]] = relationship(back_populates="account")
+    # Keep explicit forward references: Pylance resolves these relationships
+    # before the related ORM classes are declared.
+    transactions: Mapped[list["Transaction"]] = relationship(  # noqa: UP037
+        back_populates="account"
+    )
+    imports: Mapped[list["Import"]] = relationship(  # noqa: UP037
+        back_populates="account"
+    )
 
 
 class Import(Base):
     __tablename__ = "imports"
+    __table_args__ = (Index("ix_imports_account_id", "account_id"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"), nullable=False)
     source: Mapped[BankSource] = mapped_column(String(32))
     filename: Mapped[str] = mapped_column(String(256))
     total_rows: Mapped[int] = mapped_column(default=0)
@@ -58,6 +84,7 @@ class Import(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     transactions: Mapped[list[Transaction]] = relationship(back_populates="import_")
+    account: Mapped[Account] = relationship(back_populates="imports")
 
 
 class CategoryDef(Base):
@@ -162,8 +189,11 @@ class MerchantAlias(Base):
 class Transaction(Base):
     __tablename__ = "transactions"
     __table_args__ = (
-        UniqueConstraint("dedup_hash", name="uq_transactions_dedup_hash"),
+        UniqueConstraint(
+            "account_id", "dedup_hash", name="uq_transactions_account_dedup_hash"
+        ),
         Index("ix_transactions_booking_date", "booking_date"),
+        Index("ix_transactions_account_id", "account_id"),
         Index("ix_transactions_category", "category"),
         Index("ix_transactions_import_id", "import_id"),
         Index("ix_transactions_is_transfer", "is_transfer"),
@@ -171,7 +201,7 @@ class Transaction(Base):
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    account_id: Mapped[int | None] = mapped_column(ForeignKey("accounts.id"), nullable=True)
+    account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"), nullable=False)
     import_id: Mapped[int | None] = mapped_column(ForeignKey("imports.id"), nullable=True)
 
     booking_date: Mapped[date] = mapped_column()
@@ -233,8 +263,12 @@ class Transaction(Base):
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
-    account: Mapped[Account | None] = relationship(back_populates="transactions")
+    account: Mapped[Account] = relationship(back_populates="transactions")
     import_: Mapped[Import | None] = relationship(back_populates="transactions")
+
+    @property
+    def account_name(self) -> str:
+        return self.account.name
 
 
 class MlFeedbackEvent(Base):

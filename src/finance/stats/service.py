@@ -17,9 +17,9 @@ from finance.stats.types import (
     CashflowBucket,
     CategorySpend,
     CategoryTrendPoint,
+    CumulativeCashflowPoint,
     DistributionBucket,
     MerchantSpend,
-    NetWorthPoint,
     Overview,
     SpendDistribution,
     month_bucket,
@@ -39,7 +39,7 @@ __all__ = [
     "cashflow",
     "by_category",
     "by_transaction_type",
-    "networth",
+    "cumulative_cashflow",
     "top_merchants",
     "category_trend",
     "spend_distribution",
@@ -376,21 +376,21 @@ def by_transaction_type(
     return out
 
 
-def networth(
+def cumulative_cashflow(
     session: Session,
     *,
     months: int | None,
     include_transfers: bool = False,
-) -> list[NetWorthPoint]:
+) -> list[CumulativeCashflowPoint]:
     running = Decimal(0)
-    out: list[NetWorthPoint] = []
+    out: list[CumulativeCashflowPoint] = []
     for row in cashflow(
         session,
         months=months,
         include_transfers=include_transfers,
     ):
         running += row.net
-        out.append(NetWorthPoint(month=row.month, balance=running))
+        out.append(CumulativeCashflowPoint(month=row.month, balance=running))
     return out
 
 

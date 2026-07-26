@@ -238,6 +238,7 @@ def test_create_manual_payment_is_linked_atomically(client, db_session) -> None:
     response = client.post(
         f"/fixed-charges/{charge['id']}/transactions/manual",
         json={
+            "account_id": 1,
             "scheduled_due_date": today.isoformat(),
             "booking_date": today.isoformat(),
             "amount": "2100.00",
@@ -275,6 +276,7 @@ def test_invalid_manual_payment_does_not_leave_transaction(client, db_session) -
     response = client.post(
         f"/fixed-charges/{charge['id']}/transactions/manual",
         json={
+            "account_id": 1,
             "scheduled_due_date": today.isoformat(),
             "booking_date": today.isoformat(),
             "amount": "70.00",
@@ -288,6 +290,51 @@ def test_invalid_manual_payment_does_not_leave_transaction(client, db_session) -
     )
 
     assert response.status_code == 422
+    db_session.expire_all()
+    assert db_session.query(Transaction).count() == before
+
+
+def test_manual_payment_rejects_missing_or_archived_account(
+    client,
+    db_session,
+) -> None:
+    today = date.today()
+    charge = client.post(
+        "/fixed-charges",
+        json={
+            "name": "Internet",
+            "amount": "70.00",
+            "cadence": "monthly",
+            "anchor_date": today.isoformat(),
+        },
+    ).json()
+    payload = {
+        "account_id": 999_999,
+        "scheduled_due_date": today.isoformat(),
+        "booking_date": today.isoformat(),
+        "amount": "70.00",
+        "direction": "debit",
+        "merchant": "Operator",
+        "title": "Internet",
+        "transaction_type": "expense",
+        "category": None,
+        "notes": None,
+    }
+    before = db_session.query(Transaction).count()
+
+    missing = client.post(
+        f"/fixed-charges/{charge['id']}/transactions/manual",
+        json=payload,
+    )
+    assert missing.status_code == 404
+
+    assert client.post("/accounts/1/archive").status_code == 200
+    archived = client.post(
+        f"/fixed-charges/{charge['id']}/transactions/manual",
+        json={**payload, "account_id": 1},
+    )
+    assert archived.status_code == 422
+
     db_session.expire_all()
     assert db_session.query(Transaction).count() == before
 

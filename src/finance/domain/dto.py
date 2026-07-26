@@ -26,6 +26,8 @@ class TransactionDTO(BaseModel):
 
 class ImportSummary(BaseModel):
     import_id: int
+    account_id: int
+    account_name: str
     source: BankSource
     inserted: int
     duplicates: int

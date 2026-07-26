@@ -442,6 +442,7 @@ def create_and_link_manual_payment(
     session: Session,
     charge_id: int,
     *,
+    account_id: int,
     scheduled_due_date: date,
     booking_date: date,
     amount: Decimal,
@@ -471,6 +472,7 @@ def create_and_link_manual_payment(
     try:
         transaction = add_manual_transaction(
             session,
+            account_id=account_id,
             booking_date=booking_date,
             amount=amount,
             direction=direction,

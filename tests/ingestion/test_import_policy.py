@@ -55,6 +55,7 @@ def test_policy_suggests_personal_category_without_database() -> None:
         _dto(),
         converted=_conversion(),
         personal=_rule_effect(category="food"),
+        account_id=1,
         import_id=1,
         dedup_hash="hash",
     )
@@ -75,6 +76,7 @@ def test_policy_auto_transfer_blocks_expense_category() -> None:
             category="savings",
             mode="auto_apply",
         ),
+        account_id=1,
         import_id=1,
         dedup_hash="hash",
     )
@@ -92,6 +94,7 @@ def test_policy_skip_categories_overrides_bank_category() -> None:
         _dto(category=Category.FOOD),
         converted=_conversion(),
         personal=None,
+        account_id=1,
         import_id=1,
         dedup_hash="hash",
     )
@@ -112,6 +115,7 @@ def test_policy_preserves_fx_values_from_conversion_input() -> None:
         _dto(currency="PLN"),
         converted=converted,
         personal=None,
+        account_id=1,
         import_id=7,
         dedup_hash="hash-7",
     )
@@ -129,6 +133,7 @@ def test_policy_preserves_unconverted_foreign_transaction_without_fake_pln() -> 
         _dto(currency="USD", amount=Decimal("-10.00")),
         converted=None,
         personal=None,
+        account_id=1,
         import_id=8,
         dedup_hash="hash-unconverted",
     )

@@ -9,6 +9,7 @@ from uuid import uuid4
 
 from sqlalchemy.orm import Session
 
+from finance.accounts.service import get_active_account
 from finance.currencies import BASE_CURRENCY, convert_amount
 from finance.domain.enums import BankSource, TransactionDirection, TransactionType
 from finance.domain.models import Transaction
@@ -139,6 +140,7 @@ def _apply_labels(
 def add_manual_transaction(
     session: Session,
     *,
+    account_id: int,
     booking_date: date,
     amount: Decimal,
     direction: TransactionDirection | str,
@@ -149,6 +151,7 @@ def add_manual_transaction(
     notes: str | None = None,
 ) -> Transaction:
     """Add and flush a manual transaction without committing the session."""
+    get_active_account(session, account_id)
     values = _validated_values(
         booking_date=booking_date,
         amount=amount,
@@ -166,6 +169,7 @@ def add_manual_transaction(
         rate_date=booking_date,
     )
     tx = Transaction(
+        account_id=account_id,
         booking_date=booking_date,
         booking_datetime=None,
         amount=values.amount,
@@ -199,6 +203,7 @@ def add_manual_transaction(
 def create_manual_transaction(
     session: Session,
     *,
+    account_id: int,
     booking_date: date,
     amount: Decimal,
     direction: TransactionDirection | str,
@@ -211,6 +216,7 @@ def create_manual_transaction(
     try:
         tx = add_manual_transaction(
             session,
+            account_id=account_id,
             booking_date=booking_date,
             amount=amount,
             direction=direction,
@@ -232,6 +238,7 @@ def update_manual_transaction(
     session: Session,
     tx_id: int,
     *,
+    account_id: int,
     booking_date: date,
     amount: Decimal,
     direction: TransactionDirection | str,
@@ -248,6 +255,11 @@ def update_manual_transaction(
         raise ManualTransactionEditForbidden(
             "Only manually added transactions can be edited here."
         )
+    # Archiving stops new operations, but must not make historical manual data
+    # impossible to correct. Only a move to another account requires an active
+    # destination.
+    if account_id != tx.account_id:
+        get_active_account(session, account_id)
     validated = _validated_values(
         booking_date=booking_date,
         amount=amount,
@@ -272,6 +284,7 @@ def update_manual_transaction(
             rate_date=validated.booking_date,
         )
         tx.booking_date = validated.booking_date
+        tx.account_id = account_id
         tx.booking_datetime = None
         tx.amount = validated.amount
         tx.currency = BASE_CURRENCY

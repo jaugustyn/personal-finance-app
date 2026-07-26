@@ -50,6 +50,7 @@ export interface TransactionInitialFilters {
   dateFrom?: string;
   dateTo?: string;
   importId?: number;
+  accountId?: number;
   reviewState?: CategoryState;
   includeTransfers?: boolean;
 }
@@ -64,6 +65,7 @@ const URL_FILTER_KEYS = [
   "date_from",
   "date_to",
   "import_id",
+  "account_id",
   "category_state",
   "include_transfers",
 ] as const;
@@ -125,6 +127,9 @@ export function ListView({
   const [importId, setImportId] = useState<number | undefined>(
     initialFilters?.importId,
   );
+  const [accountId, setAccountId] = useState<number | undefined>(
+    initialFilters?.accountId,
+  );
   const [includeTransfers, setIncludeTransfers] = useLocalStorageState(
     `${commonStoragePrefix}.includeTransfers`,
     true,
@@ -173,6 +178,7 @@ export function ListView({
     setDateFrom(initialFilters.dateFrom ?? "");
     setDateTo(initialFilters.dateTo ?? "");
     setImportId(initialFilters.importId);
+    setAccountId(initialFilters.accountId);
     setIncludeTransfers(initialFilters.includeTransfers ?? true);
     setPage(0);
   }, [
@@ -186,6 +192,7 @@ export function ListView({
     initialFilters?.dateFrom,
     initialFilters?.dateTo,
     initialFilters?.importId,
+    initialFilters?.accountId,
     initialFilters?.reviewState,
     initialFilters?.includeTransfers,
     reviewMode,
@@ -216,6 +223,7 @@ export function ListView({
         date_from: dateFrom || undefined,
         date_to: dateTo || undefined,
         import_id: importId,
+        account_id: accountId,
         include_transfers: includeTransfers,
         category_state: categoryFilter ? "categorized" : "all",
         transaction_type: transactionType || undefined,
@@ -305,7 +313,8 @@ export function ListView({
       dateFrom !== "" ||
       dateTo !== "" ||
       includeTransfers !== true ||
-      importId !== undefined;
+      importId !== undefined ||
+      accountId !== undefined;
 
   const clearFilters = () => {
     if (reviewMode) {
@@ -326,6 +335,7 @@ export function ListView({
     setDateTo("");
     setIncludeTransfers(true);
     setImportId(undefined);
+    setAccountId(undefined);
     setPage(0);
     clearUrlFilters();
   };
@@ -374,6 +384,7 @@ export function ListView({
         dateFrom={dateFrom}
         dateTo={dateTo}
         importId={importId}
+        accountId={accountId}
         reviewState={reviewState}
         includeTransfers={includeTransfers}
         hasActiveFilters={hasActiveFilters}
@@ -425,6 +436,14 @@ export function ListView({
           setImportId(value);
           updateUrlFilter(
             "import_id",
+            value === undefined ? undefined : String(value),
+          );
+          resetPage();
+        }}
+        onAccountIdChange={(value) => {
+          setAccountId(value);
+          updateUrlFilter(
+            "account_id",
             value === undefined ? undefined : String(value),
           );
           resetPage();

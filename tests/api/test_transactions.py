@@ -608,7 +608,7 @@ def test_export_csv_streams_attachment(client, db_session) -> None:
     text = r.text
     lines = text.strip().splitlines()
     assert lines[0].startswith(
-        "id,booking_date,booking_datetime,amount,currency,amount_base,"
+        "id,account_id,account_name,booking_date,booking_datetime,amount,currency,amount_base,"
     )
     assert len(lines) == 2
     assert "Carrefour" in lines[1]

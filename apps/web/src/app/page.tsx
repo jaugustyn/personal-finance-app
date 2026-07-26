@@ -9,7 +9,7 @@ import {
   CashflowChart,
   CategoryMoMChart,
   CategoryTrendChart,
-  NetWorthChart,
+  CumulativeCashflowChart,
 } from "@/components/charts";
 import { PageHeader } from "@/components/page-header";
 import { api, type CashflowPoint } from "@/lib/api";
@@ -29,6 +29,7 @@ import {
   DashboardSection,
 } from "./_components/dashboard-section";
 import { DashboardToolbar } from "./_components/dashboard-toolbar";
+import { DashboardAssetsSummary } from "./_components/dashboard-assets-summary";
 import {
   RANGE_MONTHS,
   RANGE_OPTIONS,
@@ -73,6 +74,10 @@ export default function DashboardPage() {
   const currencyStatus = useQuery({
     queryKey: queryKeys.dashboard.currencyStatus,
     queryFn: api.currencyStatus,
+  });
+  const assetsOverview = useQuery({
+    queryKey: queryKeys.assets.overview,
+    queryFn: api.assetOverview,
   });
   const reviewQueue = useQuery({
     queryKey: queryKeys.dashboard.reviewQueue(8),
@@ -151,9 +156,10 @@ export default function DashboardPage() {
         includeTransfers,
       ),
   });
-  const networth = useQuery({
-    queryKey: queryKeys.dashboard.netWorth(trendRangeKey),
-    queryFn: () => api.networth(trendMonths, allData, includeTransfers),
+  const cumulativeCashflow = useQuery({
+    queryKey: queryKeys.dashboard.cumulativeCashflow(trendRangeKey),
+    queryFn: () =>
+      api.cumulativeCashflow(trendMonths, allData, includeTransfers),
   });
   const topMerchants = useQuery({
     queryKey: queryKeys.dashboard.topMerchants(rankingKey),
@@ -249,6 +255,13 @@ export default function DashboardPage() {
                 isFetching={overview.isFetching}
               />
             )}
+
+            <DashboardAssetsSummary
+              data={assetsOverview.data}
+              isLoading={assetsOverview.isLoading}
+              isError={assetsOverview.isError}
+              onRetry={() => void assetsOverview.refetch()}
+            />
 
             <ChartCard title={t("dashboard.cashflowTitle")}>
               {cashflow.isLoading ? (
@@ -388,16 +401,20 @@ export default function DashboardPage() {
                 </ChartCard>
               </div>
             )}
-            <ChartCard title={t("dashboard.networthTitle")}>
-              {networth.isLoading ? (
+            <ChartCard title={t("dashboard.cumulativeCashflowTitle")}>
+              {cumulativeCashflow.isLoading ? (
                 <ChartSkeleton />
-              ) : networth.isError ? (
+              ) : cumulativeCashflow.isError ? (
                 <ErrorState
                   variant="compact"
-                  onRetry={() => void networth.refetch()}
+                  onRetry={() => void cumulativeCashflow.refetch()}
                 />
-              ) : networth.data && networth.data.length > 0 ? (
-                <NetWorthChart data={networth.data} currency={baseCurrency} />
+              ) : cumulativeCashflow.data &&
+                cumulativeCashflow.data.length > 0 ? (
+                <CumulativeCashflowChart
+                  data={cumulativeCashflow.data}
+                  currency={baseCurrency}
+                />
               ) : (
                 <EmptyState title={t("common.empty")} />
               )}

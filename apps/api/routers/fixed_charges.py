@@ -18,6 +18,7 @@ from apps.api.schemas.fixed_charges import (
     FixedChargeTransactionsResponse,
     FixedChargeUpdate,
 )
+from finance.accounts.service import AccountArchived, AccountNotFound
 from finance.db import get_session
 from finance.fixed_charges import service
 
@@ -180,6 +181,10 @@ def create_fixed_charge_manual_payment(
             charge_id,
             **payload.model_dump(),
         )
+    except AccountNotFound as exc:
+        raise not_found(str(exc)) from exc
+    except AccountArchived as exc:
+        raise validation_error(str(exc)) from exc
     except service.FixedChargeValidationError as exc:
         raise validation_error(str(exc)) from exc
     except ValueError as exc:

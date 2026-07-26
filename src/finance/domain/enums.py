@@ -61,6 +61,16 @@ class BankSource(StrEnum):
     UNKNOWN = "unknown"
 
 
+class AccountKind(StrEnum):
+    """User-facing kind of a transactional account."""
+
+    BANK = "bank"
+    SAVINGS = "savings"
+    CREDIT_CARD = "credit_card"
+    CASH = "cash"
+    OTHER = "other"
+
+
 CATEGORY_VALUES = frozenset(item.value for item in Category)
 CATEGORY_SOURCE_VALUES = frozenset(item.value for item in CategorySource)
 CATEGORY_CONFIRMATION_METHOD_VALUES = frozenset(
@@ -72,3 +82,4 @@ CATEGORY_CONFIRMATION_METHOD_VALUES = frozenset(
 TRANSACTION_DIRECTION_VALUES = frozenset(item.value for item in TransactionDirection)
 TRANSACTION_TYPE_VALUES = frozenset(item.value for item in TransactionType)
 BANK_SOURCE_VALUES = frozenset(item.value for item in BankSource)
+ACCOUNT_KIND_VALUES = frozenset(item.value for item in AccountKind)

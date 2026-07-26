@@ -4,7 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, func, or_, select, tuple_
 from sqlalchemy.orm import Session
 
 from finance.categories import missing_system_category_names
@@ -102,14 +102,16 @@ def check_data_integrity(session: Session) -> list[IntegrityIssue]:
         issues.append(non_pln_base)
 
     duplicate_hashes = (
-        select(Transaction.dedup_hash)
-        .group_by(Transaction.dedup_hash)
+        select(Transaction.account_id, Transaction.dedup_hash)
+        .group_by(Transaction.account_id, Transaction.dedup_hash)
         .having(func.count(Transaction.id) > 1)
     )
     duplicate_rows = _transaction_issue(
         session,
         code="duplicate_dedup_hash",
-        condition=Transaction.dedup_hash.in_(duplicate_hashes),
+        condition=tuple_(Transaction.account_id, Transaction.dedup_hash).in_(
+            duplicate_hashes
+        ),
     )
     if duplicate_rows:
         issues.append(duplicate_rows)

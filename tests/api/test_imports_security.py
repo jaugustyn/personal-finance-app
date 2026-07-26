@@ -14,7 +14,7 @@ def test_upload_rejects_oversize_payload(client) -> None:
     r = client.post(
         "/imports",
         files={"file": ("big.csv", io.BytesIO(big), "text/csv")},
-        data={"source": "pekao"},
+        data={"source": "pekao", "account_id": "1"},
     )
     assert r.status_code == 413
 
@@ -23,7 +23,7 @@ def test_upload_rejects_unknown_extension(client) -> None:
     r = client.post(
         "/imports",
         files={"file": ("payload.exe", io.BytesIO(b"hello"), "application/octet-stream")},
-        data={"source": "pekao"},
+        data={"source": "pekao", "account_id": "1"},
     )
     assert r.status_code == 415
 
@@ -38,7 +38,7 @@ def test_upload_rejects_excel_until_parser_support_exists(client) -> None:
                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             )
         },
-        data={"source": "generic"},
+        data={"source": "generic", "account_id": "1"},
     )
     assert r.status_code == 415
 
@@ -47,7 +47,7 @@ def test_upload_rejects_unknown_mime(client) -> None:
     r = client.post(
         "/imports",
         files={"file": ("ok.csv", io.BytesIO(b"a;b\n1;2\n"), "image/png")},
-        data={"source": "pekao"},
+        data={"source": "pekao", "account_id": "1"},
     )
     assert r.status_code == 415
 
@@ -56,6 +56,6 @@ def test_upload_rejects_empty_file(client) -> None:
     r = client.post(
         "/imports",
         files={"file": ("empty.csv", io.BytesIO(b""), "text/csv")},
-        data={"source": "pekao"},
+        data={"source": "pekao", "account_id": "1"},
     )
     assert r.status_code == 422

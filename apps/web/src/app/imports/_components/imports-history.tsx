@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
+import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { History, Receipt, Trash2 } from "lucide-react";
+import { History, Landmark, Receipt, Trash2 } from "lucide-react";
 
 import { api, type ImportHistoryRow } from "@/lib/api";
 import { useFormatters, useT } from "@/lib/i18n";
@@ -15,12 +16,22 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DataTable, type DataTableColumn } from "@/components/data-table";
+import { AccountSelect } from "@/components/account-select";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 export function ImportsHistory() {
   const { t } = useT();
   const { formatDateTime } = useFormatters();
   const qc = useQueryClient();
   const confirm = useConfirm();
+  const [accountTarget, setAccountTarget] = useState<ImportHistoryRow | null>(null);
+  const [accountId, setAccountId] = useState<number | null>(null);
   const {
     data: imports = [],
     isLoading,
@@ -36,6 +47,15 @@ export function ImportsHistory() {
     onSuccess: () => {
       void invalidateImportData(qc);
       toast.success(t("toast.deleted"));
+    },
+    onError: (error) => showErrorToast(error, t("toast.error")),
+  });
+  const accountMut = useMutation({
+    mutationFn: () => api.changeImportAccount(accountTarget!.id, accountId!),
+    onSuccess: () => {
+      void invalidateImportData(qc);
+      setAccountTarget(null);
+      toast.success(t("toast.saved"));
     },
     onError: (error) => showErrorToast(error, t("toast.error")),
   });
@@ -64,6 +84,12 @@ export function ImportsHistory() {
       sortValue: (row) => row.filename,
       className: "font-medium",
       cell: (row) => row.filename,
+    },
+    {
+      id: "account",
+      header: t("imports.history.account"),
+      sortValue: (row) => row.account_name,
+      cell: (row) => row.account_name,
     },
     {
       id: "source",
@@ -99,10 +125,21 @@ export function ImportsHistory() {
       id: "actions",
       header: "",
       align: "center",
-      headerClassName: "w-24",
-      className: "w-24",
+      headerClassName: "w-32",
+      className: "w-32",
       cell: (row) => (
         <div className="flex justify-center gap-1">
+          <Button
+            size="icon"
+            variant="ghost"
+            onClick={() => {
+              setAccountTarget(row);
+              setAccountId(row.account_id);
+            }}
+            aria-label={t("imports.history.changeAccount")}
+          >
+            <Landmark className="h-4 w-4" />
+          </Button>
           <Button
             size="icon"
             variant="ghost"
@@ -128,6 +165,7 @@ export function ImportsHistory() {
   ];
 
   return (
+    <>
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
@@ -149,5 +187,43 @@ export function ImportsHistory() {
         />
       </CardContent>
     </Card>
+    <Dialog
+      open={accountTarget !== null}
+      onOpenChange={(open) => {
+        if (!open && !accountMut.isPending) setAccountTarget(null);
+      }}
+    >
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>{t("imports.history.changeAccountTitle")}</DialogTitle>
+        </DialogHeader>
+        <AccountSelect
+          value={accountId}
+          onChange={setAccountId}
+          disabled={accountMut.isPending}
+          quickCreate={false}
+        />
+        <DialogFooter>
+          <Button
+            variant="outline"
+            onClick={() => setAccountTarget(null)}
+            disabled={accountMut.isPending}
+          >
+            {t("common.cancel")}
+          </Button>
+          <Button
+            onClick={() => accountMut.mutate()}
+            disabled={
+              accountId === null ||
+              accountId === accountTarget?.account_id ||
+              accountMut.isPending
+            }
+          >
+            {t("common.save")}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+    </>
   );
 }

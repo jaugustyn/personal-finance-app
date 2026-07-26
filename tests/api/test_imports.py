@@ -27,6 +27,7 @@ def _patch_ingest(monkeypatch):
         raw,
         requested_source,
         column_map,
+        account_id,
         skip_categories=False,
         fx_mode="prefetch_missing",
     ):
@@ -43,11 +44,14 @@ def _patch_ingest(monkeypatch):
                 "parser": parser,
                 "skip_categories": skip_categories,
                 "fx_mode": fx_mode,
+                "account_id": account_id,
             }
         )
         return ImportUploadResult(
             summary=ImportSummary(
                 import_id=1,
+                account_id=account_id,
+                account_name="Test account",
                 source=chosen_source,
                 total_rows=3,
                 inserted=2,
@@ -75,7 +79,7 @@ def test_upload_returns_summary(client, _patch_ingest) -> None:
     r = client.post(
         "/imports",
         files={"file": ("pekao.csv", io.BytesIO(b"col1;col2\n1;2\n"), "text/csv")},
-        data={"source": "pekao"},
+        data={"source": "pekao", "account_id": "1"},
     )
     assert r.status_code == 200
     body = r.json()
@@ -94,7 +98,7 @@ def test_upload_with_skip_categories(client, _patch_ingest) -> None:
     r = client.post(
         "/imports",
         files={"file": ("pekao.csv", io.BytesIO(b"col1;col2\n1;2\n"), "text/csv")},
-        data={"source": "pekao", "skip_categories": "true"},
+        data={"source": "pekao", "skip_categories": "true", "account_id": "1"},
     )
     assert r.status_code == 200
     assert len(_patch_ingest) == 1
@@ -105,7 +109,7 @@ def test_upload_with_require_existing_fx_mode(client, _patch_ingest) -> None:
     r = client.post(
         "/imports",
         files={"file": ("pekao.csv", io.BytesIO(b"col1;col2\n1;2\n"), "text/csv")},
-        data={"source": "pekao", "fx_mode": "require_existing"},
+        data={"source": "pekao", "fx_mode": "require_existing", "account_id": "1"},
     )
 
     assert r.status_code == 200
@@ -117,7 +121,7 @@ def test_upload_invalid_source_400_or_422(client, _patch_ingest) -> None:
     r = client.post(
         "/imports",
         files={"file": ("x.csv", io.BytesIO(b"x"), "text/csv")},
-        data={"source": "not-a-bank"},
+        data={"source": "not-a-bank", "account_id": "1"},
     )
     assert r.status_code in (400, 422)
 
@@ -130,6 +134,7 @@ def test_upload_parse_error_returns_422(client, monkeypatch) -> None:
         raw,
         requested_source,
         column_map,
+        account_id,
         skip_categories=False,
         fx_mode="prefetch_missing",
     ):
@@ -141,7 +146,7 @@ def test_upload_parse_error_returns_422(client, monkeypatch) -> None:
     r = client.post(
         "/imports",
         files={"file": ("x.csv", io.BytesIO(b"garbage"), "text/csv")},
-        data={"source": "pekao"},
+        data={"source": "pekao", "account_id": "1"},
     )
     assert r.status_code == 422
     assert "bad header" in r.json()["detail"]
@@ -155,6 +160,7 @@ def test_upload_not_implemented_returns_501(client, monkeypatch) -> None:
         raw,
         requested_source,
         column_map,
+        account_id,
         skip_categories=False,
         fx_mode="prefetch_missing",
     ):
@@ -166,7 +172,7 @@ def test_upload_not_implemented_returns_501(client, monkeypatch) -> None:
     r = client.post(
         "/imports",
         files={"file": ("x.csv", io.BytesIO(b"x"), "text/csv")},
-        data={"source": "pekao"},
+        data={"source": "pekao", "account_id": "1"},
     )
     assert r.status_code == 501
 
@@ -209,7 +215,18 @@ def test_preview_returns_headers_and_detection(client) -> None:
     assert body["quality_report"]["valid_rows"] == 2
     assert body["quality_report"]["blocking_issues"] == 0
     assert body["supported_extensions"] == [".csv", ".tsv", ".txt"]
+    assert body["account_id"] is None
+    assert body["suggested_account_id"] == 1
     assert len(body["sample_rows"]) == 2
+
+
+def test_upload_requires_account(client) -> None:
+    response = client.post(
+        "/imports",
+        files={"file": ("any.csv", io.BytesIO(_GENERIC_EN), "text/csv")},
+        data={"source": "generic"},
+    )
+    assert response.status_code == 422
 
 
 def test_preview_quality_report_flags_invalid_rows(client) -> None:
@@ -294,6 +311,7 @@ def test_upload_auto_detects_pekao(client, _patch_ingest) -> None:
     r = client.post(
         "/imports",
         files={"file": ("export.csv", io.BytesIO(_PEKAO_HEADERS), "text/csv")},
+        data={"account_id": "1"},
     )
     assert r.status_code == 200
     assert _patch_ingest[0]["source"] == BankSource.PEKAO
@@ -304,6 +322,7 @@ def test_upload_auto_falls_back_to_generic(client, _patch_ingest) -> None:
     r = client.post(
         "/imports",
         files={"file": ("any.csv", io.BytesIO(_GENERIC_EN), "text/csv")},
+        data={"account_id": "1"},
     )
     assert r.status_code == 200
     assert _patch_ingest[0]["source"] == BankSource.UNKNOWN
@@ -318,7 +337,7 @@ def test_upload_generic_with_explicit_column_map(client, _patch_ingest) -> None:
     r = client.post(
         "/imports",
         files={"file": ("x.csv", io.BytesIO(_GENERIC_EN), "text/csv")},
-        data={"source": "generic", "column_map": json.dumps(cmap)},
+        data={"source": "generic", "column_map": json.dumps(cmap), "account_id": "1"},
     )
     assert r.status_code == 200
     parser = _patch_ingest[0]["parser"]
@@ -329,7 +348,7 @@ def test_upload_generic_without_map_uses_detected_mapping(client, _patch_ingest)
     r = client.post(
         "/imports",
         files={"file": ("x.csv", io.BytesIO(_GENERIC_EN), "text/csv")},
-        data={"source": "generic"},
+        data={"source": "generic", "account_id": "1"},
     )
     assert r.status_code == 200
     parser = _patch_ingest[0]["parser"]
@@ -342,7 +361,7 @@ def test_upload_generic_invalid_column_map_422(client, _patch_ingest) -> None:
     r = client.post(
         "/imports",
         files={"file": ("x.csv", io.BytesIO(_GENERIC_EN), "text/csv")},
-        data={"source": "generic", "column_map": "{not-json"},
+        data={"source": "generic", "column_map": "{not-json", "account_id": "1"},
     )
     assert r.status_code == 422
 
@@ -351,7 +370,11 @@ def test_upload_generic_missing_required_mapping_422(client, _patch_ingest) -> N
     r = client.post(
         "/imports",
         files={"file": ("x.csv", io.BytesIO(_GENERIC_EN), "text/csv")},
-        data={"source": "generic", "column_map": json.dumps({"date": "Date"})},
+        data={
+            "source": "generic",
+            "column_map": json.dumps({"date": "Date"}),
+            "account_id": "1",
+        },
     )
     assert r.status_code == 422
     assert "amount" in r.json()["detail"]
@@ -362,7 +385,7 @@ def test_upload_generic_unknown_mapped_column_422(client, _patch_ingest) -> None
     r = client.post(
         "/imports",
         files={"file": ("x.csv", io.BytesIO(_GENERIC_EN), "text/csv")},
-        data={"source": "generic", "column_map": json.dumps(cmap)},
+        data={"source": "generic", "column_map": json.dumps(cmap), "account_id": "1"},
     )
     assert r.status_code == 422
     assert "Does not exist" in r.json()["detail"]

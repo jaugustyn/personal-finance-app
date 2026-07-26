@@ -25,6 +25,8 @@ class ClassificationDecisionResponse(BaseModel):
 
 class TransactionRow(BaseModel):
     id: int
+    account_id: int
+    account_name: str
     booking_date: date
     amount: Decimal
     currency: str
@@ -75,6 +77,7 @@ class TransactionRow(BaseModel):
 
 
 class ManualTransactionWrite(BaseModel):
+    account_id: int = Field(gt=0)
     booking_date: date
     amount: Decimal = Field(gt=0, max_digits=14, decimal_places=2)
     direction: TransactionDirection

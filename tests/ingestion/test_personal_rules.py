@@ -30,6 +30,7 @@ def test_personal_rule_suggests_category_without_ground_truth(db_session) -> Non
     values = transaction_values_for_dto(
         db_session,
         _dto(),
+        account_id=1,
         import_id=1,
         dedup_hash="hash",
     )
@@ -52,6 +53,7 @@ def test_personal_rule_can_auto_apply_transfer_type(db_session) -> None:
     values = transaction_values_for_dto(
         db_session,
         _dto(merchant="My Broker", title="Top up"),
+        account_id=1,
         import_id=1,
         dedup_hash="hash",
     )
@@ -73,6 +75,7 @@ def test_personal_suggest_only_type_precedes_bank_mapping(db_session) -> None:
     values = transaction_values_for_dto(
         db_session,
         _dto(raw_transaction_type="PŁATNOŚĆ BLIK"),
+        account_id=1,
         import_id=1,
         dedup_hash="bank-before-suggestion",
     )
@@ -88,6 +91,7 @@ def test_bank_mapping_stays_a_suggestion(db_session) -> None:
     values = transaction_values_for_dto(
         db_session,
         _dto(raw_transaction_type="PŁATNOŚĆ BLIK"),
+        account_id=1,
         import_id=1,
         dedup_hash="bank-type-suggestion",
     )
@@ -111,6 +115,7 @@ def test_personal_suggest_only_type_stays_a_suggestion(db_session) -> None:
     values = transaction_values_for_dto(
         db_session,
         _dto(merchant="Bank", title="Cel oszczednosciowy"),
+        account_id=1,
         import_id=1,
         dedup_hash="personal-type-suggestion",
     )
@@ -130,6 +135,7 @@ def test_rule_category_is_not_applied_to_credit_income(db_session) -> None:
             merchant="Bank",
             title="Odsetki",
         ),
+        account_id=1,
         import_id=1,
         dedup_hash="hash",
     )
@@ -145,6 +151,7 @@ def test_skip_categories_overrides_bank_category(db_session) -> None:
     values = transaction_values_for_dto(
         db_session,
         _dto(category=Category.FOOD),
+        account_id=1,
         import_id=1,
         dedup_hash="hash",
         skip_categories=True,
@@ -158,6 +165,7 @@ def test_skip_categories_default_does_not_override(db_session) -> None:
     values = transaction_values_for_dto(
         db_session,
         _dto(category=Category.FOOD),
+        account_id=1,
         import_id=1,
         dedup_hash="hash",
         skip_categories=False,

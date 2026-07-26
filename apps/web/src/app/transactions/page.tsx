@@ -78,6 +78,7 @@ export default function TransactionsPage() {
       dateFrom: valueOrUndefined(params.get("date_from")),
       dateTo: valueOrUndefined(params.get("date_to")),
       importId: parseNumber(params.get("import_id")),
+      accountId: parseNumber(params.get("account_id")),
       reviewState:
         parseReviewState(params.get("category_state")) ??
         (urlView === "review" ? "assignable" : undefined),
@@ -99,6 +100,7 @@ export default function TransactionsPage() {
     () =>
       editedTransaction
         ? {
+            account_id: editedTransaction.account_id,
             booking_date: editedTransaction.booking_date,
             amount: Math.abs(Number(editedTransaction.amount)),
             direction: editedTransaction.direction,
@@ -226,6 +228,7 @@ function hasTransactionFilterParams(params: URLSearchParams): boolean {
     "date_from",
     "date_to",
     "import_id",
+    "account_id",
     "category_state",
     "include_transfers",
   ].some((key) => params.has(key));

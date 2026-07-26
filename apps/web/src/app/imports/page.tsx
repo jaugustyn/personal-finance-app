@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { AlertCircle, FileSpreadsheet, Loader2 } from "lucide-react";
 import {
@@ -33,6 +33,7 @@ export default function ImportsPage() {
     {} as Record<FieldKey, string>,
   );
   const [skipCategories, setSkipCategories] = useState(false);
+  const [accountId, setAccountId] = useState<number | null>(null);
 
   const previewMut = useMutation({
     mutationFn: (f: File) => api.previewImport(f),
@@ -45,22 +46,28 @@ export default function ImportsPage() {
         if (v) seeded[key] = v;
       }
       setMapping(seeded);
+      if (p.suggested_account_id !== null) {
+        setAccountId(p.suggested_account_id);
+      }
     },
     onError: (error) => showErrorToast(error, t("toast.error")),
   });
 
-  const mappingPreviewMut = useMutation({
+  const qualityPreviewMut = useMutation({
     mutationFn: (args: {
       file: File;
-      columnMap: Record<string, string>;
-      mappingKey: string;
+      source: string;
+      columnMap: Record<string, string> | null;
+      accountId: number;
+      previewKey: string;
     }) =>
       api.previewImport(args.file, {
-        source: "generic",
+        source: args.source,
         columnMap: args.columnMap,
+        accountId: args.accountId,
       }),
     onSuccess: (p, args) => {
-      if (latestMappingPreviewKey.current === args.mappingKey) {
+      if (latestMappingPreviewKey.current === args.previewKey) {
         setPreview(p);
       }
     },
@@ -73,11 +80,13 @@ export default function ImportsPage() {
       source: string | null;
       columnMap: Record<string, string> | null;
       skipCategories?: boolean;
+      accountId: number;
     }) =>
       api.uploadImport(args.file, {
         source: args.source,
         columnMap: args.columnMap,
         skipCategories: args.skipCategories,
+        accountId: args.accountId,
       }),
     onSuccess: () => {
       void invalidateImportData(qc);
@@ -93,13 +102,14 @@ export default function ImportsPage() {
     latestMappingPreviewKey.current = null;
     setMapping({} as Record<FieldKey, string>);
     setSkipCategories(false);
+    setAccountId(null);
     uploadMut.reset();
-    mappingPreviewMut.reset();
+    qualityPreviewMut.reset();
     if (f) previewMut.mutate(f);
   };
 
   const onCommit = () => {
-    if (!file) return;
+    if (!file || accountId === null) return;
     setPreviewOpen(false);
     if (preview?.detected_source) {
       uploadMut.mutate({
@@ -107,6 +117,7 @@ export default function ImportsPage() {
         source: preview.detected_source,
         columnMap: null,
         skipCategories,
+        accountId,
       });
     } else {
       const cleaned = cleanImportMapping(mapping);
@@ -115,6 +126,7 @@ export default function ImportsPage() {
         source: "generic",
         columnMap: cleaned,
         skipCategories,
+        accountId,
       });
     }
   };
@@ -125,27 +137,53 @@ export default function ImportsPage() {
       [key]: value === "none" ? "" : value,
     };
     setMapping(next);
-    refreshGenericQuality(next);
+    runAccountAwarePreview(accountId, next, preview);
   };
 
-  const refreshGenericQuality = (nextMapping: Record<FieldKey, string>) => {
-    if (!file || preview?.detected_source) return;
+  function runAccountAwarePreview(
+    nextAccountId: number | null,
+    nextMapping: Record<FieldKey, string>,
+    currentPreview: ImportPreview | null,
+  ) {
+    if (!file || nextAccountId === null || !currentPreview) return;
     const cleaned = cleanImportMapping(nextMapping);
-    if (!cleaned.date || !cleaned.amount) {
+    const source = currentPreview.detected_source ?? "generic";
+    if (source === "generic" && (!cleaned.date || !cleaned.amount)) {
       latestMappingPreviewKey.current = null;
       return;
     }
-    const mappingKey = JSON.stringify(cleaned);
-    latestMappingPreviewKey.current = mappingKey;
-    mappingPreviewMut.mutate({ file, columnMap: cleaned, mappingKey });
-  };
+    const columnMap = source === "generic" ? cleaned : null;
+    const previewKey = JSON.stringify({ source, columnMap, accountId: nextAccountId });
+    latestMappingPreviewKey.current = previewKey;
+    qualityPreviewMut.mutate({
+      file,
+      source,
+      columnMap,
+      accountId: nextAccountId,
+      previewKey,
+    });
+  }
+
+  useEffect(() => {
+    if (
+      accountId !== null &&
+      preview !== null &&
+      preview.account_id !== accountId
+    ) {
+      runAccountAwarePreview(accountId, mapping, preview);
+    }
+    // The selected account and preview identity define when revalidation is needed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [accountId, file, preview?.account_id]);
 
   const requiredOk = !!mapping.date && !!mapping.amount && !!mapping.merchant;
   const canCommit =
     !!file &&
     !uploadMut.isPending &&
-    !mappingPreviewMut.isPending &&
-    !mappingPreviewMut.error &&
+    accountId !== null &&
+    preview?.account_id === accountId &&
+    !qualityPreviewMut.isPending &&
+    !qualityPreviewMut.error &&
     (preview?.quality_report.blocking_issues ?? 0) === 0 &&
     (preview?.detected_source ? true : requiredOk);
 
@@ -206,16 +244,20 @@ export default function ImportsPage() {
         file={file}
         preview={preview}
         mapping={mapping}
+        accountId={accountId}
         skipCategories={skipCategories}
         previewPending={previewMut.isPending}
         previewError={previewMut.error}
-        qualityPending={mappingPreviewMut.isPending}
-        qualityError={mappingPreviewMut.error}
+        qualityPending={qualityPreviewMut.isPending}
+        qualityError={qualityPreviewMut.error}
         uploadPending={uploadMut.isPending}
         uploadError={uploadMut.error}
         uploadData={uploadMut.data}
         canCommit={canCommit}
         onMappingChange={updateMapping}
+        onAccountChange={(nextAccountId) => {
+          setAccountId(nextAccountId);
+        }}
         onSkipCategoriesChange={setSkipCategories}
         onCommit={onCommit}
       />

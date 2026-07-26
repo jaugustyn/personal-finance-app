@@ -91,8 +91,8 @@ def test_by_category_shape() -> None:
     assert isinstance(r.json(), list)
 
 
-def test_networth_shape() -> None:
-    r = client.get("/stats/networth?months=12")
+def test_cumulative_cashflow_shape() -> None:
+    r = client.get("/stats/cumulative-cashflow?months=12")
     if r.status_code >= 500:
         return
     assert r.status_code == 200

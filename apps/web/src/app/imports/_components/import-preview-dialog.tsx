@@ -9,10 +9,12 @@ import {
   Upload,
 } from "lucide-react";
 import type { ImportPreview, ImportSummary } from "@/lib/api";
+import { AccountSelect } from "@/components/account-select";
 import { useT, type TranslationKey } from "@/lib/i18n";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
 import {
   DEFAULT_TABLE_PAGE_SIZE,
   TablePagination,
@@ -53,6 +55,7 @@ export function ImportPreviewDialog({
   file,
   preview,
   mapping,
+  accountId,
   skipCategories,
   previewPending,
   previewError,
@@ -63,6 +66,7 @@ export function ImportPreviewDialog({
   uploadData,
   canCommit,
   onMappingChange,
+  onAccountChange,
   onSkipCategoriesChange,
   onCommit,
 }: {
@@ -71,6 +75,7 @@ export function ImportPreviewDialog({
   file: File | null;
   preview: ImportPreview | null;
   mapping: Record<FieldKey, string>;
+  accountId: number | null;
   skipCategories: boolean;
   previewPending: boolean;
   previewError: unknown;
@@ -81,6 +86,7 @@ export function ImportPreviewDialog({
   uploadData: ImportSummary | undefined;
   canCommit: boolean;
   onMappingChange: (key: FieldKey, value: string) => void;
+  onAccountChange: (accountId: number) => void;
   onSkipCategoriesChange: (checked: boolean) => void;
   onCommit: () => void;
 }) {
@@ -125,6 +131,18 @@ export function ImportPreviewDialog({
 
           {preview ? (
             <div className="space-y-5">
+              <div className="max-w-xl space-y-1.5 rounded-lg border bg-muted/20 p-4">
+                <Label htmlFor="import-account">{t("imports.account")}</Label>
+                <AccountSelect
+                  id="import-account"
+                  value={accountId}
+                  onChange={onAccountChange}
+                  disabled={busy}
+                />
+                <p className="text-xs text-muted-foreground">
+                  {t("imports.accountHelp")}
+                </p>
+              </div>
               <div
                 className={
                   preview.detected_source

@@ -11,8 +11,8 @@ from finance.stats.types import (
     CashflowBucket,
     CategorySpend,
     CategoryTrendPoint,
+    CumulativeCashflowPoint,
     MerchantSpend,
-    NetWorthPoint,
     Overview,
     SpendDistribution,
 )
@@ -79,7 +79,7 @@ __all__ = [
     "CategoryTrendPoint",
     "MerchantSort",
     "MerchantSpend",
-    "NetWorthPoint",
+    "CumulativeCashflowPoint",
     "Overview",
     "Recap",
     "RecapPeriod",

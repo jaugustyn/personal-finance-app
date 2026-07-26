@@ -58,11 +58,12 @@ oryginalny opis bankowy, kategorię i rodzaj operacji.
 Przebieg importu:
 
 1. Walidacja rozszerzenia, MIME, rozmiaru i wymaganych pól.
-2. Parsowanie do wspólnego schematu.
-3. Normalizacja merchanta i kierunku przepływu.
-4. Przeliczenie na PLN według daty księgowania.
-5. Wyliczenie stabilnego `dedup_hash`.
-6. Zapis transakcji i bezpiecznych sugestii.
+2. Wybór logicznego rachunku transakcyjnego.
+3. Parsowanie do wspólnego schematu.
+4. Normalizacja merchanta i kierunku przepływu.
+5. Przeliczenie na PLN według daty księgowania.
+6. Wyliczenie stabilnego `dedup_hash`.
+7. Zapis transakcji i bezpiecznych sugestii.
 
 `amount` przechowuje kwotę oryginalną, a `amount_base` kwotę analityczną w PLN.
 Kurs jest dobierany dla konkretnego dnia; w razie braku notowania dostawca może
@@ -70,15 +71,22 @@ użyć ograniczonego lookbacku. Dla waluty obcej brak poprawnego kursu nie jest
 zastępowany kursem `1`: rekord pozostaje widoczny, ale nie trafia do agregacji,
 filtrów kwotowych ani datasetów.
 
-Deduplication chroni przed ponownym importem tej samej operacji. Jeżeli źródło
-dostarcza godzinę księgowania, jest ona częścią skrótu, dzięki czemu dwie
+Deduplication chroni przed ponownym importem tej samej operacji w obrębie
+rachunku. Ten sam skrót może wystąpić na dwóch różnych rachunkach. Jeżeli
+źródło dostarcza godzinę księgowania, jest ona częścią skrótu, dzięki czemu dwie
 identyczne kwotowo operacje z jednego dnia nie są automatycznie scalane.
 Oryginalne pola pozostają dostępne do audytu i eksportu.
 
-Pojedynczą transakcję można również dodać ręcznie. Korzysta ona z tych samych
-reguł walidacji kwoty, waluty, typu i kategorii co pozostałe mutacje, otrzymuje
-źródło `manual` i może być później edytowana. Tryb edycji nie obejmuje rekordów
-pochodzących z importu, aby nie zacierać ich bankowego pochodzenia.
+Pojedynczą transakcję można również dodać ręcznie po wskazaniu rachunku.
+Korzysta ona z tych samych reguł walidacji kwoty, waluty, typu i kategorii co
+pozostałe mutacje, otrzymuje źródło `manual` i może być później edytowana. Tryb
+edycji nie obejmuje rekordów pochodzących z importu, aby nie zacierać ich
+bankowego pochodzenia.
+
+`account_id` opisuje rachunek, na którym wystąpiła operacja, a `source` jej
+pochodzenie techniczne. Rachunek może być wielowalutowy. W tej iteracji
+transakcje nie wyznaczają salda, a rachunki transakcyjne pozostają niezależne od
+rachunków służących do szacunkowego śledzenia majątku.
 
 ## 4. Model transakcji
 

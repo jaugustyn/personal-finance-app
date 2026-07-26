@@ -7,7 +7,8 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
-from finance.domain.models import Base, Transaction
+from finance.domain.enums import AccountKind, BankSource
+from finance.domain.models import Account, Base, Transaction
 from finance.llm.tools import (
     cashflow_overview,
     category_review_summary,
@@ -28,6 +29,16 @@ def session():
     Base.metadata.create_all(engine)
     try:
         with Session(engine) as s:
+            s.add(
+                Account(
+                    id=1,
+                    name="Test account",
+                    kind=AccountKind.BANK,
+                    source=BankSource.UNKNOWN,
+                    currency="PLN",
+                )
+            )
+            s.commit()
             yield s
     finally:
         engine.dispose()
@@ -35,6 +46,7 @@ def session():
 
 def _add_tx(s: Session, **kw) -> None:
     defaults = {
+        "account_id": 1,
         "currency": "PLN",
         "base_currency": "PLN",
         "amount_base": kw.get("amount"),

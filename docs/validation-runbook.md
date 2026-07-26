@@ -30,14 +30,17 @@ This operation is destructive.
 
 ## 2. Import and data verification
 
-1. Open `/imports` and upload a Pekao, Revolut or generic export.
-2. Verify the preview, mapping, detected currency and import summary.
-3. Open `/transactions` and verify amounts, ordering and merchant names.
+1. Open `/accounts` and create a transactional account.
+2. Open `/imports`, select that account and upload a Pekao, Revolut or generic
+   export.
+3. Verify the preview, mapping, detected currency, selected account and import
+   summary.
+4. Open `/transactions` and verify amounts, ordering, account and merchant names.
    Foreign rows without a PLN conversion should remain visible and be reported
    as omitted from monetary summaries.
-4. Open `Do sprawdzenia` and review transaction types separately from expense
+5. Open `Do sprawdzenia` and review transaction types separately from expense
    categories.
-5. Accept only correct suggestions; use a manual value when a suggestion is
+6. Accept only correct suggestions; use a manual value when a suggestion is
    wrong.
 
 Manual decisions and accepted suggestions become gold labels. Bank mappings,

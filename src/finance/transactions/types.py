@@ -41,6 +41,7 @@ class TransactionFilters:
     date_to: date | None = None
     include_transfers: bool = True
     import_id: int | None = None
+    account_id: int | None = None
     merchant: str | None = None
     merchant_canonical_key: str | None = None
     search: str | None = None

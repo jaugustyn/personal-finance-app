@@ -13,6 +13,7 @@ export const importsApi = {
       source?: string | null;
       columnMap?: Record<string, string> | null;
       fxMode?: "require_existing" | "prefetch_missing";
+      accountId?: number | null;
     } = {},
   ) => {
     const fd = new FormData();
@@ -20,6 +21,7 @@ export const importsApi = {
     if (opts.source) fd.append("source", opts.source);
     if (opts.columnMap) fd.append("column_map", JSON.stringify(opts.columnMap));
     if (opts.fxMode) fd.append("fx_mode", opts.fxMode);
+    if (opts.accountId) fd.append("account_id", String(opts.accountId));
     return requestMultipart<ImportPreview>("/imports/preview", fd);
   },
   uploadImport: (
@@ -28,7 +30,8 @@ export const importsApi = {
       source?: string | null;
       columnMap?: Record<string, string> | null;
       skipCategories?: boolean;
-    } = {},
+      accountId: number;
+    },
   ) => {
     const fd = new FormData();
     fd.append("file", file);
@@ -37,6 +40,12 @@ export const importsApi = {
     if (opts.skipCategories !== undefined) {
       fd.append("skip_categories", String(opts.skipCategories));
     }
+    fd.append("account_id", String(opts.accountId));
     return requestMultipart<ImportSummary>("/imports", fd);
   },
+  changeImportAccount: (id: number, accountId: number) =>
+    request<ImportHistoryRow>(`/imports/${id}/account`, {
+      method: "PATCH",
+      body: JSON.stringify({ account_id: accountId }),
+    }),
 };

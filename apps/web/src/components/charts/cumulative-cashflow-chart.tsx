@@ -10,15 +10,15 @@ import {
   YAxis,
 } from "recharts";
 import { useMemo } from "react";
-import type { NetWorthPoint } from "@/lib/api";
+import type { CumulativeCashflowPoint } from "@/lib/api";
 import { useFormatters, useT } from "@/lib/i18n";
 import { formatCompactAxisNumber, tooltipStyle } from "./chart-utils";
 
-export function NetWorthChart({
+export function CumulativeCashflowChart({
   data,
   currency = "PLN",
 }: {
-  data: NetWorthPoint[];
+  data: CumulativeCashflowPoint[];
   currency?: string;
 }) {
   const { t } = useT();
@@ -31,7 +31,7 @@ export function NetWorthChart({
     <ResponsiveContainer width="100%" height={300}>
       <AreaChart data={formatted} margin={{ top: 10, right: 10, bottom: 0, left: 0 }}>
         <defs>
-          <linearGradient id="nw" x1="0" y1="0" x2="0" y2="1">
+          <linearGradient id="cumulative-cashflow" x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor="hsl(var(--chart-2))" stopOpacity={0.6} />
             <stop offset="100%" stopColor="hsl(var(--chart-2))" stopOpacity={0.05} />
           </linearGradient>
@@ -52,9 +52,9 @@ export function NetWorthChart({
         <Area
           type="monotone"
           dataKey="balance"
-          name={t("chart.cumulativeBalance")}
+          name={t("chart.cumulativeCashflow")}
           stroke="hsl(var(--chart-2))"
-          fill="url(#nw)"
+          fill="url(#cumulative-cashflow)"
           strokeWidth={2}
         />
       </AreaChart>

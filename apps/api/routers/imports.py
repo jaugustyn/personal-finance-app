@@ -8,6 +8,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, UploadFile
 from sqlalchemy.orm import Session
 
 from apps.api.errors import (
+    conflict,
     not_found,
     not_implemented,
     payload_too_large,
@@ -15,6 +16,7 @@ from apps.api.errors import (
     validation_error,
 )
 from apps.api.schemas.imports import (
+    ImportAccountUpdate,
     ImportDeleteResult,
     ImportQualityIssueResponse,
     ImportQualityReportResponse,
@@ -22,13 +24,16 @@ from apps.api.schemas.imports import (
     ImportUploadResponse,
     PreviewResponse,
 )
+from finance.accounts.service import AccountArchived, AccountNotFound
 from finance.currencies import MissingFxRate
 from finance.db import SessionLocal, get_session
 from finance.ingestion import ParseError
 from finance.ingestion.schema import clean_column_map, import_field_specs_payload
 from finance.ingestion.types import ImportQualityReport
 from finance.ingestion.use_cases import (
+    ImportAccountConflict,
     ImportNotFound,
+    change_import_account,
 )
 from finance.ingestion.use_cases import (
     delete_import as delete_import_batch,
@@ -131,6 +136,7 @@ def preview_import(
     fx_mode: Literal["require_existing", "prefetch_missing"] = Form(
         "prefetch_missing"
     ),
+    account_id: int | None = Form(default=None),
     session: Session = Depends(get_session),
 ) -> PreviewResponse:
     raw = _read_validated(file)
@@ -142,8 +148,9 @@ def preview_import(
             requested_source=source,
             column_map=_parse_column_map(column_map),
             fx_mode=fx_mode,
+            account_id=account_id,
         )
-    except (ParseError, ValueError) as exc:
+    except (AccountArchived, AccountNotFound, ParseError, ValueError) as exc:
         raise validation_error(f"Cannot parse CSV: {exc}") from exc
     return PreviewResponse(
         headers=result.csv.headers,
@@ -156,6 +163,8 @@ def preview_import(
         quality_warnings=result.quality_warnings,
         quality_report=_quality_report_response(result.quality_report),
         supported_extensions=list(ALLOWED_EXTENSIONS),
+        account_id=result.account_id,
+        suggested_account_id=result.suggested_account_id,
     )
 
 
@@ -169,6 +178,7 @@ def upload_import(
     fx_mode: Literal["require_existing", "prefetch_missing"] = Form(
         "prefetch_missing"
     ),
+    account_id: int = Form(..., gt=0),
     session: Session = Depends(get_session),
 ) -> ImportUploadResponse:
     raw = _read_validated(file)
@@ -181,8 +191,9 @@ def upload_import(
             column_map=_parse_column_map(column_map),
             skip_categories=skip_categories,
             fx_mode=fx_mode,
+            account_id=account_id,
         )
-    except (ParseError, MissingFxRate, ValueError) as exc:
+    except (AccountArchived, AccountNotFound, ParseError, MissingFxRate, ValueError) as exc:
         raise validation_error(str(exc)) from exc
     except NotImplementedError as exc:
         raise not_implemented(str(exc)) from exc
@@ -192,6 +203,8 @@ def upload_import(
         background.add_task(_suggest_import_categories, summary.import_id)
     return ImportUploadResponse(
         import_id=summary.import_id,
+        account_id=summary.account_id,
+        account_name=summary.account_name,
         source=summary.source,
         inserted=summary.inserted,
         duplicates=summary.duplicates,
@@ -204,6 +217,25 @@ def upload_import(
 @router.get("", response_model=list[ImportRow])
 def list_imports(session: Session = Depends(get_session)) -> list[ImportRow]:
     return [ImportRow.model_validate(row) for row in load_imports(session)]
+
+
+@router.patch("/{import_id}/account", response_model=ImportRow)
+def patch_import_account(
+    import_id: int,
+    payload: ImportAccountUpdate,
+    session: Session = Depends(get_session),
+) -> ImportRow:
+    try:
+        row = change_import_account(session, import_id, payload.account_id)
+    except ImportNotFound as exc:
+        raise not_found(str(exc)) from exc
+    except ImportAccountConflict as exc:
+        raise conflict(str(exc)) from exc
+    except AccountNotFound as exc:
+        raise not_found(str(exc)) from exc
+    except AccountArchived as exc:
+        raise validation_error(str(exc)) from exc
+    return ImportRow.model_validate(row)
 
 
 @router.delete("/{import_id}", response_model=ImportDeleteResult)

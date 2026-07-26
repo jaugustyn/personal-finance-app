@@ -69,7 +69,7 @@ const ACCOUNT_PROFILES = [
   { value: "other", key: "assets.profile.other" },
 ] as const satisfies readonly { value: AccountProfile; key: TranslationKey }[];
 
-const LINKED_ACCOUNT_PROFILES = ACCOUNT_PROFILES.filter(
+const AGGREGATE_ACCOUNT_PROFILES = ACCOUNT_PROFILES.filter(
   (profile) => profile.value !== "physical",
 );
 
@@ -198,8 +198,8 @@ export function AssetAccountDialog({
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const aggregate = draft.trackingMode === "aggregate";
   const capabilities = assetTypeCapabilities(draft.assetType);
-  const hasLinkedAccount =
-    aggregate && capabilities.supportsLinkedAccount;
+  const showsAccountProfile =
+    aggregate && capabilities.supportsAccountProfile;
   const canSave =
     draft.name.trim().length > 0 &&
     (editing || !aggregate || isValuationValid(draft.valuation));
@@ -504,10 +504,10 @@ export function AssetAccountDialog({
                     className="space-y-5 pb-1 pt-2"
                   >
                     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                      {hasLinkedAccount ? (
+                      {showsAccountProfile ? (
                         <>
                           <div className="space-y-2">
-                            <Label>{t("assets.linkedAccount")}</Label>
+                            <Label>{t("assets.accountProfile")}</Label>
                             <Select
                               value={accountProfile(
                                 draft.kind,
@@ -521,7 +521,7 @@ export function AssetAccountDialog({
                                 <SelectValue />
                               </SelectTrigger>
                               <SelectContent>
-                                {LINKED_ACCOUNT_PROFILES.map((profile) => (
+                                {AGGREGATE_ACCOUNT_PROFILES.map((profile) => (
                                   <SelectItem
                                     key={profile.value}
                                     value={profile.value}

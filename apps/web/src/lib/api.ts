@@ -2,6 +2,7 @@
 // implementation is split by feature under ./api/*.
 
 import { appLockApi } from "./api/app-lock";
+import { accountsApi } from "./api/accounts";
 import { assetsApi } from "./api/assets";
 import { categoriesApi } from "./api/categories";
 import { chatApi } from "./api/chat";
@@ -26,6 +27,7 @@ export type {
 export { ApiError, apiErrorMessage, isApiError } from "./api/client";
 
 export const api = {
+  ...accountsApi,
   ...appLockApi,
   ...assetsApi,
   ...statsApi,

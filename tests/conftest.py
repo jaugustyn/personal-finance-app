@@ -19,14 +19,28 @@ from collections.abc import Iterator
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from apps.api.main import app
 from finance.categories import seed_system_categories
 from finance.db import get_session
-from finance.domain.models import Base
+from finance.domain.enums import AccountKind, BankSource
+from finance.domain.models import Account, Base, Import, Transaction
+
+DEFAULT_TEST_ACCOUNT_ID = 1
+
+
+def _assign_default_test_account(
+    session: Session,
+    _flush_context: object,
+    _instances: object,
+) -> None:
+    """Keep direct ORM fixtures concise; API contracts still require account_id."""
+    for row in session.new:
+        if isinstance(row, (Import, Transaction)) and row.account_id is None:
+            row.account_id = DEFAULT_TEST_ACCOUNT_ID
 
 
 @pytest.fixture(scope="function")
@@ -40,6 +54,15 @@ def db_engine():
     )
     Base.metadata.create_all(engine)
     with Session(engine) as session:
+        session.add(
+            Account(
+                id=DEFAULT_TEST_ACCOUNT_ID,
+                name="Test account",
+                kind=AccountKind.BANK,
+                source=BankSource.UNKNOWN,
+                currency="PLN",
+            )
+        )
         seed_system_categories(session)
         session.commit()
     try:
@@ -51,17 +74,20 @@ def db_engine():
 @pytest.fixture(scope="function")
 def db_session(db_engine) -> Iterator[Session]:
     SessionMaker = sessionmaker(bind=db_engine, autoflush=False, autocommit=False, future=True)
+    event.listen(SessionMaker, "before_flush", _assign_default_test_account)
     session = SessionMaker()
     try:
         yield session
     finally:
         session.close()
+        event.remove(SessionMaker, "before_flush", _assign_default_test_account)
 
 
 @pytest.fixture(scope="function")
 def client(db_engine) -> Iterator[TestClient]:
     """TestClient with ``get_session`` pointing at the in-memory SQLite."""
     SessionMaker = sessionmaker(bind=db_engine, autoflush=False, autocommit=False, future=True)
+    event.listen(SessionMaker, "before_flush", _assign_default_test_account)
 
     def _override_session() -> Iterator[Session]:
         s = SessionMaker()
@@ -75,3 +101,4 @@ def client(db_engine) -> Iterator[TestClient]:
         yield TestClient(app, raise_server_exceptions=False)
     finally:
         app.dependency_overrides.pop(get_session, None)
+        event.remove(SessionMaker, "before_flush", _assign_default_test_account)

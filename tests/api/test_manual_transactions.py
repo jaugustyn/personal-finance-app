@@ -8,6 +8,7 @@ from finance.domain.models import Transaction
 
 def _payload(**overrides: object) -> dict[str, object]:
     payload: dict[str, object] = {
+        "account_id": 1,
         "booking_date": "2026-07-21",
         "amount": "25.50",
         "direction": "debit",
@@ -151,3 +152,30 @@ def test_edit_manual_transaction_and_reject_core_edit_for_import(client, db_sess
     blocked = client.patch(f"/transactions/{imported.id}", json=_payload())
     assert blocked.status_code == 409
     assert blocked.json()["detail"]["code"] == "manual_transaction_required"
+
+
+def test_edit_keeps_historical_archived_account_but_rejects_move_to_one(
+    client,
+) -> None:
+    created = client.post("/transactions", json=_payload()).json()
+    assert client.post("/accounts/1/archive").status_code == 200
+
+    corrected = client.patch(
+        f"/transactions/{created['id']}",
+        json=_payload(account_id=1, amount="30.00", title="Korekta historyczna"),
+    )
+    assert corrected.status_code == 200
+    assert corrected.json()["account_id"] == 1
+    assert corrected.json()["amount"] == "-30.00"
+
+    second = client.post(
+        "/accounts",
+        json={"name": "Drugie konto", "kind": "bank"},
+    ).json()
+    assert client.post(f"/accounts/{second['id']}/archive").status_code == 200
+
+    blocked_move = client.patch(
+        f"/transactions/{created['id']}",
+        json=_payload(account_id=second["id"]),
+    )
+    assert blocked_move.status_code == 422

@@ -66,15 +66,17 @@ explicitly in their fixtures.
 
 ## Data flow
 
-1. A Pekao, Revolut or generic file is parsed into a common transaction DTO;
-   individual transactions can also be entered manually.
-2. The import service normalizes fields, obtains the date-specific PLN exchange
+1. The user selects a logical transactional account for a Pekao, Revolut or
+   generic import; individual transactions also require an account.
+2. The file is parsed into a common transaction DTO. The import service
+   normalizes fields, obtains the date-specific PLN exchange
    rate when available, calculates a deduplication hash and stores the original
    bank values.
 3. Transaction-type rules and category sources create provisional suggestions.
 4. The user reviews or corrects the economic type and expense category.
 5. Only explicit manual decisions and accepted suggestions become ML labels.
-6. Deterministic analytics feed the dashboard and LLM tools.
+6. Deduplication is scoped to the selected account.
+7. Deterministic analytics feed the dashboard and LLM tools.
 
 User-maintained fixed charges form a separate planning schedule. Schedules do
 not generate transactions automatically. A user can link an existing

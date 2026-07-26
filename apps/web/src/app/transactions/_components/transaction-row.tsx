@@ -145,6 +145,9 @@ export function TransactionRow({
               {t("transactions.sourceTitle", { value: tx.title })}
             </div>
           ) : null}
+          <div className="truncate text-xs font-normal text-muted-foreground">
+            {t("transactions.sourceAccount", { value: tx.account_name })}
+          </div>
         </div>
         {annotating ? (
           <TransactionAnnotationEditor

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from finance.domain.enums import BankSource
 
@@ -34,10 +34,14 @@ class PreviewResponse(BaseModel):
     quality_warnings: list[str]
     quality_report: ImportQualityReportResponse
     supported_extensions: list[str]
+    account_id: int | None
+    suggested_account_id: int | None
 
 
 class ImportUploadResponse(BaseModel):
     import_id: int
+    account_id: int
+    account_name: str
     source: BankSource
     inserted: int
     duplicates: int
@@ -48,6 +52,8 @@ class ImportUploadResponse(BaseModel):
 
 class ImportRow(BaseModel):
     id: int
+    account_id: int
+    account_name: str
     source: str
     filename: str
     total_rows: int
@@ -61,3 +67,7 @@ class ImportRow(BaseModel):
 class ImportDeleteResult(BaseModel):
     deleted_transactions: int
     import_id: int
+
+
+class ImportAccountUpdate(BaseModel):
+    account_id: int = Field(gt=0)

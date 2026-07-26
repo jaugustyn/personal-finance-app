@@ -48,7 +48,7 @@ export interface CategoryBreakdown {
   share: number;
 }
 
-export interface NetWorthPoint {
+export interface CumulativeCashflowPoint {
   month: string;
   balance: number;
 }
@@ -70,6 +70,8 @@ export interface CategoryTrendPoint {
 
 export interface Transaction {
   id: number;
+  account_id: number;
+  account_name: string;
   booking_date: string;
   merchant: string;
   merchant_raw?: string | null;
@@ -457,6 +459,8 @@ export interface Recap {
 
 export interface ImportHistoryRow {
   id: number;
+  account_id: number;
+  account_name: string;
   source: string;
   filename: string;
   total_rows: number;
@@ -693,6 +697,8 @@ export interface ImportPreview {
   quality_warnings: string[];
   quality_report: ImportQualityReport;
   supported_extensions: string[];
+  account_id: number | null;
+  suggested_account_id: number | null;
 }
 
 export interface ImportQualityIssue {
@@ -712,12 +718,39 @@ export interface ImportQualityReport {
 
 export interface ImportSummary {
   import_id: number;
+  account_id: number;
+  account_name: string;
   source: string;
   inserted: number;
   duplicates: number;
   total_rows: number;
   skipped_rows: number;
   quality_report: ImportQualityReport;
+}
+
+export type TransactionAccountKind =
+  | "bank"
+  | "savings"
+  | "credit_card"
+  | "cash"
+  | "other";
+
+export interface TransactionAccount {
+  id: number;
+  name: string;
+  kind: TransactionAccountKind;
+  currency: "PLN";
+  archived_at: string | null;
+  updated_at: string;
+  transaction_count: number;
+  import_count: number;
+  currencies: string[];
+  last_transaction_date: string | null;
+}
+
+export interface TransactionAccountInput {
+  name: string;
+  kind: TransactionAccountKind;
 }
 
 export interface PersonalRule {

@@ -38,6 +38,7 @@ class TransactionImportPolicy:
         *,
         converted: ConversionResult | None,
         personal: RuleEffect | None,
+        account_id: int,
         import_id: int | None,
         dedup_hash: str,
     ) -> dict[str, object]:
@@ -45,6 +46,7 @@ class TransactionImportPolicy:
             dto,
             converted=converted,
             personal=personal,
+            account_id=account_id,
             import_id=import_id,
             dedup_hash=dedup_hash,
             skip_categories=self.skip_categories,
@@ -56,6 +58,7 @@ def build_transaction_values(
     *,
     converted: ConversionResult | None,
     personal: RuleEffect | None,
+    account_id: int,
     import_id: int | None,
     dedup_hash: str,
     skip_categories: bool = False,
@@ -140,6 +143,7 @@ def build_transaction_values(
         "source": dto.source.value,
         "external_id": dto.external_id,
         "dedup_hash": dedup_hash,
+        "account_id": account_id,
         "import_id": import_id,
         **type_values,
     }

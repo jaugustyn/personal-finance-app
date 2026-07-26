@@ -26,7 +26,7 @@ interface AssetTypeCapabilities {
   defaultInputMode: AssetInputMode;
   supportsFixedGrowth: boolean;
   supportsInstrumentIdentifiers: boolean;
-  supportsLinkedAccount: boolean;
+  supportsAccountProfile: boolean;
 }
 
 const ASSET_TYPE_CAPABILITIES = {
@@ -35,77 +35,77 @@ const ASSET_TYPE_CAPABILITIES = {
     defaultInputMode: "total",
     supportsFixedGrowth: false,
     supportsInstrumentIdentifiers: false,
-    supportsLinkedAccount: false,
+    supportsAccountProfile: false,
   },
   savings_account: {
     defaultAccountKind: "bank",
     defaultInputMode: "total",
     supportsFixedGrowth: true,
     supportsInstrumentIdentifiers: false,
-    supportsLinkedAccount: true,
+    supportsAccountProfile: true,
   },
   deposit: {
     defaultAccountKind: "bank",
     defaultInputMode: "total",
     supportsFixedGrowth: true,
     supportsInstrumentIdentifiers: false,
-    supportsLinkedAccount: true,
+    supportsAccountProfile: true,
   },
   bond: {
     defaultAccountKind: "brokerage",
     defaultInputMode: "unit_price",
     supportsFixedGrowth: false,
     supportsInstrumentIdentifiers: true,
-    supportsLinkedAccount: true,
+    supportsAccountProfile: true,
   },
   loan_receivable: {
     defaultAccountKind: "other",
     defaultInputMode: "total",
     supportsFixedGrowth: true,
     supportsInstrumentIdentifiers: false,
-    supportsLinkedAccount: false,
+    supportsAccountProfile: false,
   },
   stock: {
     defaultAccountKind: "brokerage",
     defaultInputMode: "unit_price",
     supportsFixedGrowth: false,
     supportsInstrumentIdentifiers: true,
-    supportsLinkedAccount: true,
+    supportsAccountProfile: true,
   },
   etf: {
     defaultAccountKind: "brokerage",
     defaultInputMode: "unit_price",
     supportsFixedGrowth: false,
     supportsInstrumentIdentifiers: true,
-    supportsLinkedAccount: true,
+    supportsAccountProfile: true,
   },
   fund: {
     defaultAccountKind: "brokerage",
     defaultInputMode: "unit_price",
     supportsFixedGrowth: false,
     supportsInstrumentIdentifiers: true,
-    supportsLinkedAccount: true,
+    supportsAccountProfile: true,
   },
   crypto: {
     defaultAccountKind: "crypto",
     defaultInputMode: "unit_price",
     supportsFixedGrowth: false,
     supportsInstrumentIdentifiers: false,
-    supportsLinkedAccount: true,
+    supportsAccountProfile: true,
   },
   precious_metal: {
     defaultAccountKind: "physical",
     defaultInputMode: "unit_price",
     supportsFixedGrowth: false,
     supportsInstrumentIdentifiers: false,
-    supportsLinkedAccount: false,
+    supportsAccountProfile: false,
   },
   other: {
     defaultAccountKind: "other",
     defaultInputMode: "total",
     supportsFixedGrowth: false,
     supportsInstrumentIdentifiers: false,
-    supportsLinkedAccount: false,
+    supportsAccountProfile: false,
   },
 } as const satisfies Record<AssetType, AssetTypeCapabilities>;
 

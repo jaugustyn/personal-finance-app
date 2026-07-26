@@ -235,11 +235,13 @@ function AnalysisContent({
   const { t } = useT();
   const { formatCurrency } = useFormatters();
   const currency = data.base_currency;
-  const noActivity =
-    data.cashflow.income === 0 &&
-    data.cashflow.expenses === 0 &&
-    data.cashflow.debt_payments === 0 &&
-    data.cashflow.asset_allocations === 0;
+  const noActivity = [
+    data.cashflow.income,
+    data.cashflow.gross_expenses,
+    data.cashflow.refunds,
+    data.cashflow.debt_payments,
+    data.cashflow.asset_allocations,
+  ].every((value) => Number(value) === 0);
 
   return (
     <div className="space-y-6">
@@ -293,7 +295,6 @@ function AnalysisContent({
           delta={data.cashflow.net_delta}
           currency={currency}
           positiveIncrease
-          details={cashflowDetails(data, t, formatCurrency)}
         />
       </div>
 
@@ -451,29 +452,6 @@ function changeDescription(
   if (row.change_percent === null) return "—";
   const sign = row.change_percent > 0 ? "+" : "";
   return `${sign}${formatNumber(row.change_percent, 1)}%`;
-}
-
-function cashflowDetails(
-  data: Recap,
-  t: ReturnType<typeof useT>["t"],
-  formatCurrency: Formatters["formatCurrency"],
-): string | undefined {
-  const details: string[] = [];
-  if (data.cashflow.debt_payments > 0) {
-    details.push(
-      t("recap.debtDetails", {
-        value: formatCurrency(data.cashflow.debt_payments, data.base_currency),
-      }),
-    );
-  }
-  if (data.cashflow.asset_allocations > 0) {
-    details.push(
-      t("recap.assetDetails", {
-        value: formatCurrency(data.cashflow.asset_allocations, data.base_currency),
-      }),
-    );
-  }
-  return details.length ? details.join(" · ") : undefined;
 }
 
 function signedCurrency(

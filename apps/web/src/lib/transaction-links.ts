@@ -17,6 +17,7 @@ export function transactionsHref(
     date_from?: string | null;
     date_to?: string | null;
     import_id?: number | null;
+    account_id?: number | null;
     include_transfers?: boolean | null;
   } = {},
 ): string {
@@ -38,6 +39,7 @@ export function transactionsHref(
     date_from: params.date_from,
     date_to: params.date_to,
     import_id: params.import_id,
+    account_id: params.account_id,
     include_transfers: params.include_transfers === false ? false : undefined,
   });
   return `/transactions${qs ? `?${qs}` : ""}`;

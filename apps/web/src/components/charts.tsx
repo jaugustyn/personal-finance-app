@@ -5,8 +5,8 @@ export {
   CategoryDonut,
   CategoryMoMChart,
   CategoryTrendChart,
+  CumulativeCashflowChart,
   ForecastChart,
   FrequentMerchantsBar,
-  NetWorthChart,
   TopMerchantsBar,
 } from "./charts/index";

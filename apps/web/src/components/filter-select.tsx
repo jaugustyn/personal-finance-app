@@ -27,6 +27,7 @@ export function FilterSelect({
   className,
   contentClassName,
   disabled,
+  placeholder,
 }: {
   id?: string;
   value: string;
@@ -36,6 +37,7 @@ export function FilterSelect({
   className?: string;
   contentClassName?: string;
   disabled?: boolean;
+  placeholder?: string;
 }) {
   return (
     <Select value={value} onValueChange={onValueChange} disabled={disabled}>
@@ -44,7 +46,7 @@ export function FilterSelect({
         className={cn("w-full", className)}
         aria-label={ariaLabel}
       >
-        <SelectValue />
+        <SelectValue placeholder={placeholder} />
       </SelectTrigger>
       <SelectContent className={contentClassName}>
         {options.map((option) => (

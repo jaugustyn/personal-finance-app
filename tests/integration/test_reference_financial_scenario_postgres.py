@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from alembic import command
 from apps.api.main import app
+from finance.categories import seed_system_categories
 from finance.config import get_settings
 from finance.db import get_session
 from finance.domain.models import Base, Transaction
@@ -76,6 +77,8 @@ def postgres_reference(monkeypatch) -> Iterator[tuple[Session, TestClient]]:
     )
     app.dependency_overrides[get_session] = override_session
     session = session_factory()
+    seed_system_categories(session)
+    session.commit()
     try:
         with TestClient(app, raise_server_exceptions=False) as client:
             yield session, client
@@ -89,7 +92,7 @@ def postgres_reference(monkeypatch) -> Iterator[tuple[Session, TestClient]]:
         get_settings.cache_clear()
 
 
-def _upload_generic(client: TestClient) -> dict:
+def _upload_generic(client: TestClient, account_id: int) -> dict:
     response = client.post(
         "/imports",
         files={"file": ("reference-generic.csv", generic_csv_bytes(), "text/csv")},
@@ -97,17 +100,22 @@ def _upload_generic(client: TestClient) -> dict:
             "source": "generic",
             "column_map": json.dumps(GENERIC_COLUMN_MAP),
             "fx_mode": "prefetch_missing",
+            "account_id": str(account_id),
         },
     )
     assert response.status_code == 200, response.text
     return response.json()
 
 
-def _upload_revolut(client: TestClient) -> dict:
+def _upload_revolut(client: TestClient, account_id: int) -> dict:
     response = client.post(
         "/imports",
         files={"file": ("reference-revolut.csv", revolut_csv_bytes(), "text/csv")},
-        data={"source": "revolut", "fx_mode": "prefetch_missing"},
+        data={
+            "source": "revolut",
+            "fx_mode": "prefetch_missing",
+            "account_id": str(account_id),
+        },
     )
     assert response.status_code == 200, response.text
     return response.json()
@@ -147,30 +155,42 @@ def test_reference_scenario_through_real_import(postgres_reference) -> None:
         },
     )
     assert rate.status_code == 201, rate.text
+    main_account = client.post(
+        "/accounts",
+        json={"name": "Rachunek główny", "kind": "bank"},
+    )
+    revolut_account = client.post(
+        "/accounts",
+        json={"name": "Revolut", "kind": "bank"},
+    )
+    assert main_account.status_code == 201, main_account.text
+    assert revolut_account.status_code == 201, revolut_account.text
+    main_account_id = main_account.json()["id"]
+    revolut_account_id = revolut_account.json()["id"]
 
     _assert_import_summary(
-        _upload_generic(client),
+        _upload_generic(client, main_account_id),
         source="unknown",
         total_rows=generic_count,
         inserted=generic_count,
         duplicates=0,
     )
     _assert_import_summary(
-        _upload_revolut(client),
+        _upload_revolut(client, revolut_account_id),
         source="revolut",
         total_rows=revolut_count,
         inserted=revolut_count,
         duplicates=0,
     )
     _assert_import_summary(
-        _upload_generic(client),
+        _upload_generic(client, main_account_id),
         source="unknown",
         total_rows=generic_count,
         inserted=0,
         duplicates=generic_count,
     )
     _assert_import_summary(
-        _upload_revolut(client),
+        _upload_revolut(client, revolut_account_id),
         source="revolut",
         total_rows=revolut_count,
         inserted=0,

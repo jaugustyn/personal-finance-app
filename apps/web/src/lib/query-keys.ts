@@ -16,6 +16,11 @@ interface DashboardRankingKey extends DashboardRangeKey {
 }
 
 export const queryKeys = {
+  accounts: {
+    all: ["accounts"] as const,
+    list: (includeArchived = false) =>
+      ["accounts", "list", { includeArchived }] as const,
+  },
   assets: {
     all: ["assets"] as const,
     overview: ["assets", "overview"] as const,
@@ -50,8 +55,8 @@ export const queryKeys = {
       ["dashboard", "category-trend", params] as const,
     categoryDeltaTrend: (params: DashboardRankingKey) =>
       ["dashboard", "category-delta-trend", params] as const,
-    netWorth: (params: DashboardRangeKey) =>
-      ["dashboard", "net-worth", params] as const,
+    cumulativeCashflow: (params: DashboardRangeKey) =>
+      ["dashboard", "cumulative-cashflow", params] as const,
     topMerchants: (params: DashboardRankingKey) =>
       ["dashboard", "top-merchants", params] as const,
     incomeSources: (params: DashboardRankingKey) =>
@@ -146,6 +151,7 @@ function invalidateRoots(queryClient: QueryClient, roots: readonly QueryKey[]) {
 }
 
 const transactionDerivedRoots: readonly QueryKey[] = [
+  queryKeys.accounts.all,
   queryKeys.transactions.all,
   queryKeys.dashboard.all,
   queryKeys.recap.all,

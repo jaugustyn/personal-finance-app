@@ -37,6 +37,7 @@ def assess_import_quality(
     parser: BankParser,
     missing_fx_severity: IssueSeverity = "error",
     parsed_dtos: list[TransactionDTO] | None = None,
+    account_id: int | None = None,
 ) -> ImportQualityReport:
     """Inspect an upload before committing it to the database."""
     total_rows = _csv_data_row_count(raw)
@@ -70,6 +71,7 @@ def assess_import_quality(
             dtos,
             include_content_issues=generic_mapping is None,
             missing_fx_severity=missing_fx_severity,
+            account_id=account_id,
         )
     )
     return _report(total_rows=total_rows, valid_rows=len(dtos), issues=issues)
@@ -218,6 +220,7 @@ def _dto_issues(
     *,
     include_content_issues: bool = True,
     missing_fx_severity: IssueSeverity = "error",
+    account_id: int | None = None,
 ) -> list[ImportQualityIssue]:
     if not dtos:
         return []
@@ -230,11 +233,16 @@ def _dto_issues(
         )
 
     unique_hashes = sorted(set(hashes))
-    existing_hashes = set(
-        session.execute(
-            select(Transaction.dedup_hash).where(Transaction.dedup_hash.in_(unique_hashes))
-        ).scalars()
-    )
+    existing_hashes: set[str] = set()
+    if account_id is not None:
+        existing_hashes = set(
+            session.execute(
+                select(Transaction.dedup_hash).where(
+                    Transaction.account_id == account_id,
+                    Transaction.dedup_hash.in_(unique_hashes),
+                )
+            ).scalars()
+        )
     if existing_hashes:
         issues.append(
             ImportQualityIssue("duplicate_existing", "warning", len(existing_hashes), [])

@@ -28,6 +28,7 @@ from apps.api.schemas.transactions import (
     TransactionRow,
     TypeUpdate,
 )
+from finance.accounts.service import AccountArchived, AccountNotFound
 from finance.currencies import BASE_CURRENCY, amount_base_value
 from finance.db import get_session
 from finance.ml.classification.policy import (
@@ -121,6 +122,10 @@ def _write_manual_transaction(
         raise conflict(
             {"code": "manual_transaction_required", "message": str(exc)}
         ) from exc
+    except AccountNotFound as exc:
+        raise not_found(str(exc)) from exc
+    except AccountArchived as exc:
+        raise validation_error(str(exc)) from exc
     except tx_service.TransactionTypeDirectionMismatch as exc:
         raise conflict(
             {"code": "transaction_type_direction_mismatch", "message": str(exc)}

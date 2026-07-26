@@ -42,6 +42,8 @@ def test_generic_upload_reports_rows_skipped_for_invalid_date_and_amount(
         captured["parsed_rows"] = len(kwargs["dtos"])
         return ImportSummary(
             import_id=1,
+            account_id=1,
+            account_name="Test account",
             source=BankSource.UNKNOWN,
             inserted=1,
             duplicates=0,
@@ -59,6 +61,7 @@ def test_generic_upload_reports_rows_skipped_for_invalid_date_and_amount(
         column_map=None,
         skip_categories=False,
         fx_mode="require_existing",
+        account_id=1,
     )
 
     assert parse_calls == 1
@@ -79,6 +82,7 @@ def test_upload_rolls_back_records_flushed_by_the_ingestion_component(
 
     def failing_ingest_transactions(session, **_kwargs):
         row = Import(
+            account_id=1,
             source=BankSource.UNKNOWN,
             filename="generic.csv",
             total_rows=1,
@@ -98,6 +102,7 @@ def test_upload_rolls_back_records_flushed_by_the_ingestion_component(
             column_map=None,
             skip_categories=False,
             fx_mode="require_existing",
+            account_id=1,
         )
 
     assert db_session.query(Import).count() == 0
@@ -130,7 +135,10 @@ def test_batch_ingestion_loads_rules_and_fx_once(
             self.next_id = 1
 
         def create_import(self, **_kwargs):
-            return SimpleNamespace(id=1)
+            return SimpleNamespace(
+                id=1,
+                account=SimpleNamespace(name="Test account"),
+            )
 
         def insert_transaction_values(self, values):
             inserted_values.append(values)
@@ -156,6 +164,7 @@ def test_batch_ingestion_loads_rules_and_fx_once(
         result = ingestion_service.ingest_transactions(
             db_session,
             source=BankSource.UNKNOWN,
+            account_id=1,
             filename="batch.csv",
             dtos=[
                 TransactionDTO(

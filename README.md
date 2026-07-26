@@ -20,8 +20,11 @@ the validation perspective.
 
 ## Main capabilities
 
+- Transactional accounts shared by imports and manual entries, including one
+  multi-currency account for Revolut.
 - Pekao and Revolut imports, plus a generic CSV/TSV/TXT mapping flow.
-- Deduplication, conversion of foreign amounts to PLN and daily exchange rates.
+- Account-scoped deduplication, conversion of foreign amounts to PLN and daily
+  exchange rates.
 - Imported and manually entered transactions with separate economic type and
   expense category workflows.
 - Dashboard, period summaries and merchant analysis.

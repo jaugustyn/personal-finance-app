@@ -41,7 +41,7 @@ class CategorySpend(BaseModel):
     count: int
 
 
-class NetWorthPoint(BaseModel):
+class CumulativeCashflowPoint(BaseModel):
     month: str
     balance: Decimal
 

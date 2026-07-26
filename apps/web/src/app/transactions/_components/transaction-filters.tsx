@@ -40,6 +40,7 @@ interface TransactionFiltersProps {
   dateFrom: string;
   dateTo: string;
   importId?: number;
+  accountId?: number;
   reviewState: CategoryState;
   includeTransfers: boolean;
   hasActiveFilters: boolean;
@@ -54,6 +55,7 @@ interface TransactionFiltersProps {
   onDateFromChange: (value: string) => void;
   onDateToChange: (value: string) => void;
   onImportIdChange: (value: number | undefined) => void;
+  onAccountIdChange: (value: number | undefined) => void;
   onReviewStateChange: (value: CategoryState) => void;
   onIncludeTransfersChange: (value: boolean) => void;
   onClearFilters: () => void;
@@ -70,6 +72,7 @@ export function TransactionFilters({
   dateFrom,
   dateTo,
   importId,
+  accountId,
   reviewState,
   includeTransfers,
   hasActiveFilters,
@@ -84,6 +87,7 @@ export function TransactionFilters({
   onDateFromChange,
   onDateToChange,
   onImportIdChange,
+  onAccountIdChange,
   onReviewStateChange,
   onIncludeTransfersChange,
   onClearFilters,
@@ -94,6 +98,11 @@ export function TransactionFilters({
     queryKey: queryKeys.imports.history,
     queryFn: api.listImports,
     enabled: !reviewMode && importId !== undefined,
+  });
+  const accountsQuery = useQuery({
+    queryKey: queryKeys.accounts.list(true),
+    queryFn: () => api.accounts(true),
+    enabled: !reviewMode,
   });
   const activeImport = importsQuery.data?.find((row) => row.id === importId);
   const minAmountFilter = amountFilterValue(minAmount);
@@ -110,6 +119,7 @@ export function TransactionFilters({
     date_from: dateFrom || undefined,
     date_to: dateTo || undefined,
     import_id: importId,
+    account_id: accountId,
     include_transfers: includeTransfers,
     category_state: reviewMode ? reviewState : "all",
     transaction_type: transactionType || undefined,
@@ -269,6 +279,32 @@ export function TransactionFilters({
               value={direction}
               onChange={onDirectionChange}
               ariaLabel={t("transactions.filterDirection")}
+            />
+          </FilterField>
+
+          <FilterField
+            label={t("transactions.filterAccount")}
+            className="min-w-[13rem] basis-[14rem]"
+          >
+            <FilterSelect
+              value={accountId === undefined ? "all" : String(accountId)}
+              onValueChange={(value) =>
+                onAccountIdChange(value === "all" ? undefined : Number(value))
+              }
+              options={[
+                {
+                  value: "all",
+                  label: t("transactions.filterAccountAll"),
+                },
+                ...(accountsQuery.data ?? []).map((account) => ({
+                  value: String(account.id),
+                  label: account.archived_at
+                    ? `${account.name} (${t("accounts.archivedLabel")})`
+                    : account.name,
+                })),
+              ]}
+              ariaLabel={t("transactions.filterAccount")}
+              disabled={accountsQuery.isLoading || accountsQuery.isError}
             />
           </FilterField>
 

@@ -7,7 +7,7 @@ from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import and_, case, func, or_, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from finance.analytics.filters import expense_category_candidate_filters
 from finance.currencies import (
@@ -197,6 +197,8 @@ def filtered_transactions_stmt(
         )
     if filters.import_id is not None:
         stmt = stmt.where(Transaction.import_id == filters.import_id)
+    if filters.account_id is not None:
+        stmt = stmt.where(Transaction.account_id == filters.account_id)
     if filters.merchant:
         stmt = stmt.where(Transaction.merchant == filters.merchant)
     if filters.search:
@@ -413,7 +415,13 @@ def list_transactions(
 ) -> list[Transaction]:
     canonical_key = _merchant_canonical_key_filter(filters)
     if filters.review_priority:
-        rows = list(session.execute(filtered_transactions_stmt(filters)).scalars().all())
+        rows = list(
+            session.execute(
+                filtered_transactions_stmt(filters).options(selectinload(Transaction.account))
+            )
+            .scalars()
+            .all()
+        )
         rows = _filter_rows_by_merchant_canonical_key(session, rows, canonical_key)
         rows.sort(
             key=lambda row: (
@@ -444,7 +452,9 @@ def list_transactions(
         hydrated = {
             int(row.id): row
             for row in session.execute(
-                select(Transaction).where(Transaction.id.in_(page_ids))
+                select(Transaction)
+                .options(selectinload(Transaction.account))
+                .where(Transaction.id.in_(page_ids))
             ).scalars()
         }
         return [hydrated[row_id] for row_id in page_ids]
@@ -456,6 +466,7 @@ def list_transactions(
         )
         .offset(offset)
         .limit(limit)
+        .options(selectinload(Transaction.account))
     )
     return list(session.execute(stmt).scalars().all())
 
@@ -465,7 +476,13 @@ def matching_transactions(
     filters: TransactionFilters,
 ) -> list[Transaction]:
     """Return all transactions matching filters, including canonical merchant filters."""
-    rows = list(session.execute(filtered_transactions_stmt(filters)).scalars().all())
+    rows = list(
+        session.execute(
+            filtered_transactions_stmt(filters).options(selectinload(Transaction.account))
+        )
+        .scalars()
+        .all()
+    )
     return _filter_rows_by_merchant_canonical_key(
         session,
         rows,

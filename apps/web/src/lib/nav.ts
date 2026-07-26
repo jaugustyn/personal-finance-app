@@ -13,6 +13,7 @@ import {
   CalendarRange,
   CircleDollarSign,
   BrainCircuit,
+  Landmark,
   type LucideIcon,
 } from "lucide-react";
 import type { TranslationKey } from "@/lib/i18n";
@@ -35,11 +36,13 @@ export const NAV_SECTIONS: NavSection[] = [
     items: [
       { href: "/", labelKey: "nav.dashboard", icon: LayoutDashboard },
       { href: "/transactions", labelKey: "nav.transactions", icon: Receipt },
+      { href: "/assets", labelKey: "nav.assets", icon: PiggyBank },
     ],
   },
   {
     titleKey: "nav.section.money",
     items: [
+      { href: "/accounts", labelKey: "nav.accounts", icon: Landmark },
       { href: "/imports", labelKey: "nav.imports", icon: Upload },
       { href: "/categories", labelKey: "nav.categories", icon: Tag },
       { href: "/merchants", labelKey: "nav.merchants", icon: Store },
@@ -47,12 +50,11 @@ export const NAV_SECTIONS: NavSection[] = [
     ],
   },
   {
-    titleKey: "nav.section.insights",
+    titleKey: "nav.section.analysisPlanning",
     items: [
       { href: "/recap", labelKey: "nav.recap", icon: CalendarRange },
       { href: "/subscriptions", labelKey: "nav.subscriptions", icon: Repeat },
       { href: "/anomalies", labelKey: "nav.anomalies", icon: AlertTriangle },
-      { href: "/assets", labelKey: "nav.assets", icon: PiggyBank },
       { href: "/forecast", labelKey: "nav.forecast", icon: TrendingUp },
     ],
   },

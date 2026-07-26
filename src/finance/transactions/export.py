@@ -6,13 +6,16 @@ import io
 import json
 from collections.abc import Iterator
 
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
+from finance.domain.models import Transaction
 from finance.transactions.queries import filtered_transactions_stmt, matching_transactions
 from finance.transactions.types import TransactionFilters
 
 CSV_COLUMNS = [
     "id",
+    "account_id",
+    "account_name",
     "booking_date",
     "booking_datetime",
     "amount",
@@ -82,7 +85,9 @@ def export_csv_lines(session: Session, filters: TransactionFilters) -> Iterator[
     rows = (
         matching_transactions(session, filters)
         if filters.merchant_canonical_key
-        else session.execute(filtered_transactions_stmt(filters)).scalars()
+        else session.execute(
+            filtered_transactions_stmt(filters).options(selectinload(Transaction.account))
+        ).scalars()
     )
     for tx in rows:
         writer.writerow([_column_value(tx, column) for column in CSV_COLUMNS])

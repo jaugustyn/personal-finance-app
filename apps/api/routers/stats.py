@@ -11,9 +11,9 @@ from apps.api.schemas.stats import (
     CashflowBucket,
     CategorySpend,
     CategoryTrendPoint,
+    CumulativeCashflowPoint,
     MerchantSort,
     MerchantSpend,
-    NetWorthPoint,
     Overview,
     Recap,
     RecapPeriod,
@@ -95,15 +95,15 @@ def by_transaction_type(
     )
 
 
-@router.get("/networth", response_model=list[NetWorthPoint])
-def networth(
+@router.get("/cumulative-cashflow", response_model=list[CumulativeCashflowPoint])
+def cumulative_cashflow(
     session: Session = Depends(get_session),
     months: int = Query(default=24, ge=1, le=120),
     include_transfers: bool = Query(default=False),
     all_data: bool = Query(default=False),
-) -> list[NetWorthPoint]:
-    """Cumulative net cashflow over time (proxy for savings balance)."""
-    return stats_service.networth(
+) -> list[CumulativeCashflowPoint]:
+    """Return cumulative net cash flow for the selected period."""
+    return stats_service.cumulative_cashflow(
         session,
         months=None if all_data else months,
         include_transfers=include_transfers,

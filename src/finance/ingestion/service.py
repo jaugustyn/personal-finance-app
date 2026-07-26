@@ -55,6 +55,7 @@ def transaction_values_for_dto(
     session: Session,
     dto: TransactionDTO,
     *,
+    account_id: int,
     import_id: int | None,
     dedup_hash: str,
     skip_categories: bool = False,
@@ -71,6 +72,7 @@ def transaction_values_for_dto(
         dto,
         converted=converted,
         personal=personal,
+        account_id=account_id,
         import_id=import_id,
         dedup_hash=dedup_hash,
         skip_categories=skip_categories,
@@ -81,6 +83,7 @@ def ingest_file(
     session: Session,
     *,
     source: BankSource,
+    account_id: int,
     filename: str,
     stream: IO[bytes],
     parser: BankParser | None = None,
@@ -92,6 +95,7 @@ def ingest_file(
     return ingest_transactions(
         session,
         source=source,
+        account_id=account_id,
         filename=filename,
         dtos=dtos,
         skip_categories=skip_categories,
@@ -103,6 +107,7 @@ def ingest_transactions(
     session: Session,
     *,
     source: BankSource,
+    account_id: int,
     filename: str,
     dtos: list[TransactionDTO],
     skip_categories: bool = False,
@@ -130,6 +135,7 @@ def ingest_transactions(
     repository = TransactionImportRepository(session)
     policy = TransactionImportPolicy(skip_categories=skip_categories)
     import_row = repository.create_import(
+        account_id=account_id,
         source=source,
         filename=filename,
         total_rows=len(dtos),
@@ -154,6 +160,7 @@ def ingest_transactions(
             dto,
             converted=converted,
             personal=personal,
+            account_id=account_id,
             import_id=import_row.id,
             dedup_hash=h,
         )
@@ -186,6 +193,8 @@ def ingest_transactions(
 
     return ImportSummary(
         import_id=import_row.id,
+        account_id=account_id,
+        account_name=import_row.account.name,
         source=source,
         inserted=inserted,
         duplicates=duplicates,
