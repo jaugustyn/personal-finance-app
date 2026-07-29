@@ -7,8 +7,9 @@ import { api, type AppLockStatus } from "@/lib/api";
 import { useT } from "@/lib/i18n";
 import { showErrorToast } from "@/lib/toasts";
 import { useAppLock } from "@/components/app-lock-provider";
+import { HelpTooltip } from "@/components/help-tooltip";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -130,23 +131,18 @@ export function AppLockSettings() {
 
   const showForm = enabled || appLock.status.enabled;
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base">
-          <LockKeyhole className="h-4 w-4 text-primary" />
-          {t("settings.appLock")}
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-5">
-        <div className="flex items-center justify-between gap-4">
-          <div className="space-y-1">
-            <Label htmlFor="app-lock-enabled">
-              {t("settings.appLockEnabled")}
+    <Card className="max-w-3xl">
+      <CardContent className="p-0">
+        <div className="flex min-h-16 items-center justify-between gap-4 p-5">
+          <HelpTooltip content={t("settings.appLockHelp")}>
+            <Label
+              htmlFor="app-lock-enabled"
+              className="flex items-center gap-2 text-base text-foreground"
+            >
+              <LockKeyhole className="h-4 w-4 text-primary" />
+              {t("settings.appLock")}
             </Label>
-            <p className="text-xs text-muted-foreground">
-              {t("settings.appLockHelp")}
-            </p>
-          </div>
+          </HelpTooltip>
           <Switch
             id="app-lock-enabled"
             checked={enabled}
@@ -159,110 +155,113 @@ export function AppLockSettings() {
         </div>
 
         {showForm && (
-          <div className="grid max-w-3xl gap-4 border-t pt-5 md:grid-cols-2">
-            <div className="space-y-2">
-              <Label htmlFor="app-lock-timeout">
-                {t("settings.appLockTimeout")}
-              </Label>
-              <Select
-                value={String(timeout)}
-                onValueChange={(value) =>
-                  setTimeoutMinutes(Number(value) as TimeoutMinutes)
-                }
-                disabled={!enabled || pending}
-              >
-                <SelectTrigger id="app-lock-timeout">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {TIMEOUTS.map((value) => (
-                    <SelectItem key={value} value={String(value)}>
-                      {t("settings.appLockMinutes", { count: value })}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {appLock.status.enabled && (
+          <div className="space-y-5 border-t p-5">
+            <div className="grid gap-4 md:grid-cols-2">
               <div className="space-y-2">
-                <Label htmlFor="app-lock-current-code">
-                  {t("settings.appLockCurrentCode")}
+                <Label htmlFor="app-lock-timeout">
+                  {t("settings.appLockTimeout")}
                 </Label>
-                <Input
-                  id="app-lock-current-code"
-                  type="password"
-                  autoComplete="current-password"
-                  value={currentCode}
-                  onChange={(event) => setCurrentCode(event.target.value)}
-                  maxLength={128}
-                  disabled={pending}
-                />
+                <Select
+                  value={String(timeout)}
+                  onValueChange={(value) =>
+                    setTimeoutMinutes(Number(value) as TimeoutMinutes)
+                  }
+                  disabled={!enabled || pending}
+                >
+                  <SelectTrigger id="app-lock-timeout">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {TIMEOUTS.map((value) => (
+                      <SelectItem key={value} value={String(value)}>
+                        {t("settings.appLockMinutes", { count: value })}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
-            )}
 
-            {enabled && (
-              <>
+              {appLock.status.enabled && (
                 <div className="space-y-2">
-                  <Label htmlFor="app-lock-new-code">
-                    {appLock.status.enabled
-                      ? t("settings.appLockNewCode")
-                      : t("appLock.code")}
+                  <Label htmlFor="app-lock-current-code">
+                    {t("settings.appLockCurrentCode")}
                   </Label>
                   <Input
-                    id="app-lock-new-code"
+                    id="app-lock-current-code"
                     type="password"
-                    autoComplete="new-password"
-                    value={newCode}
-                    onChange={(event) => setNewCode(event.target.value)}
-                    minLength={appLock.status.enabled ? undefined : 6}
+                    autoComplete="current-password"
+                    value={currentCode}
+                    onChange={(event) => setCurrentCode(event.target.value)}
                     maxLength={128}
                     disabled={pending}
                   />
-                  {appLock.status.enabled && (
-                    <p className="text-xs text-muted-foreground">
-                      {t("settings.appLockLeaveCode")}
-                    </p>
-                  )}
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="app-lock-repeat-code">
-                    {t("settings.appLockRepeatCode")}
-                  </Label>
-                  <Input
-                    id="app-lock-repeat-code"
-                    type="password"
-                    autoComplete="new-password"
-                    value={repeatCode}
-                    onChange={(event) => setRepeatCode(event.target.value)}
-                    maxLength={128}
-                    disabled={pending || (!newCode && appLock.status.enabled)}
-                  />
-                </div>
-              </>
+              )}
+
+              {enabled && (
+                <>
+                  <div className="space-y-2">
+                    {appLock.status.enabled ? (
+                      <HelpTooltip content={t("settings.appLockLeaveCode")}>
+                        <Label htmlFor="app-lock-new-code">
+                          {t("settings.appLockNewCode")}
+                        </Label>
+                      </HelpTooltip>
+                    ) : (
+                      <Label htmlFor="app-lock-new-code">
+                        {t("appLock.code")}
+                      </Label>
+                    )}
+                    <Input
+                      id="app-lock-new-code"
+                      type="password"
+                      autoComplete="new-password"
+                      value={newCode}
+                      onChange={(event) => setNewCode(event.target.value)}
+                      minLength={appLock.status.enabled ? undefined : 6}
+                      maxLength={128}
+                      disabled={pending}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="app-lock-repeat-code">
+                      {t("settings.appLockRepeatCode")}
+                    </Label>
+                    <Input
+                      id="app-lock-repeat-code"
+                      type="password"
+                      autoComplete="new-password"
+                      value={repeatCode}
+                      onChange={(event) => setRepeatCode(event.target.value)}
+                      maxLength={128}
+                      disabled={pending || (!newCode && appLock.status.enabled)}
+                    />
+                  </div>
+                </>
+              )}
+            </div>
+
+            {error && <p className="text-sm text-destructive">{error}</p>}
+
+            {enabled && (
+              <Button onClick={() => void save()} disabled={pending}>
+                {pending && <Loader2 className="h-4 w-4 animate-spin" />}
+                {appLock.status.enabled
+                  ? t("settings.appLockSave")
+                  : t("settings.appLockEnable")}
+              </Button>
+            )}
+            {!enabled && appLock.status.enabled && (
+              <Button
+                variant="outline"
+                onClick={() => void disable()}
+                disabled={pending}
+              >
+                {pending && <Loader2 className="h-4 w-4 animate-spin" />}
+                {t("settings.appLockDisable")}
+              </Button>
             )}
           </div>
-        )}
-
-        {error && <p className="text-sm text-destructive">{error}</p>}
-
-        {enabled && (
-          <Button onClick={() => void save()} disabled={pending}>
-            {pending && <Loader2 className="h-4 w-4 animate-spin" />}
-            {appLock.status.enabled
-              ? t("settings.appLockSave")
-              : t("settings.appLockEnable")}
-          </Button>
-        )}
-        {!enabled && appLock.status.enabled && (
-          <Button
-            variant="outline"
-            onClick={() => void disable()}
-            disabled={pending}
-          >
-            {pending && <Loader2 className="h-4 w-4 animate-spin" />}
-            {t("settings.appLockDisable")}
-          </Button>
         )}
       </CardContent>
     </Card>
