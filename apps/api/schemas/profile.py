@@ -12,6 +12,20 @@ RuleTarget = Literal["merchant", "title", "both"]
 RuleMode = Literal["suggest_only", "auto_apply"]
 
 
+class AssistantSettingsRow(BaseModel):
+    user_enabled: bool
+    configuration_enabled: bool
+    ollama_available: bool
+    mode: Literal["hybrid", "deterministic"]
+    model: str
+    available_models: list[str]
+
+
+class AssistantSettingsUpdate(BaseModel):
+    enabled: bool
+    model: str | None = Field(default=None, min_length=1, max_length=255)
+
+
 class PersonalRuleRow(BaseModel):
     id: int
     pattern: str

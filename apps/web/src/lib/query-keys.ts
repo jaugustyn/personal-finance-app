@@ -110,6 +110,7 @@ export const queryKeys = {
   },
   profile: {
     all: ["profile"] as const,
+    assistant: ["profile", "assistant"] as const,
     rules: ["profile", "rules"] as const,
   },
   recap: {

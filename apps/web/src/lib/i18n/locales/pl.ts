@@ -64,7 +64,7 @@ export const pl = {
     "assistant.send": "Wyślij",
     "assistant.empty": "Zacznij rozmowę — wybierz pytanie poniżej lub wpisz własne.",
     "assistant.thinking": "Liczę…",
-    "assistant.error": "Nie udało się uzyskać odpowiedzi. Sprawdź, czy backend i Ollama działają.",
+    "assistant.error": "Nie udało się uzyskać odpowiedzi. Spróbuj ponownie.",
     "assistant.you": "Ty",
     "assistant.bot": "Asystent",
     "assistant.suggestions": "Przykładowe pytania",
@@ -803,9 +803,31 @@ export const pl = {
     "categories.groupsHint":
       "Grupy główne są celem modelu ML. Podkategorie doprecyzowują wydatki bez wpływu na klasyfikację.",
     "settings.title": "Ustawienia",
-    "settings.subtitle": "Bezpieczeństwo i reguły aplikacji.",
+    "settings.subtitle": "Bezpieczeństwo, asystent i reguły aplikacji.",
     "settings.tabSecurity": "Bezpieczeństwo",
+    "settings.tabAssistant": "Asystent",
     "settings.tabRules": "Reguły",
+    "settings.assistantLocalModel": "Lokalny model AI",
+    "settings.assistantUseOllama": "Używaj Ollamy w Asystencie",
+    "settings.assistantLocalModelHelp":
+      "Model pomaga rozpoznawać pytania, których aplikacja nie dopasowała do obsługiwanych reguł.",
+    "settings.assistantModel": "Model",
+    "settings.assistantModelHelp":
+      "Lista zawiera modele zainstalowane w lokalnej Ollamie. Wybór dotyczy tylko Asystenta.",
+    "settings.assistantStatusAvailable": "Dostępny",
+    "settings.assistantStatusUnavailable": "Niedostępny",
+    "settings.assistantStatusDisabled": "Wyłączony",
+    "settings.assistantStatusConfigurationDisabled": "Wyłączony w konfiguracji",
+    "settings.assistantHybridHelp":
+      "Asystent użyje Ollamy tylko do wyboru właściwego narzędzia. Wyniki finansowe nadal oblicza aplikacja.",
+    "settings.assistantDeterministicHelp":
+      "Obsługiwane pytania i wszystkie obliczenia deterministyczne nadal działają bez Ollamy.",
+    "settings.assistantUnavailableHelp":
+      "Asystent działa w trybie deterministycznym. Uruchom Ollamę lub wybierz zainstalowany model.",
+    "settings.assistantConfigurationDisabledHelp":
+      "Lokalny model został wyłączony przez LLM_ENABLED. Zmiana wymaga konfiguracji i restartu API.",
+    "settings.assistantSaved": "Ustawienia Asystenta zostały zapisane.",
+    "settings.assistantLoadError": "Nie udało się pobrać ustawień Asystenta.",
     "settings.appLock": "Blokada aplikacji",
     "settings.appLockHelp":
       "Opcjonalnie ukrywaj dane po okresie braku aktywności na tym komputerze.",

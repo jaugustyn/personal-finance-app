@@ -10,6 +10,7 @@ from finance.db import get_session
 from finance.llm.client import is_available as ollama_is_available
 from finance.llm.router import answer
 from finance.llm.tools import TOOLS
+from finance.profile.service import get_assistant_llm_model, is_assistant_llm_enabled
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
@@ -46,12 +47,23 @@ def chat(req: ChatRequest, session: Session = Depends(get_session)) -> ChatRespo
 
 
 @router.get("/health")
-def chat_health() -> dict[str, Any]:
+def chat_health(session: Session = Depends(get_session)) -> dict[str, Any]:
     settings = get_settings()
-    available = ollama_is_available()
+    user_enabled = is_assistant_llm_enabled(session)
+    model = get_assistant_llm_model(session) or settings.ollama_model
+    available = (
+        ollama_is_available(model=model)
+        if settings.llm_enabled and user_enabled
+        else False
+    )
     return {
         "ollama_available": available,
         "llm_enabled": settings.llm_enabled,
-        "mode": "hybrid" if settings.llm_enabled and available else "deterministic",
+        "assistant_llm_enabled": user_enabled,
+        "mode": (
+            "hybrid"
+            if settings.llm_enabled and user_enabled and available
+            else "deterministic"
+        ),
         "deterministic_tools": sorted(TOOLS),
     }

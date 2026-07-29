@@ -63,6 +63,45 @@ def get_or_create_profile(session: Session) -> UserProfile:
     return profile
 
 
+def is_assistant_llm_enabled(session: Session) -> bool:
+    """Return the user preference without creating profile state during a read."""
+    profile = get_profile(session)
+    return profile is None or profile.assistant_llm_enabled
+
+
+def get_assistant_llm_model(session: Session) -> str | None:
+    """Return the optional assistant-specific Ollama model override."""
+    profile = get_profile(session)
+    return profile.assistant_llm_model if profile is not None else None
+
+
+def set_assistant_llm_preferences(
+    session: Session,
+    *,
+    enabled: bool,
+    model: str | None = None,
+) -> UserProfile:
+    """Persist local-model preferences for the single-user assistant."""
+    profile = get_or_create_profile(session)
+    profile.assistant_llm_enabled = enabled
+    if model is not None:
+        normalized_model = model.strip()
+        if not normalized_model or len(normalized_model) > 255:
+            raise ValueError("Invalid Ollama model name.")
+        profile.assistant_llm_model = normalized_model
+    try:
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+    return profile
+
+
+def set_assistant_llm_enabled(session: Session, *, enabled: bool) -> bool:
+    """Persist the enable switch while retaining the selected model."""
+    return set_assistant_llm_preferences(session, enabled=enabled).assistant_llm_enabled
+
+
 def _validate_rule_payload(
     session: Session,
     *,

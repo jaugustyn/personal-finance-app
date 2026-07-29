@@ -46,21 +46,46 @@ def _options() -> dict[str, Any]:
     }
 
 
-def is_available() -> bool:
-    """Cheap health probe (does not load the model)."""
+def installed_models() -> list[str]:
+    """Return model tags installed in the configured local Ollama instance."""
     s = get_settings()
     if not s.llm_enabled:
-        return False
+        return []
     try:
         r = httpx.get(f"{validated_base_url()}/api/tags", timeout=2.0)
-        return r.status_code == 200
-    except (httpx.HTTPError, OllamaUnavailable):
+        r.raise_for_status()
+    except httpx.HTTPError as exc:
+        raise OllamaUnavailable("Could not list local Ollama models.") from exc
+
+    data = _json_object(r, operation="models")
+    raw_models = data.get("models", [])
+    if not isinstance(raw_models, list):
+        raise OllamaUnavailable("Ollama returned a malformed model list.")
+
+    names: set[str] = set()
+    for item in raw_models:
+        if not isinstance(item, dict):
+            raise OllamaUnavailable("Ollama returned a malformed model list.")
+        name = item.get("name") or item.get("model")
+        if isinstance(name, str) and name.strip():
+            names.add(name.strip())
+    return sorted(names, key=str.casefold)
+
+
+def is_available(*, model: str | None = None) -> bool:
+    """Return whether Ollama has the requested model installed."""
+    selected_model = model or get_settings().ollama_model
+    try:
+        return selected_model in installed_models()
+    except OllamaUnavailable:
         return False
 
 
 def chat(
     messages: list[dict[str, Any]],
     tools: list[dict[str, Any]] | None = None,
+    *,
+    model: str | None = None,
 ) -> dict[str, Any]:
     """Call Ollama /api/chat. Returns the parsed `message` object.
 
@@ -70,7 +95,7 @@ def chat(
     s = get_settings()
     base_url = validated_base_url()
     payload: dict[str, Any] = {
-        "model": s.ollama_model,
+        "model": model or s.ollama_model,
         "messages": messages,
         "stream": False,
         "options": _options(),

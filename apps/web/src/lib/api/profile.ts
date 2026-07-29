@@ -1,7 +1,18 @@
 import { request } from "./client";
-import type { PersonalRule, PersonalRuleInput } from "./types";
+import type {
+  AssistantSettings,
+  AssistantSettingsInput,
+  PersonalRule,
+  PersonalRuleInput,
+} from "./types";
 
 export const profileApi = {
+  assistantSettings: () => request<AssistantSettings>("/profile/assistant"),
+  updateAssistantSettings: (payload: AssistantSettingsInput) =>
+    request<AssistantSettings>("/profile/assistant", {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
   personalRules: () => request<PersonalRule[]>("/profile/rules"),
   createPersonalRule: (payload: PersonalRuleInput) =>
     request<PersonalRule>("/profile/rules", {

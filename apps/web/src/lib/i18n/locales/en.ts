@@ -66,7 +66,7 @@ export const en = {
     "assistant.send": "Send",
     "assistant.empty": "Start a conversation — pick a question below or type your own.",
     "assistant.thinking": "Thinking…",
-    "assistant.error": "Could not get a response. Check that the backend and Ollama are running.",
+    "assistant.error": "Could not get a response. Try again.",
     "assistant.you": "You",
     "assistant.bot": "Assistant",
     "assistant.suggestions": "Example questions",
@@ -804,9 +804,31 @@ export const en = {
     "categories.groupsHint":
       "Top-level groups are the ML target. Subcategories refine spending without affecting classification.",
     "settings.title": "Settings",
-    "settings.subtitle": "Application security and rules.",
+    "settings.subtitle": "Application security, assistant, and rules.",
     "settings.tabSecurity": "Security",
+    "settings.tabAssistant": "Assistant",
     "settings.tabRules": "Rules",
+    "settings.assistantLocalModel": "Local AI model",
+    "settings.assistantUseOllama": "Use Ollama in the Assistant",
+    "settings.assistantLocalModelHelp":
+      "The model helps identify questions that the application could not match to supported rules.",
+    "settings.assistantModel": "Model",
+    "settings.assistantModelHelp":
+      "The list contains models installed in local Ollama. The selection applies only to the Assistant.",
+    "settings.assistantStatusAvailable": "Available",
+    "settings.assistantStatusUnavailable": "Unavailable",
+    "settings.assistantStatusDisabled": "Disabled",
+    "settings.assistantStatusConfigurationDisabled": "Disabled in configuration",
+    "settings.assistantHybridHelp":
+      "The Assistant uses Ollama only to select the appropriate tool. Financial results are still calculated by the application.",
+    "settings.assistantDeterministicHelp":
+      "Supported questions and all deterministic calculations still work without Ollama.",
+    "settings.assistantUnavailableHelp":
+      "The Assistant is running in deterministic mode. Start Ollama or select an installed model.",
+    "settings.assistantConfigurationDisabledHelp":
+      "The local model is disabled by LLM_ENABLED. Changing it requires configuration and an API restart.",
+    "settings.assistantSaved": "Assistant settings saved.",
+    "settings.assistantLoadError": "Assistant settings could not be loaded.",
     "settings.appLock": "Application lock",
     "settings.appLockHelp":
       "Optionally hide data after a period of inactivity on this computer.",

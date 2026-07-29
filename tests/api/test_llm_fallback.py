@@ -8,7 +8,7 @@ from decimal import Decimal
 
 import pytest
 
-from finance.domain.models import Transaction
+from finance.domain.models import Transaction, UserProfile
 
 
 @pytest.fixture(autouse=True)
@@ -18,9 +18,9 @@ def _ollama_down(monkeypatch):
     from finance.llm import client as llm_client
     from finance.llm import router as llm_router
 
-    monkeypatch.setattr(llm_client, "is_available", lambda: False)
-    monkeypatch.setattr(llm_router.client, "is_available", lambda: False)
-    monkeypatch.setattr(chat_router, "ollama_is_available", lambda: False)
+    monkeypatch.setattr(llm_client, "is_available", lambda **_kwargs: False)
+    monkeypatch.setattr(llm_router.client, "is_available", lambda **_kwargs: False)
+    monkeypatch.setattr(chat_router, "ollama_is_available", lambda **_kwargs: False)
 
 
 def _seed(session) -> None:
@@ -58,8 +58,49 @@ def test_chat_health_reports_unavailable(client) -> None:
     assert r.status_code == 200
     body = r.json()
     assert body["ollama_available"] is False
+    assert body["assistant_llm_enabled"] is True
     assert body["mode"] == "deterministic"
     assert "top_categories" in body["deterministic_tools"]
+
+
+def test_disabled_assistant_preference_skips_ollama(
+    client,
+    db_session,
+    monkeypatch,
+) -> None:
+    from finance.llm import router as llm_router
+
+    db_session.add(UserProfile(id=1, assistant_llm_enabled=False))
+    db_session.commit()
+
+    def unexpected_llm_call(_question: str):
+        raise AssertionError("Ollama routing must not run when disabled by the user")
+
+    monkeypatch.setattr(llm_router, "_llm_pick_tool", unexpected_llm_call)
+
+    response = client.post(
+        "/chat",
+        json={"question": "Pytanie, którego nie obsługują reguły"},
+    )
+    assert response.status_code == 200
+    assert response.json()["source"] == "smalltalk"
+
+
+def test_disabled_assistant_preference_keeps_deterministic_tools(
+    client,
+    db_session,
+) -> None:
+    db_session.add(UserProfile(id=1, assistant_llm_enabled=False))
+    db_session.commit()
+    _seed(db_session)
+
+    response = client.post(
+        "/chat",
+        json={"question": "Ile wydałem w tym miesiącu?"},
+    )
+    assert response.status_code == 200
+    assert response.json()["source"] == "heuristic"
+    assert response.json()["tool"] is not None
 
 
 def test_heuristic_question_answers_without_ollama(client, db_session) -> None:

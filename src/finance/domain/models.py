@@ -122,6 +122,12 @@ class UserProfile(Base):
     )
     app_lock_secret_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
     app_lock_timeout_minutes: Mapped[int] = mapped_column(Integer, default=15, server_default="15")
+    assistant_llm_enabled: Mapped[bool] = mapped_column(
+        Boolean,
+        default=True,
+        server_default="true",
+    )
+    assistant_llm_model: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 

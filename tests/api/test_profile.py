@@ -1,14 +1,138 @@
 """Tests for local profile and personal rules API."""
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 
-from finance.domain.models import PersonalRule
+from finance.domain.models import PersonalRule, UserProfile
 
 
 def test_profile_settings_endpoints_are_not_exposed(client) -> None:
     assert client.get("/profile").status_code == 404
     assert client.patch("/profile", json={"base_currency": "EUR"}).status_code == 404
+
+
+def test_assistant_settings_can_disable_local_model(
+    client,
+    db_session,
+    monkeypatch,
+) -> None:
+    from apps.api.routers import profile as profile_router
+
+    monkeypatch.setattr(
+        profile_router,
+        "get_settings",
+        lambda: SimpleNamespace(llm_enabled=True, ollama_model="default:latest"),
+    )
+    monkeypatch.setattr(
+        profile_router,
+        "ollama_models",
+        lambda: ["default:latest", "small:latest"],
+    )
+
+    initial = client.get("/profile/assistant")
+    assert initial.status_code == 200
+    assert initial.json() == {
+        "user_enabled": True,
+        "configuration_enabled": True,
+        "ollama_available": True,
+        "mode": "hybrid",
+        "model": "default:latest",
+        "available_models": ["default:latest", "small:latest"],
+    }
+
+    updated = client.put("/profile/assistant", json={"enabled": False})
+    assert updated.status_code == 200
+    assert updated.json() == {
+        "user_enabled": False,
+        "configuration_enabled": True,
+        "ollama_available": False,
+        "mode": "deterministic",
+        "model": "default:latest",
+        "available_models": [],
+    }
+    assert db_session.get(UserProfile, 1).assistant_llm_enabled is False
+
+
+def test_assistant_settings_respect_server_kill_switch(
+    client,
+    monkeypatch,
+) -> None:
+    from apps.api.routers import profile as profile_router
+
+    monkeypatch.setattr(
+        profile_router,
+        "get_settings",
+        lambda: SimpleNamespace(llm_enabled=False, ollama_model="default:latest"),
+    )
+
+    def unexpected_probe() -> list[str]:
+        raise AssertionError("Ollama must not be probed when disabled by configuration")
+
+    monkeypatch.setattr(profile_router, "ollama_models", unexpected_probe)
+
+    response = client.get("/profile/assistant")
+    assert response.status_code == 200
+    assert response.json() == {
+        "user_enabled": True,
+        "configuration_enabled": False,
+        "ollama_available": False,
+        "mode": "deterministic",
+        "model": "default:latest",
+        "available_models": [],
+    }
+
+
+def test_assistant_settings_can_select_an_installed_model(
+    client,
+    db_session,
+    monkeypatch,
+) -> None:
+    from apps.api.routers import profile as profile_router
+
+    monkeypatch.setattr(
+        profile_router,
+        "get_settings",
+        lambda: SimpleNamespace(llm_enabled=True, ollama_model="default:latest"),
+    )
+    monkeypatch.setattr(
+        profile_router,
+        "ollama_models",
+        lambda: ["default:latest", "qwen:7b"],
+    )
+
+    response = client.put(
+        "/profile/assistant",
+        json={"enabled": True, "model": "qwen:7b"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["model"] == "qwen:7b"
+    assert response.json()["ollama_available"] is True
+    assert db_session.get(UserProfile, 1).assistant_llm_model == "qwen:7b"
+
+
+def test_assistant_settings_reject_uninstalled_model(client, monkeypatch) -> None:
+    from apps.api.routers import profile as profile_router
+
+    monkeypatch.setattr(
+        profile_router,
+        "get_settings",
+        lambda: SimpleNamespace(llm_enabled=True, ollama_model="default:latest"),
+    )
+    monkeypatch.setattr(
+        profile_router,
+        "ollama_models",
+        lambda: ["default:latest"],
+    )
+
+    response = client.put(
+        "/profile/assistant",
+        json={"enabled": True, "model": "missing:latest"},
+    )
+
+    assert response.status_code == 422
 
 
 def test_personal_rules_crud(client, db_session) -> None:

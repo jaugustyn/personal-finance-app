@@ -780,6 +780,20 @@ export interface PersonalRuleInput {
   confidence?: number;
 }
 
+export interface AssistantSettings {
+  user_enabled: boolean;
+  configuration_enabled: boolean;
+  ollama_available: boolean;
+  mode: "hybrid" | "deterministic";
+  model: string;
+  available_models: string[];
+}
+
+export interface AssistantSettingsInput {
+  enabled: boolean;
+  model?: string;
+}
+
 export interface MerchantAlias {
   id: number;
   alias_key: string;

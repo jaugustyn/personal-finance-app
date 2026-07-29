@@ -13,6 +13,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from finance.config import get_settings
 from finance.llm import client
 from finance.llm.formatters import format_answer
 from finance.llm.heuristics import ToolCall, heuristic_route, normalize_question_text
@@ -20,6 +21,7 @@ from finance.llm.periods import extract_period
 from finance.llm.tools import TOOL_SCHEMAS, TOOLS
 from finance.llm.types import ToolResult
 from finance.observability import get_logger
+from finance.profile.service import get_assistant_llm_model, is_assistant_llm_enabled
 
 logger = get_logger("finance.llm.router")
 
@@ -56,8 +58,8 @@ TOOL_ERROR_ANSWER = (
 )
 
 
-def _llm_pick_tool(question: str) -> ToolCall | None:
-    if not client.is_available():
+def _llm_pick_tool(question: str, *, model: str) -> ToolCall | None:
+    if not client.is_available(model=model):
         return None
     try:
         msg = client.chat(
@@ -66,6 +68,7 @@ def _llm_pick_tool(question: str) -> ToolCall | None:
                 {"role": "user", "content": question},
             ],
             tools=TOOL_SCHEMAS,
+            model=model,
         )
     except client.OllamaUnavailable:
         logger.warning("ollama_tool_selection_unavailable")
@@ -171,8 +174,9 @@ def answer(
         )
         source = "context"
 
-    if call is None:
-        call = _llm_pick_tool(question)
+    if call is None and is_assistant_llm_enabled(session):
+        model = get_assistant_llm_model(session) or get_settings().ollama_model
+        call = _llm_pick_tool(question, model=model)
         source = "llm"
 
     if call is None:

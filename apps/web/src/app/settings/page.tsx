@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
+  Bot,
   ListChecks,
   MoreHorizontal,
   Plus,
@@ -44,6 +45,11 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { AppLockSettings } from "@/components/app-lock-settings";
+import { AssistantSettingsCard } from "@/components/assistant-settings";
+import {
+  pageTabsListClassName,
+  pageTabTriggerClassName,
+} from "@/components/page-tabs";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { queryKeys } from "@/lib/query-keys";
 
@@ -232,24 +238,31 @@ export default function SettingsPage() {
   ];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       <PageHeader
         title={t("settings.title")}
         description={t("settings.subtitle")}
       />
 
       <Tabs defaultValue="security" className="space-y-5">
-        <TabsList className="h-auto w-full justify-start gap-6 rounded-none border-b bg-transparent p-0">
+        <TabsList className={pageTabsListClassName}>
           <TabsTrigger
             value="security"
-            className="rounded-none border-b-2 border-transparent px-1 py-3 shadow-none data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none"
+            className={pageTabTriggerClassName}
           >
             <ShieldCheck className="h-4 w-4" />
             {t("settings.tabSecurity")}
           </TabsTrigger>
           <TabsTrigger
+            value="assistant"
+            className={pageTabTriggerClassName}
+          >
+            <Bot className="h-4 w-4" />
+            {t("settings.tabAssistant")}
+          </TabsTrigger>
+          <TabsTrigger
             value="rules"
-            className="rounded-none border-b-2 border-transparent px-1 py-3 shadow-none data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none"
+            className={pageTabTriggerClassName}
           >
             <ListChecks className="h-4 w-4" />
             {t("settings.tabRules")}
@@ -258,6 +271,10 @@ export default function SettingsPage() {
 
         <TabsContent value="security">
           <AppLockSettings />
+        </TabsContent>
+
+        <TabsContent value="assistant">
+          <AssistantSettingsCard />
         </TabsContent>
 
         <TabsContent value="rules">

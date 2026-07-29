@@ -5,6 +5,20 @@ from finance.llm import router as llm_router
 from finance.llm.router import heuristic_route
 
 
+@pytest.fixture(autouse=True)
+def _assistant_preferences(monkeypatch) -> None:
+    monkeypatch.setattr(
+        llm_router,
+        "is_assistant_llm_enabled",
+        lambda _session: True,
+    )
+    monkeypatch.setattr(
+        llm_router,
+        "get_assistant_llm_model",
+        lambda _session: None,
+    )
+
+
 @pytest.mark.parametrize(
     ("question", "tool", "expected_args"),
     [
@@ -159,11 +173,11 @@ def test_tool_failure_returns_controlled_message(monkeypatch):
 
 
 def test_llm_selects_tool_but_does_not_author_answer(monkeypatch):
-    monkeypatch.setattr(llm_router.client, "is_available", lambda: True)
-    monkeypatch.setattr(
-        llm_router.client,
-        "chat",
-        lambda **_kwargs: {
+    selected: dict[str, str] = {}
+
+    def _chat(**kwargs):
+        selected["model"] = kwargs["model"]
+        return {
             "content": "Zmyślona odpowiedź z inną kwotą: 999 EUR",
             "tool_calls": [
                 {
@@ -173,8 +187,15 @@ def test_llm_selects_tool_but_does_not_author_answer(monkeypatch):
                     }
                 }
             ],
-        },
+        }
+
+    monkeypatch.setattr(
+        llm_router,
+        "get_assistant_llm_model",
+        lambda _session: "qwen:7b",
     )
+    monkeypatch.setattr(llm_router.client, "is_available", lambda **_kwargs: True)
+    monkeypatch.setattr(llm_router.client, "chat", _chat)
     monkeypatch.setitem(
         llm_router.TOOLS,
         "get_spending",
@@ -193,6 +214,7 @@ def test_llm_selects_tool_but_does_not_author_answer(monkeypatch):
     )
 
     assert result.source == "llm"
+    assert selected["model"] == "qwen:7b"
     assert "123,00 EUR" in result.answer
     assert "999 EUR" not in result.answer
 
@@ -215,7 +237,7 @@ def test_malformed_ollama_tool_response_uses_controlled_fallback(
     monkeypatch,
     message,
 ) -> None:
-    monkeypatch.setattr(llm_router.client, "is_available", lambda: True)
+    monkeypatch.setattr(llm_router.client, "is_available", lambda **_kwargs: True)
     monkeypatch.setattr(llm_router.client, "chat", lambda **_kwargs: message)
 
     result = llm_router.answer(
@@ -232,7 +254,7 @@ def test_ollama_unavailable_during_chat_uses_controlled_fallback(monkeypatch) ->
     def unavailable(**_kwargs):
         raise llm_router.client.OllamaUnavailable("invalid response")
 
-    monkeypatch.setattr(llm_router.client, "is_available", lambda: True)
+    monkeypatch.setattr(llm_router.client, "is_available", lambda **_kwargs: True)
     monkeypatch.setattr(llm_router.client, "chat", unavailable)
 
     result = llm_router.answer(
