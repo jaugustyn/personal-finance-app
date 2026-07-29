@@ -1,9 +1,9 @@
 """FastAPI application entry point."""
 from contextlib import asynccontextmanager
-from datetime import UTC, datetime
 
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -33,8 +33,7 @@ from apps.api.routers import (
 )
 from apps.api.security import auth_enabled, require_auth
 from finance.config import get_settings
-from finance.db import SessionLocal, engine, get_session
-from finance.llm.client import is_available as ollama_is_available
+from finance.db import SessionLocal, get_session
 from finance.ml.classification.lifecycle import mark_interrupted_jobs
 from finance.observability import configure_logging, get_logger
 
@@ -59,19 +58,31 @@ async def lifespan(_: FastAPI):
     yield
 
 
-app = FastAPI(title="Personal Finance API", version="0.1.0", lifespan=lifespan)
+_settings = get_settings()
+app = FastAPI(
+    title="Personal Finance API",
+    version="0.1.0",
+    lifespan=lifespan,
+    docs_url="/docs" if _settings.api_docs_enabled else None,
+    redoc_url="/redoc" if _settings.api_docs_enabled else None,
+    openapi_url="/openapi.json" if _settings.api_docs_enabled else None,
+)
+app.add_middleware(
+    TrustedHostMiddleware,
+    allowed_hosts=_settings.trusted_hosts,
+    www_redirect=False,
+)
 app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(RequestLogMiddleware)
 
-_settings = get_settings()
-_origins = [o.strip() for o in _settings.cors_allow_origins.split(",") if o.strip()]
+_origins = _settings.cors_origins
 if _origins:
     app.add_middleware(
         CORSMiddleware,
         allow_origins=_origins,
         allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+        allow_headers=["Authorization", "Content-Type", "X-Request-ID"],
     )
 if _settings.rate_limit_per_minute > 0:
     app.add_middleware(
@@ -80,24 +91,10 @@ if _settings.rate_limit_per_minute > 0:
 
 
 # Public endpoint (no auth) -------------------------------------------------
-@app.get("/health")
-def health() -> dict[str, object]:
-    db_ok = False
-    try:
-        with engine.connect() as conn:
-            conn.execute(text("SELECT 1"))
-        db_ok = True
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("health_db_failed", error=str(exc))
-    return {
-        "status": "ok" if db_ok else "degraded",
-        "time": datetime.now(UTC).isoformat(),
-        "checks": {
-            "database": db_ok,
-            "ollama": ollama_is_available(),
-        },
-        "auth_enabled": auth_enabled(),
-    }
+@app.get("/health", include_in_schema=False)
+def health() -> dict[str, str]:
+    """Minimal public liveness response without configuration disclosure."""
+    return {"status": "ok"}
 
 
 @app.get("/health/live", include_in_schema=False)

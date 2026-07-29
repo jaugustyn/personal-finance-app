@@ -13,6 +13,23 @@ def require_app_unlock(
     request: Request,
     session: Session = Depends(get_session),
 ) -> None:
+    _require_active_session(request, session, touch=False)
+
+
+def register_app_activity(
+    request: Request,
+    session: Session = Depends(get_session),
+) -> None:
+    """Validate and extend the session only after explicit browser activity."""
+    _require_active_session(request, session, touch=True)
+
+
+def _require_active_session(
+    request: Request,
+    session: Session,
+    *,
+    touch: bool,
+) -> None:
     profile = get_profile(session)
     if profile is None or profile.app_lock_secret_hash is None:
         return
@@ -20,7 +37,7 @@ def require_app_unlock(
     if app_lock.session_is_active(
         token,
         profile.app_lock_timeout_minutes,
-        touch=True,
+        touch=touch,
     ):
         return
     raise HTTPException(

@@ -14,6 +14,9 @@ import os
 os.environ["RATE_LIMIT_PER_MINUTE"] = "0"
 os.environ["APP_ENV"] = "test"
 os.environ["APP_LOCK_COOKIE_SECURE"] = "false"
+os.environ["API_TRUSTED_HOSTS"] = "testserver,localhost,127.0.0.1,api"
+os.environ["API_DOCS_ENABLED"] = "true"
+os.environ["DATABASE_URL"] = "sqlite+pysqlite:///:memory:"
 
 from collections.abc import Iterator
 

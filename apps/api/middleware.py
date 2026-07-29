@@ -83,11 +83,11 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 
     Conservative CSP — the API only serves JSON/CSV plus Swagger UI on
     ``/docs``; ``frame-ancestors 'none'`` blocks clickjacking. ``HSTS`` is
-    skipped because the app is typically self-hosted on plain HTTP behind a
-    reverse proxy (the proxy should set HSTS).
+    intentionally omitted because the supported local deployment uses HTTP.
     """
 
     _HEADERS = {
+        "Cache-Control": "no-store",
         "X-Content-Type-Options": "nosniff",
         "X-Frame-Options": "DENY",
         "Referrer-Policy": "no-referrer",

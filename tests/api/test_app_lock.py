@@ -170,3 +170,40 @@ def test_session_timeout_and_touch_are_server_side(monkeypatch):
     assert app_lock.session_is_active(token, 5, touch=False)
     now = 100.0 + 9 * 60
     assert not app_lock.session_is_active(token, 5, touch=False)
+
+
+def test_background_api_requests_do_not_extend_idle_session(client, monkeypatch):
+    now = 100.0
+    monkeypatch.setattr(app_lock, "_now", lambda: now)
+    assert _setup(client, timeout=5).status_code == 200
+
+    now += 4 * 60
+    assert client.get("/profile/rules").status_code == 200
+
+    now += 2 * 60
+    assert client.get("/profile/rules").status_code == 423
+
+
+def test_status_check_does_not_extend_idle_session(client, monkeypatch):
+    now = 100.0
+    monkeypatch.setattr(app_lock, "_now", lambda: now)
+    assert _setup(client, timeout=5).status_code == 200
+
+    now += 4 * 60
+    assert client.get("/app-lock/status").json()["locked"] is False
+
+    now += 2 * 60
+    assert client.get("/app-lock/status").json()["locked"] is True
+    assert client.get("/profile/rules").status_code == 423
+
+
+def test_activity_endpoint_extends_idle_session(client, monkeypatch):
+    now = 100.0
+    monkeypatch.setattr(app_lock, "_now", lambda: now)
+    assert _setup(client, timeout=5).status_code == 200
+
+    now += 4 * 60
+    assert client.post("/app-lock/activity").status_code == 204
+
+    now += 4 * 60
+    assert client.get("/profile/rules").status_code == 200

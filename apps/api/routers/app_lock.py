@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from apps.api.dependencies.app_lock import require_app_unlock
+from apps.api.dependencies.app_lock import register_app_activity, require_app_unlock
 from finance.config import get_settings
 from finance.db import get_session
 from finance.profile.service import get_or_create_profile, get_profile
@@ -51,7 +51,7 @@ def status(
     locked = enabled and not app_lock.session_is_active(
         request.cookies.get(app_lock.APP_LOCK_COOKIE_NAME),
         profile.app_lock_timeout_minutes,
-        touch=True,
+        touch=False,
     )
     return _status(enabled, locked, profile.app_lock_timeout_minutes)
 
@@ -127,7 +127,7 @@ def unlock(
 @router.post(
     "/activity",
     status_code=204,
-    dependencies=[Depends(require_app_unlock)],
+    dependencies=[Depends(register_app_activity)],
 )
 def activity() -> Response:
     return Response(status_code=204)
