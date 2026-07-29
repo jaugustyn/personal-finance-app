@@ -9,16 +9,18 @@ Create `.env` from the example and start Docker Compose:
 
 ```powershell
 copy .env.example .env
+# Set a unique, URL-safe POSTGRES_PASSWORD in .env.
 docker compose --env-file .env -p personal-finance-app -f docker/docker-compose.yml up -d --build
 ```
 
 Verify:
 
 - web: <http://localhost:3000>;
-- API documentation: <http://localhost:8000/docs>;
-- readiness: <http://localhost:8000/health/ready>.
+- `docker compose --env-file .env -p personal-finance-app -f docker/docker-compose.yml ps`
+  reports PostgreSQL and API as healthy.
 
-The API applies `alembic upgrade head` before startup.
+The API applies `alembic upgrade head` before startup. FastAPI and PostgreSQL
+are intentionally not published on host ports by the default stack.
 
 To intentionally remove all local database data:
 
@@ -59,6 +61,11 @@ Before validating ML, check the main data mutations:
    PLN rate is excluded from the displayed total.
 4. In Settings, enable the inactivity lock with a short timeout, lock the
    application manually, unlock it and disable the lock again.
+   Confirm that leaving the application untouched locks it even if dashboard
+   queries refresh in the background.
+5. In Settings, disable Ollama for the Assistant and verify that a supported
+   deterministic question still returns a calculated answer. Re-enable it only
+   when the local model is available.
 
 These checks use synthetic values only. A fixed-charge schedule must not create
 a transaction until the user explicitly adds a payment.
@@ -140,10 +147,25 @@ npm run build
 Configuration and repository:
 
 ```powershell
-docker compose -f docker/docker-compose.yml config
+docker compose --env-file .env -f docker/docker-compose.yml config --quiet
+docker compose --env-file .env -f docker/docker-compose.yml -f docker/docker-compose.dev.yml config --quiet
 git diff --check
 git status --short
 ```
+
+Dependency changes additionally run the `Security audit` workflow. It checks
+the locked production Python environment with `pip-audit` and the web lockfile
+with `npm audit`; the same checks also run weekly.
+
+After starting the stack, verify the read-only container policy without writing
+private data:
+
+```powershell
+docker compose --env-file .env -f docker/docker-compose.yml exec api sh -c "touch /app/readonly-check"
+docker compose --env-file .env -f docker/docker-compose.yml exec web sh -c "touch /app/readonly-check"
+```
+
+Both commands should fail with a read-only filesystem error.
 
 Expected conditions:
 
@@ -160,5 +182,6 @@ require review or an explicit currency recomputation.
 CI runs the regular backend and frontend suites for every pull request. The
 PostgreSQL reference scenario and migration checks remain explicit local
 integration checks. Docker images are rebuilt only after Docker or dependency
-changes. Dependency security audits run weekly and can also be started
-manually.
+changes. Dependency security audits run after relevant lockfile changes,
+weekly and on explicit request. The Docker workflow also scans both runtime
+images for fixed critical vulnerabilities.

@@ -347,9 +347,13 @@ Jedynym wspieranym runtime Python jest 3.14. `uv.lock` jest źródłem wersji
 zależności, a Docker używa `uv sync --frozen`. Stack lokalny składa się z
 PostgreSQL, API i web uruchamianych przez Docker Compose.
 
-Wdrożenie single-user może opcjonalnie używać BasicAuth. Niezależna blokada po
-nieaktywności jest domyślnie wyłączona; po skonfigurowaniu backend egzekwuje
-czas sesji i wymaga lokalnego kodu do ponownego odblokowania interfejsu. Nie
+Wdrożenie single-user może opcjonalnie używać BasicAuth, egzekwowanego zarówno
+na wejściu do interfejsu, jak i przez FastAPI. Domyślny stack publikuje wyłącznie
+frontend na interfejsie loopback; baza i API działają w rozdzielonych sieciach
+Compose, a kontenery aplikacyjne używają systemu plików tylko do odczytu.
+Niezależna blokada po nieaktywności jest domyślnie wyłączona; po
+skonfigurowaniu backend egzekwuje czas sesji na podstawie jawnej aktywności
+użytkownika i wymaga lokalnego kodu do ponownego odblokowania interfejsu. Nie
 zastępuje to blokady systemu operacyjnego, HTTPS ani ochrony plików i bazy.
 
 Kontrole jakości:
@@ -359,6 +363,7 @@ Kontrole jakości:
 - testy migracji Alembic;
 - frontend lint, typecheck i build;
 - walidacja Docker Compose;
+- audyt zależności i skan krytycznych podatności obrazów;
 - testy generatora evidence i ochrony prywatności.
 
 Projekt jest w aktywnej fazie rozwoju i nie gwarantuje migracji historycznych
@@ -378,8 +383,9 @@ ale zmiana eksperymentalnej ontologii może wymagać czystego importu.
   prognozy nadal należy traktować jako orientacyjne.
 - Anomalie i subskrypcje wymagają ręcznej oceny.
 - Local LLM zwiększa latency i jego jakość zależy od sprzętu oraz modelu.
-- BasicAuth i pamięciowy rate limit są adekwatne dla jednego hosta, nie dla
-  systemu wieloużytkownikowego.
+- BasicAuth, lokalne wiązanie portu i pamięciowy rate limit są adekwatne dla
+  jednego hosta, nie dla systemu wieloużytkownikowego ani bezpośredniej
+  ekspozycji do internetu.
 
 ## 14. Powiązane dokumenty
 

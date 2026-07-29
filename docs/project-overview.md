@@ -125,8 +125,12 @@ validation still depends on private-data review and evidence generation.
   names.
 - Ollama is restricted to a local host and LLM fallback requires double opt-in.
 - Numeric answers from the assistant use SQL-backed or deterministic tools.
-- Optional BasicAuth, CORS, rate limiting, security headers and import
-  validation protect the single-host deployment.
+- The default Compose stack exposes only the frontend on host loopback;
+  PostgreSQL and FastAPI use separate internal networks, while application
+  containers use read-only root filesystems.
+- Optional BasicAuth protects both the web entry point and FastAPI. Origin
+  and host validation, security headers, rate limiting and import validation
+  provide additional defence in depth for the single-host deployment.
 - An optional server-enforced inactivity lock hides the browser UI after a
   configurable idle period. Its scrypt-protected code and process-local session
   are intentionally separate from accounts or multi-user authentication.
