@@ -33,6 +33,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/page-header";
+import { Skeleton, TableSkeleton } from "@/components/ui/skeleton";
 import { useConfirm } from "@/components/confirm-dialog";
 import { ErrorState } from "@/components/error-state";
 import { CategoryAccent } from "@/components/category-accent";
@@ -57,6 +58,24 @@ const CATEGORY_COLORS = [
 ] as const;
 
 const DEFAULT_CATEGORY_COLOR = CATEGORY_COLORS[0];
+
+function CategoriesSkeleton() {
+  return (
+    <div className="grid items-start gap-6 lg:grid-cols-2">
+      {[0, 1].map((section) => (
+        <section key={section} className="space-y-3">
+          <div className="flex min-h-8 items-center gap-2">
+            <Skeleton className="h-5 w-40" />
+            <Skeleton className="h-5 w-7" />
+          </div>
+          <div className="rounded-xl border bg-card p-3">
+            <TableSkeleton rows={5} />
+          </div>
+        </section>
+      ))}
+    </div>
+  );
+}
 
 export default function CategoriesPage() {
   const { t, locale } = useT();
@@ -187,9 +206,7 @@ export default function CategoriesPage() {
       />
 
       {isLoading ? (
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Loader2 className="h-4 w-4 animate-spin" /> {t("common.loading")}
-        </div>
+        <CategoriesSkeleton />
       ) : isError ? (
         <ErrorState
           description={t("categories.loadError")}

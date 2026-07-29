@@ -114,6 +114,7 @@ export default function ForecastPage() {
     queryFn: () => api.forecast(submitted.category, submitted.horizon),
   });
   const readiness = forecastReadinessDetail(query.error);
+  const hasNoData = isApiError(query.error) && query.error.status === 404;
   const forecastColumns: DataTableColumn<ForecastPoint>[] = [
     {
       id: "month",
@@ -242,6 +243,12 @@ export default function ForecastPage() {
                 active: readiness.activeMonths,
                 requiredActive: readiness.requiredActiveMonths,
               })}
+              className="min-h-72"
+            />
+          ) : hasNoData ? (
+            <EmptyState
+              icon={CalendarClock}
+              title={t("common.empty")}
               className="min-h-72"
             />
           ) : query.isError ? (

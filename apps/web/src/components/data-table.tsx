@@ -1,7 +1,6 @@
 "use client";
 
 import * as React from "react";
-import { Loader2 } from "lucide-react";
 import {
   Table,
   TableBody,
@@ -13,6 +12,7 @@ import {
 import { EmptyState } from "@/components/empty-state";
 import { ErrorState } from "@/components/error-state";
 import { SortableTableHead } from "@/components/sortable-table-head";
+import { TableSkeleton } from "@/components/ui/skeleton";
 import {
   DEFAULT_TABLE_PAGE_SIZE,
   TablePagination,
@@ -197,8 +197,13 @@ export function DataTable<T>({
 
   if (isLoading) {
     return (
-      <div className="flex h-48 items-center justify-center text-muted-foreground">
-        <Loader2 className="h-5 w-5 animate-spin" />
+      <div
+        className={cn(
+          "overflow-hidden rounded-lg border bg-card p-3",
+          className,
+        )}
+      >
+        <TableSkeleton rows={6} />
       </div>
     );
   }
@@ -229,7 +234,9 @@ export function DataTable<T>({
   if (!visibleRows || visibleRows.length === 0) {
     if (tableToolbar || paginationFooter) {
       return (
-        <div className={cn("overflow-hidden rounded-lg border", className)}>
+        <div
+          className={cn("overflow-hidden rounded-lg border bg-card", className)}
+        >
           {toolbarPosition === "top" ? tableToolbar : null}
           <EmptyState
             title={emptyTitle ?? t("common.empty")}
@@ -245,12 +252,15 @@ export function DataTable<T>({
       <EmptyState
         title={emptyTitle ?? t("common.empty")}
         description={emptyDescription}
+        className={cn("bg-card", className)}
       />
     );
   }
 
   return (
-    <div className={cn("overflow-hidden rounded-lg border", className)}>
+    <div
+      className={cn("overflow-hidden rounded-lg border bg-card", className)}
+    >
       {toolbarPosition === "top" ? tableToolbar : null}
       <Table className={tableClassName}>
         <TableHeader
