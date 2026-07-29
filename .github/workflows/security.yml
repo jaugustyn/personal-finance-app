@@ -1,6 +1,19 @@
 name: Security audit
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - "pyproject.toml"
+      - "uv.lock"
+      - "apps/web/package.json"
+      - "apps/web/package-lock.json"
+  pull_request:
+    paths:
+      - "pyproject.toml"
+      - "uv.lock"
+      - "apps/web/package.json"
+      - "apps/web/package-lock.json"
   schedule:
     - cron: "17 5 * * 1"
   workflow_dispatch:

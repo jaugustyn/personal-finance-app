@@ -3,12 +3,13 @@ services:
     image: postgres:16-alpine
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-finance}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-finance}
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}"
       POSTGRES_DB: ${POSTGRES_DB:-finance}
-    ports:
-      - "5432:5432"
+      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256"
     volumes:
       - postgres-data:/var/lib/postgresql/data
+    networks:
+      - database
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-finance}"]
       interval: 5s
@@ -20,7 +21,7 @@ services:
       context: ..
       dockerfile: docker/Dockerfile.api
     environment:
-      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-finance}:${POSTGRES_PASSWORD:-finance}@postgres:5432/${POSTGRES_DB:-finance}
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-finance}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-finance}
       # Ollama runs on the host machine to spare the dev box.
       OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
       OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.1:8b-instruct-q4_K_M}
@@ -30,6 +31,8 @@ services:
       AUTH_PASSWORD: ${AUTH_PASSWORD:-}
       APP_LOCK_COOKIE_SECURE: ${APP_LOCK_COOKIE_SECURE:-false}
       APP_ENV: ${APP_ENV:-dev}
+      API_DOCS_ENABLED: ${API_DOCS_ENABLED:-false}
+      API_TRUSTED_HOSTS: ${API_TRUSTED_HOSTS:-localhost,127.0.0.1,api}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       CORS_ALLOW_ORIGINS: ${CORS_ALLOW_ORIGINS:-http://localhost:3000}
       RATE_LIMIT_PER_MINUTE: ${RATE_LIMIT_PER_MINUTE:-120}
@@ -38,14 +41,33 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    ports:
-      - "8000:8000"
+    networks:
+      - app
+      - database
+    init: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp:mode=1777
     volumes:
       # Make trained model + data dir available inside the container.
       - ../data:/app/data
     command: >
       sh -c "alembic upgrade head &&
-             uvicorn apps.api.main:app --host 0.0.0.0 --port 8000"
+             uvicorn apps.api.main:app --host 0.0.0.0 --port 8000 --no-access-log"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=2)
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
 
   web:
     build:
@@ -55,10 +77,28 @@ services:
       API_URL: http://api:8000
       API_USERNAME: ${AUTH_USERNAME:-}
       API_PASSWORD: ${AUTH_PASSWORD:-}
+      WEB_TRUSTED_HOSTS: ${WEB_TRUSTED_HOSTS:-localhost,127.0.0.1,[::1]}
     depends_on:
-      - api
+      api:
+        condition: service_healthy
+    networks:
+      - app
+    init: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp:mode=1777
+      - /app/.next/cache:mode=1777
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
+
+networks:
+  app:
+  database:
+    internal: true
 
 volumes:
   postgres-data:
