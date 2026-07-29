@@ -12,6 +12,10 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ErrorState } from "@/components/error-state";
 import { PageHeader } from "@/components/page-header";
+import {
+  pageTabsListClassName,
+  pageTabTriggerClassName,
+} from "@/components/page-tabs";
 import { CardGridSkeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -157,17 +161,17 @@ export default function MlPage() {
       ) : query.isError || !data || !status || !recommendation ? (
         <ErrorState onRetry={() => query.refetch()} />
       ) : (
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-          <TabsList className="h-9 items-stretch justify-start divide-x divide-border/60 overflow-hidden rounded-md border border-input bg-card p-0">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-5">
+          <TabsList className={pageTabsListClassName}>
             <TabsTrigger
               value="overview"
-              className="h-full rounded-none py-0 focus-visible:z-10 focus-visible:ring-inset data-[state=active]:bg-accent-soft data-[state=active]:text-accent-soft-foreground data-[state=active]:shadow-none"
+              className={pageTabTriggerClassName}
             >
               {t("ml.tab.overview")}
             </TabsTrigger>
             <TabsTrigger
               value="technical"
-              className="h-full rounded-none py-0 focus-visible:z-10 focus-visible:ring-inset data-[state=active]:bg-accent-soft data-[state=active]:text-accent-soft-foreground data-[state=active]:shadow-none"
+              className={pageTabTriggerClassName}
             >
               {t("ml.tab.technical")}
             </TabsTrigger>

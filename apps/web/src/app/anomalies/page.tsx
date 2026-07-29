@@ -9,6 +9,10 @@ import { Button } from "@/components/ui/button";
 import { DataTable, type DataTableColumn } from "@/components/data-table";
 import { ErrorState } from "@/components/error-state";
 import { PageHeader } from "@/components/page-header";
+import {
+  pageTabClassName,
+  pageTabsListClassName,
+} from "@/components/page-tabs";
 import { Money } from "@/components/money";
 import {
   DropdownMenu,
@@ -416,7 +420,7 @@ export default function AnomaliesPage() {
       <PageHeader title={t("anomalies.title")} />
 
       <nav
-        className="flex max-w-full overflow-x-auto border-b"
+        className={pageTabsListClassName}
         aria-label={t("anomalies.title")}
       >
         {(["pending", "reviewed"] as const).map((state) => {
@@ -430,11 +434,7 @@ export default function AnomaliesPage() {
               key={state}
               type="button"
               onClick={() => setReviewState(state)}
-              className={`inline-flex h-11 shrink-0 items-center gap-2 border-b-2 px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring ${
-                active
-                  ? "border-primary text-foreground"
-                  : "border-transparent text-muted-foreground hover:border-border hover:text-foreground"
-              }`}
+              className={pageTabClassName(active)}
             >
               {state === "pending"
                 ? t("anomalies.tab.pending")

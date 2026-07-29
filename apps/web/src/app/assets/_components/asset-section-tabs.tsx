@@ -2,7 +2,10 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { cn } from "@/lib/utils";
+import {
+  pageTabClassName,
+  pageTabsListClassName,
+} from "@/components/page-tabs";
 import { useT } from "@/lib/i18n";
 
 export function AssetSectionTabs() {
@@ -15,7 +18,10 @@ export function AssetSectionTabs() {
   ];
 
   return (
-    <nav className="flex gap-6 border-b" aria-label={t("assets.sectionNavigation")}>
+    <nav
+      className={pageTabsListClassName}
+      aria-label={t("assets.sectionNavigation")}
+    >
       {tabs.map((tab) => {
         const active = pathname === tab.href;
         return (
@@ -23,12 +29,7 @@ export function AssetSectionTabs() {
             key={tab.href}
             href={tab.href}
             aria-current={active ? "page" : undefined}
-            className={cn(
-              "-mb-px border-b-2 px-0.5 pb-3 text-sm font-medium transition-colors",
-              active
-                ? "border-primary text-foreground"
-                : "border-transparent text-muted-foreground hover:text-foreground",
-            )}
+            className={pageTabClassName(active)}
           >
             {tab.label}
           </Link>

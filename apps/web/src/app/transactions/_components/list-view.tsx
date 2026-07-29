@@ -372,7 +372,7 @@ export function ListView({
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       <TransactionFilters
         reviewMode={reviewMode}
         search={activeSearch}

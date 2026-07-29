@@ -64,7 +64,7 @@ export default function AssetArchivePage() {
   const empty = archivedAccounts.length === 0 && archivedItems.length === 0;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       <PageHeader title={t("assets.title")} />
       <AssetSectionTabs />
 

@@ -167,7 +167,7 @@ export default function TransactionsPage() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       <PageHeader title={t("transactions.title")} />
       <ViewSwitcher value={activeMode} onChange={handleModeChange} />
 

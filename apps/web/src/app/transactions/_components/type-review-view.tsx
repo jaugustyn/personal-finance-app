@@ -96,7 +96,7 @@ export function TypeReviewView() {
     reset();
   };
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       <div className="flex flex-wrap items-end gap-3 rounded-lg border bg-card p-3 shadow-sm">
         <FilterField
           label={t("transactions.filterSearch")}

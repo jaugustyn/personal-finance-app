@@ -20,7 +20,7 @@ export function FilterPanel({
 }) {
   return (
     <Card className={className}>
-      <CardContent className="pt-6">
+      <CardContent className="p-3">
         <div
           className={cn(
             "grid gap-3 md:grid-cols-2 xl:grid-cols-6",

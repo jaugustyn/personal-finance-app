@@ -216,7 +216,7 @@ export default function AssetsPage() {
 
   if (failed) {
     return (
-      <div className="space-y-6">
+      <div className="space-y-5">
         <PageHeader title={t("assets.title")} />
         <AssetSectionTabs />
         <ErrorState
@@ -231,7 +231,7 @@ export default function AssetsPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       <PageHeader title={t("assets.title")} />
       <AssetSectionTabs />
 

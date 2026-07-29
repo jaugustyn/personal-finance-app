@@ -2,6 +2,10 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
+import {
+  pageTabClassName,
+  pageTabsListClassName,
+} from "@/components/page-tabs";
 import { api } from "@/lib/api";
 import { useT } from "@/lib/i18n";
 import { queryKeys } from "@/lib/query-keys";
@@ -46,39 +50,34 @@ export function ViewSwitcher({ value, onChange }: ViewSwitcherProps) {
   return (
     <div>
       <nav
-        className="flex max-w-full overflow-x-auto border-b"
+        className={pageTabsListClassName}
         aria-label={t("transactions.title")}
       >
-      {items.map((item) => {
-        const active = value === item.value;
-        return (
-          <button
-            key={item.value}
-            type="button"
-            onClick={() => onChange(item.value)}
-            className={cn(
-              "inline-flex h-11 shrink-0 items-center gap-2 border-b-2 px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
-              active
-                ? "border-primary text-foreground"
-                : "border-transparent text-muted-foreground hover:border-border hover:text-foreground",
-            )}
-          >
-            {item.label}
-            {item.count !== undefined ? (
-              <Badge
-                variant="muted"
-                className={cn(
-                  "px-1.5 text-[10px] tabular-nums",
-                  active &&
-                    "bg-primary/10 text-primary ring-1 ring-primary/15",
-                )}
-              >
-                {item.count}
-              </Badge>
-            ) : null}
-          </button>
-        );
-      })}
+        {items.map((item) => {
+          const active = value === item.value;
+          return (
+            <button
+              key={item.value}
+              type="button"
+              onClick={() => onChange(item.value)}
+              className={pageTabClassName(active)}
+            >
+              {item.label}
+              {item.count !== undefined ? (
+                <Badge
+                  variant="muted"
+                  className={cn(
+                    "px-1.5 text-[10px] tabular-nums",
+                    active &&
+                      "bg-primary/10 text-primary ring-1 ring-primary/15",
+                  )}
+                >
+                  {item.count}
+                </Badge>
+              ) : null}
+            </button>
+          );
+        })}
       </nav>
       {summary.isError ? (
         <button

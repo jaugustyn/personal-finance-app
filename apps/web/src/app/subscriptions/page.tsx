@@ -11,6 +11,11 @@ import {
   type SubscriptionPreferenceInput,
 } from "@/lib/api";
 import { PageHeader } from "@/components/page-header";
+import {
+  pageTabClassName,
+  pageTabsListClassName,
+  pageTabTriggerClassName,
+} from "@/components/page-tabs";
 import { EmptyState } from "@/components/empty-state";
 import { ErrorState } from "@/components/error-state";
 import { cn } from "@/lib/utils";
@@ -236,16 +241,16 @@ export default function SubscriptionsPage() {
         }}
         className="space-y-5"
       >
-        <TabsList className="h-9 items-stretch justify-start divide-x divide-border/60 overflow-hidden rounded-md border border-input bg-card p-0">
+        <TabsList className={pageTabsListClassName}>
           <TabsTrigger
             value="subscriptions"
-            className="h-full rounded-none py-0 focus-visible:z-10 focus-visible:ring-inset data-[state=active]:bg-accent-soft data-[state=active]:text-accent-soft-foreground data-[state=active]:shadow-none"
+            className={pageTabTriggerClassName}
           >
             {t("subscriptions.tab.subscriptions")}
           </TabsTrigger>
           <TabsTrigger
             value="fixed"
-            className="h-full rounded-none py-0 focus-visible:z-10 focus-visible:ring-inset data-[state=active]:bg-accent-soft data-[state=active]:text-accent-soft-foreground data-[state=active]:shadow-none"
+            className={pageTabTriggerClassName}
           >
             {t("subscriptions.tab.fixed")}
           </TabsTrigger>
@@ -411,7 +416,7 @@ function SubscriptionScopeFilter({
   const { t } = useT();
   return (
     <nav
-      className="flex max-w-full overflow-x-auto border-b"
+      className={pageTabsListClassName}
       aria-label={t("subscriptions.scopeLabel")}
     >
       {SUBSCRIPTION_SCOPES.map((item) => {
@@ -422,12 +427,7 @@ function SubscriptionScopeFilter({
             type="button"
             aria-pressed={active}
             onClick={() => onChange(item)}
-            className={cn(
-              "inline-flex h-11 shrink-0 items-center justify-center gap-2 whitespace-nowrap border-b-2 px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
-              active
-                ? "border-primary text-foreground"
-                : "border-transparent text-muted-foreground hover:text-foreground",
-            )}
+            className={pageTabClassName(active)}
           >
             {labelFor(item)}
             <Badge
