@@ -1,18 +1,20 @@
 "use client";
 
 import * as React from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { type QueryClient, useQueryClient } from "@tanstack/react-query";
 import { Loader2, LockKeyhole, RefreshCw } from "lucide-react";
 import { api, isApiError, type AppLockStatus } from "@/lib/api";
 import { useT } from "@/lib/i18n";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { removeStoredValue } from "@/hooks/use-local-storage-state";
 
 const LOCK_EVENT = "finance:app-locked";
 const CHANNEL_NAME = "finance-app-lock";
 const STORAGE_KEY = "finance-app-lock-event";
 const HEARTBEAT_INTERVAL_MS = 30_000;
+const SENSITIVE_STORAGE_KEYS = ["finance.transactions.filters.search"];
 
 type LockMessage = "activity" | "locked" | "unlocked";
 
@@ -62,7 +64,8 @@ export function AppLockProvider({ children }: { children: React.ReactNode }) {
       setStatus(next);
       setStatusError(false);
       setLoading(false);
-      if (next.locked) queryClient.clear();
+      if (next.enabled && !next.locked) lastActivityRef.current = Date.now();
+      if (next.locked) clearSensitiveBrowserState(queryClient);
       if (notify) broadcast(next.locked ? "locked" : "unlocked");
     },
     [broadcast, queryClient],
@@ -73,7 +76,7 @@ export function AppLockProvider({ children }: { children: React.ReactNode }) {
       const next = await api.appLockStatus();
       applyStatus(next);
     } catch {
-      queryClient.clear();
+      clearSensitiveBrowserState(queryClient);
       setStatus(null);
       setStatusError(true);
       setLoading(false);
@@ -85,7 +88,7 @@ export function AppLockProvider({ children }: { children: React.ReactNode }) {
       setStatus((current) =>
         current?.enabled ? { ...current, locked: true } : current,
       );
-      queryClient.clear();
+      clearSensitiveBrowserState(queryClient);
       if (notify) broadcast("locked");
     },
     [broadcast, queryClient],
@@ -108,7 +111,7 @@ export function AppLockProvider({ children }: { children: React.ReactNode }) {
       },
       () => {
         if (!active) return;
-        queryClient.clear();
+        clearSensitiveBrowserState(queryClient);
         setStatus(null);
         setStatusError(true);
         setLoading(false);
@@ -170,7 +173,7 @@ export function AppLockProvider({ children }: { children: React.ReactNode }) {
       broadcast("activity");
       void api.registerAppActivity().catch((error) => {
         if (!isApiError(error) || error.status !== 423) {
-          queryClient.clear();
+          clearSensitiveBrowserState(queryClient);
           setStatus(null);
           setStatusError(true);
         }
@@ -189,7 +192,7 @@ export function AppLockProvider({ children }: { children: React.ReactNode }) {
 
     const timer = window.setInterval(() => {
       const timeoutMs = status.timeout_minutes * 60_000;
-      if (Date.now() - lastActivityRef.current >= timeoutMs) void refresh();
+      if (Date.now() - lastActivityRef.current >= timeoutMs) void lock();
     }, 5_000);
     const onVisibility = () => {
       if (document.visibilityState === "visible") void refresh();
@@ -202,7 +205,7 @@ export function AppLockProvider({ children }: { children: React.ReactNode }) {
       window.clearInterval(timer);
       document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [broadcast, queryClient, refresh, status]);
+  }, [broadcast, lock, queryClient, refresh, status]);
 
   if (loading) return <AppLockLoading />;
   if (statusError || !status) return <AppLockStatusError onRetry={refresh} />;
@@ -222,6 +225,21 @@ export function AppLockProvider({ children }: { children: React.ReactNode }) {
       {children}
     </AppLockContext.Provider>
   );
+}
+
+function clearSensitiveBrowserState(queryClient: QueryClient) {
+  queryClient.clear();
+  for (const key of SENSITIVE_STORAGE_KEYS) {
+    removeStoredValue(key);
+  }
+  try {
+    const url = new URL(window.location.href);
+    if (url.search || url.hash) {
+      window.history.replaceState(null, "", url.pathname);
+    }
+  } catch {
+    // The lock remains effective even when browser history cannot be updated.
+  }
 }
 
 function AppUnlockScreen({

@@ -109,6 +109,18 @@ export function storedNumberBetween(min: number, max: number): Validator<number>
     value <= max;
 }
 
+export function removeStoredValue(key: string): void {
+  memoryValues.delete(key);
+  try {
+    window.localStorage.removeItem(key);
+  } catch {
+    // Storage can be unavailable in private browsing or locked-down webviews.
+  }
+  window.dispatchEvent(
+    new CustomEvent<string>(LOCAL_STORAGE_EVENT, { detail: key }),
+  );
+}
+
 function readStoredValue<T extends StoredValue>(
   key: string,
   defaultValue: T,

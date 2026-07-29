@@ -44,8 +44,7 @@ function directionalRangeQueryValues(
 }
 
 export const statsApi = {
-  health: () =>
-    request<{ status: string; checks: Record<string, boolean>; auth_enabled: boolean }>("/health"),
+  health: () => request<{ status: string }>("/health"),
   overview: (months = 12, allData = false, includeTransfers = false) =>
     request<OverviewStats>(
       withQuery("/stats/overview", rangeQueryValues(months, { allData, includeTransfers })),
