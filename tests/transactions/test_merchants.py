@@ -7,32 +7,33 @@ from finance.domain.enums import BankSource, TransactionDirection, TransactionTy
 from finance.domain.models import MerchantAlias, Transaction
 from finance.transactions.merchants import (
     alias_candidates,
+    merchant_candidate_key,
     merchant_canonical_key,
     merchant_display_label,
     merchant_key,
 )
 
 
-def test_merchant_canonical_key_groups_brand_variants() -> None:
+def test_merchant_candidate_key_groups_brand_variants() -> None:
     keys = {
-        merchant_canonical_key("BIEDRONKA 1234 WARSZAWA"),
-        merchant_canonical_key("Biedronka Warszawa"),
-        merchant_canonical_key("BIEDRONKA PAYU"),
-        merchant_canonical_key("Biedronka"),
+        merchant_candidate_key("BIEDRONKA 1234 WARSZAWA"),
+        merchant_candidate_key("Biedronka Warszawa"),
+        merchant_candidate_key("BIEDRONKA PAYU"),
+        merchant_candidate_key("Biedronka"),
     }
 
     assert keys == {"biedronka"}
 
 
-def test_merchant_canonical_key_groups_legal_suffixes() -> None:
-    assert merchant_canonical_key("Lidl sp. z o.o.") == merchant_canonical_key(
+def test_merchant_candidate_key_groups_legal_suffixes() -> None:
+    assert merchant_candidate_key("Lidl sp. z o.o.") == merchant_candidate_key(
         "LIDL 1234"
     )
 
 
 def test_merchant_key_uses_title_fallback() -> None:
     assert merchant_key("", "LIDL zakupy karta") == "lidl zakupy karta"
-    assert merchant_canonical_key("", "LIDL zakupy karta") == "lidl"
+    assert merchant_candidate_key("", "LIDL zakupy karta") == "lidl"
 
 
 def test_merchant_display_label_collapses_whitespace() -> None:
@@ -44,18 +45,31 @@ def test_merchant_display_label_collapses_whitespace() -> None:
 
 def test_merchant_key_prefers_title_for_generic_bank_label() -> None:
     assert merchant_key("CARD PAYMENT", "CARD PAYMENT NETFLIX.COM") == "card payment netflix com"
-    assert merchant_canonical_key("CARD PAYMENT", "CARD PAYMENT NETFLIX.COM") == "netflix"
+    assert merchant_candidate_key("CARD PAYMENT", "CARD PAYMENT NETFLIX.COM") == "netflix"
 
 
 def test_person_like_merchants_are_not_reduced_to_first_name() -> None:
-    assert merchant_canonical_key("Jan Kowalski") == "jan kowalski"
-    assert merchant_canonical_key("Anna Nowak") == "anna nowak"
+    assert merchant_candidate_key("Jan Kowalski") == "jan kowalski"
+    assert merchant_candidate_key("Anna Nowak") == "anna nowak"
+
+
+def test_unconfirmed_merchant_variants_remain_separate() -> None:
+    assert merchant_canonical_key("ABC Market Centrum") == "abc market centrum"
+    assert merchant_canonical_key("ABC Serwis Rowerowy") == "abc serwis rowerowy"
+
+
+def test_saved_alias_is_the_trusted_merchant_identity() -> None:
+    alias_map = {"abc market centrum": "abc"}
+
+    assert (
+        merchant_canonical_key("ABC Market Centrum", alias_map=alias_map) == "abc"
+    )
 
 
 def test_alias_candidates_for_existing_group_include_only_unresolved_aliases(
     db_session: Session,
 ) -> None:
-    canonical_key = merchant_canonical_key("APTEKA PROMIENNA")
+    canonical_key = merchant_candidate_key("APTEKA PROMIENNA")
     saved_aliases = [
         merchant_key("APTEKA PROMIENNA"),
         merchant_key("APTEKA PROMIENNA 1111"),

@@ -27,6 +27,7 @@ from finance.transactions.mutation_rules import (
     can_assign_expense_category,
     resolve_category_assignment,
 )
+from finance.transactions.normalization import normalize_merchant
 from finance.transactions.type_service import TransactionTypeService
 
 
@@ -179,7 +180,9 @@ class CategoryAssignmentService:
             stmt = stmt.where(Transaction.merchant == merchant)
         rows = self.session.execute(stmt).scalars().all()
         canonical_key = (
-            merchant_canonical_key.strip() if merchant_canonical_key else None
+            normalize_merchant(merchant_canonical_key)
+            if merchant_canonical_key
+            else None
         )
         if canonical_key:
             alias_map, label_map = load_merchant_alias_maps(self.session)

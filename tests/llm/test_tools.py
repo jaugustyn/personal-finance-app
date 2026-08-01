@@ -21,6 +21,7 @@ from finance.llm.tools import (
     top_categories,
     top_merchants,
 )
+from finance.transactions.merchants import create_aliases
 
 
 @pytest.fixture()
@@ -119,7 +120,7 @@ def test_top_merchants_orders_by_total(session):
     assert "Lidl" in names
 
 
-def test_top_merchants_groups_canonical_variants(session):
+def test_top_merchants_groups_saved_aliases(session):
     _add_tx(
         session,
         booking_date=date(2026, 4, 1),
@@ -135,6 +136,11 @@ def test_top_merchants_groups_canonical_variants(session):
         dedup_hash="llm-biedronka-2",
     )
     session.commit()
+    create_aliases(
+        session,
+        canonical_label="Biedronka",
+        aliases=["BIEDRONKA 1234 WARSZAWA", "Biedronka PayU"],
+    )
 
     res = top_merchants(session, {"period": "2026-04", "limit": 5})
 

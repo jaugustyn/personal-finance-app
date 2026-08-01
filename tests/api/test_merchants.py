@@ -165,6 +165,8 @@ def test_merchant_alias_suggestions_skip_saved_aliases(client, db_session) -> No
     )
     assert created.status_code == 201
     assert created.json()[0]["usage_count"] == 1
+    assert Decimal(created.json()[0]["total_expenses"]) == Decimal("59.99")
+    assert created.json()[0]["base_currency"] == "PLN"
     assert created.json()[0]["alias_label"] == "NETFLIX.COM AMSTERDAM"
 
     response = client.get("/merchants/suggestions", params={"q": "netflix"})
@@ -193,6 +195,21 @@ def test_merchant_alias_crud(client) -> None:
 
     deleted = client.delete(f"/merchants/aliases/{rows[0]['id']}")
     assert deleted.status_code == 204
+    assert len(client.get("/merchants/aliases").json()) == 1
+
+
+def test_merchant_alias_create_deduplicates_normalized_values(client) -> None:
+    response = client.post(
+        "/merchants/aliases",
+        json={
+            "canonical_label": "Netflix",
+            "aliases": [" NETFLIX.COM ", "netflix.com"],
+        },
+    )
+
+    assert response.status_code == 201
+    assert len(response.json()) == 1
+    assert response.json()[0]["alias_key"] == "netflix com"
     assert len(client.get("/merchants/aliases").json()) == 1
 
 
@@ -365,3 +382,31 @@ def test_alias_changes_top_merchants_without_updating_transactions(
 
     original = db_session.query(Transaction).filter_by(dedup_hash="alias-kik").one()
     assert original.merchant == "KIK WARSZAWA"
+
+
+def test_unconfirmed_candidate_group_does_not_merge_top_merchants(
+    client,
+    db_session,
+) -> None:
+    _tx(
+        db_session,
+        merchant="ABC MARKET CENTRUM",
+        amount=Decimal("-10"),
+        dedup_hash="unconfirmed-abc-market",
+    )
+    _tx(
+        db_session,
+        merchant="ABC SERWIS ROWEROWY",
+        amount=Decimal("-20"),
+        dedup_hash="unconfirmed-abc-service",
+    )
+
+    response = client.get("/stats/top-merchants?months=120&limit=5")
+
+    assert response.status_code == 200
+    rows = response.json()
+    assert {row["merchant"] for row in rows} >= {
+        "ABC MARKET CENTRUM",
+        "ABC SERWIS ROWEROWY",
+    }
+    assert all(row["count"] == 1 for row in rows if row["merchant"].startswith("ABC "))

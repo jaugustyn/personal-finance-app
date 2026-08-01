@@ -6,7 +6,7 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from decimal import Decimal
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, case, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -75,6 +75,12 @@ GENERIC_MERCHANT_KEYS = {
 
 class MerchantAliasConflict(ValueError):
     """Raised when concurrent alias updates target the same normalized alias."""
+
+
+@dataclass
+class MerchantAliasUsage:
+    count: int = 0
+    total_expenses: Decimal = Decimal(0)
 
 
 @dataclass
@@ -162,7 +168,22 @@ def merchant_canonical_key(
     *,
     alias_map: dict[str, str] | None = None,
 ) -> str:
-    """Canonical merchant key, using user aliases before heuristic fallback."""
+    """Trusted merchant key: a saved alias or the exact normalized raw variant."""
+    alias_key = merchant_key(merchant, title)
+    if not alias_key:
+        return ""
+    if alias_map and alias_key in alias_map:
+        return alias_map[alias_key]
+    return alias_key
+
+
+def merchant_candidate_key(
+    merchant: str | None,
+    title: str | None = None,
+    *,
+    alias_map: dict[str, str] | None = None,
+) -> str:
+    """Heuristic grouping used only for suggestions and leakage-safe validation."""
     alias_key = merchant_key(merchant, title)
     if not alias_key:
         return ""
@@ -185,6 +206,20 @@ def heuristic_merchant_canonical_key(alias_key: str) -> str:
     if len(tokens) == 2 and _looks_like_person_name(tokens):
         return " ".join(tokens)
     return tokens[0]
+
+
+def _candidate_existing_groups(alias_map: dict[str, str]) -> dict[str, str]:
+    """Map a heuristic key to an existing group only when the match is unique."""
+    matches: defaultdict[str, set[str]] = defaultdict(set)
+    for alias_key, canonical_key in alias_map.items():
+        candidate_key = heuristic_merchant_canonical_key(alias_key)
+        if candidate_key:
+            matches[candidate_key].add(canonical_key)
+    return {
+        candidate_key: next(iter(canonical_keys))
+        for candidate_key, canonical_keys in matches.items()
+        if len(canonical_keys) == 1
+    }
 
 
 def merchant_identity(
@@ -232,23 +267,49 @@ def alias_usage_counts(
     session: Session,
     alias_keys: Iterable[str],
 ) -> dict[str, int]:
-    keys = {key for key in alias_keys if key}
-    counts = dict.fromkeys(keys, 0)
-    if not keys:
-        return counts
+    return {
+        key: usage.count
+        for key, usage in alias_usage_stats(session, alias_keys).items()
+    }
 
+
+def alias_usage_stats(
+    session: Session,
+    alias_keys: Iterable[str],
+) -> dict[str, MerchantAliasUsage]:
+    keys = {key for key in alias_keys if key}
+    stats = {key: MerchantAliasUsage() for key in keys}
+    if not keys:
+        return stats
+
+    amount = amount_base_expr()
+    expense_condition = and_(
+        *expense_category_candidate_filters(),
+        Transaction.direction == "debit",
+        amount.is_not(None),
+    )
     rows = session.execute(
         select(
             Transaction.merchant,
             Transaction.title,
             func.count(Transaction.id),
+            func.sum(
+                case(
+                    (expense_condition, func.abs(amount)),
+                    else_=0,
+                )
+            ),
         ).group_by(Transaction.merchant, Transaction.title)
     )
-    for merchant, title, count in rows:
+    for merchant, title, count, total_expenses in rows:
         alias_key = merchant_key(merchant, title)
-        if alias_key in counts:
-            counts[alias_key] += int(count)
-    return counts
+        if alias_key in stats:
+            usage = stats[alias_key]
+            usage.count += int(count)
+            usage.total_expenses += Decimal(str(total_expenses or 0)).quantize(
+                Decimal("0.01")
+            )
+    return stats
 
 
 def create_aliases(
@@ -284,7 +345,7 @@ def _upsert_aliases(
     canonical_key = (
         normalize_merchant(canonical_key)
         if canonical_key
-        else heuristic_merchant_canonical_key(normalize_merchant(canonical_label))
+        else normalize_merchant(canonical_label)
     )
     if not canonical_label or not canonical_key:
         raise ValueError("canonical_label is required")
@@ -303,11 +364,13 @@ def _upsert_aliases(
     if existing_group_label:
         canonical_label = existing_group_label
     out: list[MerchantAlias] = []
+    seen_alias_keys: set[str] = set()
     for alias_label in aliases:
         label = compact_merchant_label(alias_label)
         alias_key = merchant_key(label)
-        if not label or not alias_key:
+        if not label or not alias_key or alias_key in seen_alias_keys:
             continue
+        seen_alias_keys.add(alias_key)
         row = existing.get(alias_key)
         if row is None:
             row = MerchantAlias(
@@ -371,9 +434,8 @@ def alias_suggestions(
     query = normalize_merchant(q)
     if not query:
         return []
-    resolver = load_merchant_identity_resolver(session)
-    alias_map = resolver.alias_map
-    label_map = resolver.label_map
+    alias_map, label_map = load_merchant_alias_maps(session)
+    existing_groups = _candidate_existing_groups(alias_map)
     amount = amount_base_expr()
     rows = session.execute(
         select(
@@ -395,7 +457,12 @@ def alias_suggestions(
         label = merchant_display_label(merchant, title)
         if query not in alias_key and query not in normalize_merchant(label):
             continue
-        canonical_key = resolver.resolve(merchant, title).canonical_key
+        canonical_key = merchant_candidate_key(
+            merchant,
+            title,
+            alias_map=alias_map,
+        )
+        canonical_key = existing_groups.get(canonical_key, canonical_key)
         variant = variants[alias_key]
         variant.labels[label] += int(count)
         variant.count += int(count)
@@ -432,9 +499,8 @@ def alias_candidates(
     sort_by: str = "count",
     sort_dir: str = "desc",
 ) -> list[MerchantCandidate]:
-    resolver = load_merchant_identity_resolver(session)
-    alias_map = resolver.alias_map
-    label_map = resolver.label_map
+    alias_map, label_map = load_merchant_alias_maps(session)
+    existing_groups = _candidate_existing_groups(alias_map)
     amount = amount_base_expr()
     rows = session.execute(
         select(
@@ -455,17 +521,22 @@ def alias_candidates(
         _MerchantCandidateAccumulator
     )
     for merchant, title, total, count in rows:
-        identity = resolver.resolve(merchant, title)
-        if not identity.canonical_key:
+        canonical_key = merchant_candidate_key(
+            merchant,
+            title,
+            alias_map=alias_map,
+        )
+        canonical_key = existing_groups.get(canonical_key, canonical_key)
+        if not canonical_key:
             continue
         label = merchant_display_label(merchant, title)
         alias_key = merchant_key(merchant, title)
-        group = groups[identity.canonical_key]
+        group = groups[canonical_key]
         row_count = int(count)
         row_total = Decimal(total or 0)
         group.labels[label] += row_count
         group.aliases.add(alias_key)
-        if alias_map.get(alias_key) != identity.canonical_key:
+        if alias_map.get(alias_key) != canonical_key:
             group.unresolved_aliases.add(alias_key)
         group.count += row_count
         group.total += row_total

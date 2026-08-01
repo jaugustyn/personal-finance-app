@@ -49,14 +49,16 @@ def transaction_frame(session: Session) -> pd.DataFrame:
         merchant = str(row["merchant"] or "")
         title = str(row["title"] or "")
         identity = resolver.resolve(merchant, title)
-        merchant_norm = identity.canonical_key or normalize_subscription_merchant(
+        saved_canonical_key = resolver.alias_map.get(identity.alias_key)
+        merchant_norm = saved_canonical_key or normalize_subscription_merchant(
             merchant,
             title,
         )
-        merchant_display = identity.display_label or merchant_display_label(
-            merchant,
-            title,
-        )
+        merchant_display = (
+            resolver.label_map.get(saved_canonical_key, "")
+            if saved_canonical_key
+            else ""
+        ) or merchant_display_label(merchant, title)
         items.append(
             {
                 "booking_date": row["booking_date"],

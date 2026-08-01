@@ -16,6 +16,10 @@ from finance.domain.enums import (
     CATEGORY_VALUES,
 )
 from finance.domain.models import Transaction
+from finance.transactions.merchants import (
+    load_merchant_alias_maps,
+    merchant_candidate_key,
+)
 from finance.transactions.type_decision import effective_transaction_type_expr
 
 
@@ -37,6 +41,7 @@ def dtos_to_dataframe(dtos: Iterable[TransactionDTO]) -> pd.DataFrame:
                 "category_confirmed_at": None,
                 "merchant": d.merchant,
                 "title": d.title,
+                "merchant_group": merchant_candidate_key(d.merchant, d.title),
                 "source": d.source.value,
                 "booking_date": d.booking_date,
                 "raw_category": d.raw_category,
@@ -50,6 +55,7 @@ def dtos_to_dataframe(dtos: Iterable[TransactionDTO]) -> pd.DataFrame:
 
 def load_training_set(session: Session) -> pd.DataFrame:
     """Load only explicitly confirmed system-category gold labels from the DB."""
+    alias_map, _ = load_merchant_alias_maps(session)
     stmt = select(Transaction, amount_base_expr().label("base_amount")).where(
         Transaction.category.in_(CATEGORY_VALUES)
     )
@@ -78,6 +84,11 @@ def load_training_set(session: Session) -> pd.DataFrame:
                 "category_origin_ref": r.category_origin_ref,
                 "merchant": r.merchant,
                 "title": r.title,
+                "merchant_group": merchant_candidate_key(
+                    r.merchant,
+                    r.title,
+                    alias_map=alias_map,
+                ),
                 "source": r.source,
                 "booking_date": r.booking_date,
                 "raw_category": r.raw_category,

@@ -22,11 +22,14 @@ export function groupAliases(
     const existing = groups.get(alias.canonical_key);
     if (existing) {
       existing.aliases.push(alias);
+      existing.total_expenses += Number(alias.total_expenses);
     } else {
       groups.set(alias.canonical_key, {
         canonical_key: alias.canonical_key,
         canonical_label: alias.canonical_label,
         aliases: [alias],
+        total_expenses: Number(alias.total_expenses),
+        base_currency: alias.base_currency,
       });
     }
   }

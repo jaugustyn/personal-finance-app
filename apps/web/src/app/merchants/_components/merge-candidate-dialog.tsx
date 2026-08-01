@@ -233,7 +233,7 @@ function MergeCandidateForm({
         })}
       </div>
 
-      <DialogFooter className="pt-1">
+      <DialogFooter>
         <Button
           type="button"
           variant="outline"

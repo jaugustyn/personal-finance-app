@@ -25,24 +25,29 @@ router = APIRouter(prefix="/merchants", tags=["merchants"])
 
 def _alias_rows(session: Session, rows: Iterable[object]) -> list[MerchantAliasRow]:
     serialized = [MerchantAliasRow.model_validate(row) for row in rows]
-    counts = merchant_service.alias_usage_counts(
+    usage_stats = merchant_service.alias_usage_stats(
         session,
         (row.alias_key for row in serialized),
     )
-    return [
-        row.model_copy(
-            update={
-                "alias_label": merchant_service.compact_merchant_label(
-                    row.alias_label
-                ),
-                "canonical_label": merchant_service.compact_merchant_label(
-                    row.canonical_label
-                ),
-                "usage_count": counts.get(row.alias_key, 0),
-            }
+    result: list[MerchantAliasRow] = []
+    for row in serialized:
+        usage = usage_stats[row.alias_key]
+        result.append(
+            row.model_copy(
+                update={
+                    "alias_label": merchant_service.compact_merchant_label(
+                        row.alias_label
+                    ),
+                    "canonical_label": merchant_service.compact_merchant_label(
+                        row.canonical_label
+                    ),
+                    "usage_count": usage.count,
+                    "total_expenses": usage.total_expenses,
+                    "base_currency": BASE_CURRENCY,
+                }
+            )
         )
-        for row in serialized
-    ]
+    return result
 
 
 @router.get("/aliases", response_model=list[MerchantAliasRow])

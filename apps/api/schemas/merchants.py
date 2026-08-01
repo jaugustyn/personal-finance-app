@@ -17,6 +17,8 @@ class MerchantAliasRow(BaseModel):
     canonical_key: str
     canonical_label: str
     usage_count: int = 0
+    total_expenses: Decimal = Decimal(0)
+    base_currency: str = "PLN"
     created_at: datetime | None = None
 
     model_config = {"from_attributes": True}

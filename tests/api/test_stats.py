@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from apps.api.main import app
 from finance.domain.models import Transaction
 from finance.stats import service as stats_service
+from finance.transactions.merchants import create_aliases
 
 client = TestClient(app, raise_server_exceptions=False)
 
@@ -389,7 +390,7 @@ def test_top_merchants_excludes_transfers_by_default(
     assert with_transfers_response.json()[0]["merchant"] == "Own Broker"
 
 
-def test_top_merchants_groups_normalized_merchant_variants(
+def test_top_merchants_groups_saved_merchant_aliases(
     client: TestClient,
     db_session: Session,
 ) -> None:
@@ -426,6 +427,11 @@ def test_top_merchants_groups_normalized_merchant_variants(
         dedup_hash="stats-top-other",
     )
     db_session.commit()
+    create_aliases(
+        db_session,
+        canonical_label="Lidl",
+        aliases=["LIDL 1234", "Lidl sp. z o.o.", "LIDL zakupy karta"],
+    )
 
     response = client.get("/stats/top-merchants?months=120&limit=5")
 

@@ -283,6 +283,36 @@ def test_list_merchant_sort_is_global(client, db_session) -> None:
     assert [row["id"] for row in second_page] == [zulu.id]
 
 
+def test_canonical_merchant_filter_normalizes_user_input(client, db_session) -> None:
+    db_session.add(
+        MerchantAlias(
+            alias_key="aaa raw",
+            alias_label="AAA RAW",
+            canonical_key="zulu",
+            canonical_label="Zulu",
+        )
+    )
+    db_session.commit()
+    matching = _seed(
+        db_session,
+        merchant="AAA RAW",
+        dedup_hash="h-normalized-merchant-filter-match",
+    )
+    _seed(
+        db_session,
+        merchant="Other",
+        dedup_hash="h-normalized-merchant-filter-other",
+    )
+
+    response = client.get(
+        "/transactions",
+        params={"merchant_canonical_key": "  ZULU  "},
+    )
+
+    assert response.status_code == 200
+    assert [row["id"] for row in response.json()] == [matching.id]
+
+
 def test_list_rejects_unknown_sort_field(client) -> None:
     response = client.get("/transactions?sort_by=unknown")
 

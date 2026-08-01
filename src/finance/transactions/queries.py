@@ -31,7 +31,7 @@ from finance.transactions.merchants import (
     load_merchant_identity_resolver,
     merchant_display_label,
 )
-from finance.transactions.normalization import normalize_text
+from finance.transactions.normalization import normalize_merchant, normalize_text
 from finance.transactions.type_decision import (
     TYPE_GOLD_METHODS,
     effective_transaction_type,
@@ -51,7 +51,7 @@ from finance.transactions.types import (
 
 def _merchant_canonical_key_filter(filters: TransactionFilters) -> str | None:
     value = filters.merchant_canonical_key
-    return value.strip() if value else None
+    return normalize_merchant(value) if value else None
 
 
 def _filter_rows_by_merchant_canonical_key(

@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 from finance.domain.enums import Category
 from finance.domain.models import MlEvaluationMember, MlEvaluationSet
 from finance.ml.classification.dataset import load_training_set
-from finance.transactions.merchants import merchant_canonical_key
+from finance.transactions.merchants import merchant_candidate_key
 
 ONTOLOGY_VERSION = "category_v1"
 THESIS_MIN_TOTAL = 800
@@ -44,13 +44,14 @@ def dataset_fingerprint(df: pd.DataFrame) -> str:
         "booking_date",
         "merchant",
         "title",
+        "merchant_group",
         "abs_amount",
         "day_of_week",
         "source",
         "direction",
         "transaction_type",
     )
-    digest = hashlib.sha256(b"category_dataset_v2\0")
+    digest = hashlib.sha256(b"category_dataset_v3\0")
     for row in df.sort_values("transaction_id").itertuples(index=False):
         values = []
         for column in columns:
@@ -161,11 +162,24 @@ def _time_holdout(df: pd.DataFrame) -> pd.DataFrame:
 
 def _merchant_holdout(df: pd.DataFrame) -> pd.DataFrame:
     work = df.copy()
+    supplied_groups = (
+        work["merchant_group"]
+        if "merchant_group" in work.columns
+        else pd.Series([None] * len(work), index=work.index)
+    )
     work["merchant_group"] = [
-        merchant_canonical_key(str(merchant or ""), str(title or ""))
+        _optional_text(supplied_group)
+        or merchant_candidate_key(
+            _optional_text(merchant),
+            _optional_text(title),
+        )
         or f"missing:{transaction_id}"
-        for merchant, title, transaction_id in zip(
-            work["merchant"], work["title"], work["transaction_id"], strict=False
+        for merchant, title, transaction_id, supplied_group in zip(
+            work["merchant"],
+            work["title"],
+            work["transaction_id"],
+            supplied_groups,
+            strict=False,
         )
     ]
     splitter = StratifiedGroupKFold(
@@ -224,9 +238,12 @@ def freeze_evaluation_set(session: Session) -> MlEvaluationSet:
     session.flush()
     for split, frame in (("time", time_holdout), ("merchant", merchant_holdout)):
         for row in frame.itertuples(index=False):
-            merchant_key = merchant_canonical_key(
-                str(row.merchant or ""), str(row.title or "")
-            )
+            merchant_key = _optional_text(getattr(row, "merchant_group", None)) or (
+                merchant_candidate_key(
+                    _optional_text(row.merchant),
+                    _optional_text(row.title),
+                )
+            ) or f"missing:{row.transaction_id}"
             session.add(
                 MlEvaluationMember(
                     evaluation_set_id=evaluation_set.id,
@@ -240,6 +257,12 @@ def freeze_evaluation_set(session: Session) -> MlEvaluationSet:
     session.commit()
     session.refresh(evaluation_set)
     return evaluation_set
+
+
+def _optional_text(value: object) -> str:
+    if value is None or bool(pd.isna(value)):
+        return ""
+    return str(value).strip()
 
 
 def invalidate_for_label_change(

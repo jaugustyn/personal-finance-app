@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import date, timedelta
 from decimal import Decimal
 
-from finance.domain.models import Transaction
+from finance.domain.models import MerchantAlias, Transaction
 from finance.ml.anomaly import service as anomaly_service
 
 
@@ -74,6 +74,44 @@ def test_anomalies_return_reason_list_and_exclude_transfers(client, db_session) 
     assert {row["base_currency"] for row in rows} == {"PLN"}
     assert "Own transfer" not in {row["merchant"] for row in rows}
     assert "Missing conversion" not in {row["merchant"] for row in rows}
+
+
+def test_anomaly_frame_uses_only_saved_aliases_for_merchant_identity(
+    db_session,
+) -> None:
+    db_session.add_all(
+        [
+            MerchantAlias(
+                alias_key="shop north",
+                alias_label="Shop North",
+                canonical_key="shop",
+                canonical_label="Shop",
+            ),
+            MerchantAlias(
+                alias_key="shop south",
+                alias_label="Shop South",
+                canonical_key="shop",
+                canonical_label="Shop",
+            ),
+            _tx(1, amount=Decimal("-40"), merchant="Shop North"),
+            _tx(2, amount=Decimal("-50"), merchant="Shop South"),
+            _tx(3, amount=Decimal("-60"), merchant="Shop Other"),
+        ]
+    )
+    db_session.commit()
+
+    frame = anomaly_service._transaction_frame(
+        db_session,
+        date_from=None,
+        date_to=None,
+    )
+
+    assert frame.loc[frame["merchant"] == "Shop North", "merchant_key"].item() == "shop"
+    assert frame.loc[frame["merchant"] == "Shop South", "merchant_key"].item() == "shop"
+    assert (
+        frame.loc[frame["merchant"] == "Shop Other", "merchant_key"].item()
+        == "shop other"
+    )
 
 
 def test_anomaly_feedback_endpoint_updates_quality_summary(client, db_session) -> None:

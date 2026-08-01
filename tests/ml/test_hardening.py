@@ -13,7 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import sessionmaker
 
 from finance.domain.enums import Category
-from finance.domain.models import MlModelVersion, MlTrainingJob, Transaction
+from finance.domain.models import MerchantAlias, MlModelVersion, MlTrainingJob, Transaction
 from finance.llm import client as llm_client
 from finance.ml.classification import lifecycle
 from finance.ml.classification.artifacts import (
@@ -98,6 +98,35 @@ def test_db_training_set_contains_only_confirmed_system_categories(db_session) -
 
     assert frame["category"].tolist() == ["food"]
     assert frame.iloc[0]["category_confirmation_method"] == "manual"
+
+
+def test_training_set_uses_saved_aliases_for_merchant_group(db_session) -> None:
+    db_session.add_all(
+        [
+            MerchantAlias(
+                alias_key="market centrum",
+                alias_label="Market Centrum",
+                canonical_key="market",
+                canonical_label="Market",
+            ),
+            MerchantAlias(
+                alias_key="market express",
+                alias_label="Market Express",
+                canonical_key="market",
+                canonical_label="Market",
+            ),
+        ]
+    )
+    first = _transaction(10, category="food", confirmed=True)
+    first.merchant = "Market Centrum"
+    second = _transaction(11, category="food", confirmed=True)
+    second.merchant = "Market Express"
+    db_session.add_all([first, second])
+    db_session.commit()
+
+    frame = load_training_set(db_session)
+
+    assert set(frame["merchant_group"]) == {"market"}
 
 
 def test_confidence_policy_requires_support_and_never_fabricates_probability() -> None:
@@ -209,6 +238,33 @@ def test_validation_split_error_reports_class_counts() -> None:
         match="validation_split_not_feasible.*counts=",
     ):
         development_split_ids(frame)
+
+
+def test_merchant_holdout_keeps_supplied_merchant_groups_together() -> None:
+    rows = []
+    transaction_id = 1
+    for group_index in range(5):
+        for _ in range(2):
+            for category in ("food", "transport"):
+                rows.append(
+                    {
+                        "transaction_id": transaction_id,
+                        "category": category,
+                        "merchant": f"variant-{transaction_id}",
+                        "title": "purchase",
+                        "merchant_group": f"confirmed-group-{group_index}",
+                        "booking_date": date(2025, 1, 1)
+                        + timedelta(days=transaction_id),
+                    }
+                )
+                transaction_id += 1
+    frame = pd.DataFrame(rows)
+
+    merchant_ids = development_split_ids(frame)["merchant"]
+
+    for _, group in frame.groupby("merchant_group"):
+        group_ids = set(group["transaction_id"].astype(int))
+        assert group_ids <= merchant_ids or group_ids.isdisjoint(merchant_ids)
 
 
 def test_candidate_uses_both_primary_holdouts_and_reports_calibration() -> None:
@@ -387,6 +443,9 @@ def test_dataset_fingerprint_tracks_features_and_ignores_row_order() -> None:
     changed = frame.copy()
     changed.loc[changed["transaction_id"] == 1, "title"] = "Inne zakupy"
     assert dataset_fingerprint(changed) != original
+    regrouped = frame.copy()
+    regrouped["merchant_group"] = ["orlen", "discount-store"]
+    assert dataset_fingerprint(regrouped) != original
 
 
 def test_recommendation_matches_exact_model_version() -> None:

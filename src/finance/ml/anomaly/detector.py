@@ -9,7 +9,7 @@ import pandas as pd
 from sklearn.ensemble import IsolationForest
 
 from finance.analytics.filters import expense_category_candidate_mask
-from finance.transactions.merchants import merchant_canonical_key
+from finance.transactions.merchants import merchant_key as normalized_merchant_key
 
 ANOMALY_EXCLUDED_TRANSACTION_TYPES: set[str] = {
     "own_transfer",
@@ -62,7 +62,7 @@ def _merchant_key(df: pd.DataFrame) -> pd.Series:
     )
     return pd.Series(
         [
-            merchant_canonical_key(merchant_value, title_value)
+            normalized_merchant_key(merchant_value, title_value)
             for merchant_value, title_value in zip(merchant, title, strict=False)
         ],
         index=df.index,

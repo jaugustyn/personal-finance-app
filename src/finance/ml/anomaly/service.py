@@ -121,6 +121,15 @@ def _transaction_frame(
     frame["base_currency"] = BASE_CURRENCY
     frame["merchant"] = frame["merchant"].fillna("")
     frame["title"] = frame["title"].fillna("")
+    resolver = load_merchant_identity_resolver(session)
+    frame["merchant_key"] = [
+        resolver.resolve(merchant, title).canonical_key
+        for merchant, title in zip(
+            frame["merchant"],
+            frame["title"],
+            strict=False,
+        )
+    ]
     return frame
 
 

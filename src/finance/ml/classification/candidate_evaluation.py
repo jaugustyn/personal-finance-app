@@ -29,7 +29,7 @@ from finance.ml.classification.pipeline import (
     to_features_v2,
 )
 from finance.ml.classification.registry import ESTIMATORS
-from finance.transactions.merchants import merchant_canonical_key
+from finance.transactions.merchants import merchant_candidate_key
 
 PROMOTABLE_ESTIMATORS = ("logreg", "linear_svc_calibrated")
 PROMOTABLE_FEATURE_SETS = ("baseline",)
@@ -144,16 +144,35 @@ def _builders(feature_set: str):
 
 
 def _merchant_groups(df: pd.DataFrame) -> pd.Series:
+    supplied_groups = (
+        df["merchant_group"]
+        if "merchant_group" in df.columns
+        else pd.Series([None] * len(df), index=df.index)
+    )
     return pd.Series(
         [
-            merchant_canonical_key(str(merchant or ""), str(title or ""))
+            _optional_text(supplied_group)
+            or merchant_candidate_key(
+                _optional_text(merchant),
+                _optional_text(title),
+            )
             or f"missing:{transaction_id}"
-            for merchant, title, transaction_id in zip(
-                df["merchant"], df["title"], df["transaction_id"], strict=False
+            for merchant, title, transaction_id, supplied_group in zip(
+                df["merchant"],
+                df["title"],
+                df["transaction_id"],
+                supplied_groups,
+                strict=False,
             )
         ],
         index=df.index,
     )
+
+
+def _optional_text(value: object) -> str:
+    if value is None or bool(pd.isna(value)):
+        return ""
+    return str(value).strip()
 
 
 def development_split_ids(df: pd.DataFrame) -> dict[str, set[int]]:
