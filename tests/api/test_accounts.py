@@ -2,7 +2,7 @@
 
 import csv
 import io
-from datetime import date
+from datetime import UTC, date, datetime
 from decimal import Decimal
 
 import pytest
@@ -106,6 +106,7 @@ def test_account_row_aggregates_imports_transactions_and_currencies(
         total_rows=2,
         inserted=2,
         duplicates=0,
+        created_at=datetime(2026, 7, 2, 10, 30, tzinfo=UTC),
     )
     db_session.add(import_row)
     db_session.flush()
@@ -120,6 +121,7 @@ def test_account_row_aggregates_imports_transactions_and_currencies(
     assert row["import_count"] == 1
     assert row["currencies"] == ["EUR", "PLN"]
     assert row["last_transaction_date"] == "2026-07-01"
+    assert row["last_imported_at"].startswith("2026-07-02T10:30:00")
 
 
 def test_transaction_deduplication_is_scoped_to_account(db_session) -> None:

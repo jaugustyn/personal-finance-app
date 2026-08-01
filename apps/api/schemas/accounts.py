@@ -28,5 +28,6 @@ class AccountRow(BaseModel):
     import_count: int
     currencies: list[str]
     last_transaction_date: date | None
+    last_imported_at: datetime | None
 
     model_config = {"from_attributes": True}

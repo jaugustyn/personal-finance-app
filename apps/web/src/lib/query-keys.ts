@@ -153,6 +153,7 @@ function invalidateRoots(queryClient: QueryClient, roots: readonly QueryKey[]) {
 
 const transactionDerivedRoots: readonly QueryKey[] = [
   queryKeys.accounts.all,
+  queryKeys.categories.all,
   queryKeys.transactions.all,
   queryKeys.dashboard.all,
   queryKeys.recap.all,

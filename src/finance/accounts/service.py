@@ -39,6 +39,7 @@ class AccountView:
     import_count: int
     currencies: tuple[str, ...]
     last_transaction_date: date | None
+    last_imported_at: datetime | None
 
 
 def normalize_account_name(name: str) -> str:
@@ -159,10 +160,14 @@ def list_accounts(session: Session, *, include_archived: bool = False) -> list[A
             .group_by(Transaction.account_id)
         )
     }
-    import_counts = {
-        int(account_id): int(count)
-        for account_id, count in session.execute(
-            select(Import.account_id, func.count(Import.id))
+    import_stats = {
+        int(account_id): (int(count), last_imported_at)
+        for account_id, count, last_imported_at in session.execute(
+            select(
+                Import.account_id,
+                func.count(Import.id),
+                func.max(Import.created_at),
+            )
             .where(Import.account_id.in_(ids))
             .group_by(Import.account_id)
         )
@@ -184,9 +189,10 @@ def list_accounts(session: Session, *, include_archived: bool = False) -> list[A
             archived_at=row.archived_at,
             updated_at=row.updated_at,
             transaction_count=transaction_stats.get(row.id, (0, None))[0],
-            import_count=import_counts.get(row.id, 0),
+            import_count=import_stats.get(row.id, (0, None))[0],
             currencies=tuple(currencies[row.id]),
             last_transaction_date=transaction_stats.get(row.id, (0, None))[1],
+            last_imported_at=import_stats.get(row.id, (0, None))[1],
         )
         for row in accounts
     ]

@@ -3,28 +3,26 @@
 import Link from "next/link";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Archive, MoreHorizontal, Pencil, Plus, RotateCcw } from "lucide-react";
+import {
+  Archive,
+  MoreHorizontal,
+  Pencil,
+  Plus,
+  RotateCcw,
+  Upload,
+} from "lucide-react";
 import { toast } from "sonner";
 
+import { AccountFormDialog } from "@/components/account-form-dialog";
 import { DataTable, type DataTableColumn } from "@/components/data-table";
-import { FilterSelect } from "@/components/filter-select";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
   api,
   type TransactionAccount,
@@ -35,17 +33,9 @@ import { queryKeys } from "@/lib/query-keys";
 import { showErrorToast } from "@/lib/toasts";
 import { transactionsHref } from "@/lib/transaction-links";
 
-const ACCOUNT_KINDS: TransactionAccountKind[] = [
-  "bank",
-  "savings",
-  "credit_card",
-  "cash",
-  "other",
-];
-
 export default function AccountsPage() {
   const { t } = useT();
-  const { formatDate } = useFormatters();
+  const { formatDate, formatDateTime } = useFormatters();
   const queryClient = useQueryClient();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [edited, setEdited] = useState<TransactionAccount | null>(null);
@@ -136,6 +126,14 @@ export default function AccountsPage() {
         row.last_transaction_date ? formatDate(row.last_transaction_date) : "—",
     },
     {
+      id: "lastImport",
+      header: t("accounts.lastImport"),
+      sortValue: (row) => row.last_imported_at,
+      className: "whitespace-nowrap text-muted-foreground",
+      cell: (row) =>
+        row.last_imported_at ? formatDateTime(row.last_imported_at) : "—",
+    },
+    {
       id: "actions",
       header: "",
       align: "center",
@@ -149,6 +147,14 @@ export default function AccountsPage() {
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
+            {!row.archived_at ? (
+              <DropdownMenuItem asChild>
+                <Link href={`/imports?account_id=${row.id}`}>
+                  <Upload className="h-4 w-4" />
+                  {t("accounts.importData")}
+                </Link>
+              </DropdownMenuItem>
+            ) : null}
             <DropdownMenuItem onClick={() => openEdit(row)}>
               <Pencil className="h-4 w-4" />
               {t("common.edit")}
@@ -171,16 +177,10 @@ export default function AccountsPage() {
   ];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       <PageHeader
         title={t("accounts.title")}
         description={t("accounts.description")}
-        actions={
-          <Button onClick={openCreate}>
-            <Plus className="h-4 w-4" />
-            {t("accounts.add")}
-          </Button>
-        }
       />
 
       <DataTable
@@ -193,6 +193,17 @@ export default function AccountsPage() {
         emptyTitle={t("accounts.empty")}
         initialSort={{ id: "name", dir: "asc" }}
         pagination={{ mode: "client" }}
+        toolbarPosition="bottom"
+        toolbar={
+          <button
+            type="button"
+            onClick={openCreate}
+            className="-mx-3 -my-2 flex w-[calc(100%+1.5rem)] items-center gap-2 px-3 py-2.5 text-left text-sm font-medium text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+          >
+            <Plus className="h-4 w-4" />
+            {t("accounts.add")}
+          </button>
+        }
       />
 
       {archived.length > 0 ? (
@@ -210,54 +221,17 @@ export default function AccountsPage() {
         </details>
       ) : null}
 
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>
-              {t(edited ? "accounts.editTitle" : "accounts.addTitle")}
-            </DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 py-1">
-            <div className="space-y-1.5">
-              <Label htmlFor="account-name">{t("accounts.name")}</Label>
-              <Input
-                id="account-name"
-                value={name}
-                onChange={(event) => setName(event.target.value)}
-                placeholder={t("accounts.namePlaceholder")}
-                autoFocus
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label>{t("accounts.kind")}</Label>
-              <FilterSelect
-                value={kind}
-                onValueChange={(next) => setKind(next as TransactionAccountKind)}
-                options={ACCOUNT_KINDS.map((item) => ({
-                  value: item,
-                  label: t(`accounts.kind.${item}`),
-                }))}
-                ariaLabel={t("accounts.kind")}
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setDialogOpen(false)}
-              disabled={saveMutation.isPending}
-            >
-              {t("common.cancel")}
-            </Button>
-            <Button
-              onClick={() => saveMutation.mutate()}
-              disabled={!name.trim() || saveMutation.isPending}
-            >
-              {t("common.save")}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <AccountFormDialog
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        mode={edited ? "edit" : "create"}
+        name={name}
+        onNameChange={setName}
+        kind={kind}
+        onKindChange={setKind}
+        pending={saveMutation.isPending}
+        onSubmit={() => saveMutation.mutate()}
+      />
     </div>
   );
 }

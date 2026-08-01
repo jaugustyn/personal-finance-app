@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { History, Landmark, Receipt, Trash2 } from "lucide-react";
+import { Landmark, MoreHorizontal, Receipt, Trash2 } from "lucide-react";
 
 import { api, type ImportHistoryRow } from "@/lib/api";
 import { useFormatters, useT } from "@/lib/i18n";
@@ -14,9 +14,15 @@ import { transactionsHref } from "@/lib/transaction-links";
 import { useConfirm } from "@/components/confirm-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DataTable, type DataTableColumn } from "@/components/data-table";
 import { AccountSelect } from "@/components/account-select";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   Dialog,
   DialogContent,
@@ -62,13 +68,31 @@ export function ImportsHistory() {
 
   const onDelete = async (row: ImportHistoryRow) => {
     const ok = await confirm({
-      title: t("imports.history.deleteConfirm", {
-        filename: row.filename,
-        n: row.inserted,
-      }),
+      title: t("imports.history.deleteTitle"),
+      description: t("imports.history.deleteDescription"),
+      details: [
+        {
+          label: t("imports.history.deleteFileLabel"),
+          value: row.filename,
+        },
+        {
+          label: t("imports.history.deleteTransactionsLabel"),
+          value: String(row.inserted),
+        },
+      ],
+      confirmLabel: t("imports.history.deleteAction"),
       destructive: true,
     });
     if (ok) deleteMut.mutate(row.id);
+  };
+  const sourceLabel = (source: string) => {
+    const normalized = source.trim().toLowerCase();
+    if (!normalized || normalized === "unknown" || normalized === "generic") {
+      return t("imports.customFormat");
+    }
+    if (normalized === "pekao") return "Pekao";
+    if (normalized === "revolut") return "Revolut";
+    return source;
   };
   const columns: DataTableColumn<ImportHistoryRow>[] = [
     {
@@ -94,8 +118,8 @@ export function ImportsHistory() {
     {
       id: "source",
       header: t("imports.history.source"),
-      sortValue: (row) => row.source,
-      cell: (row) => <Badge variant="outline">{row.source}</Badge>,
+      sortValue: (row) => sourceLabel(row.source),
+      cell: (row) => <Badge variant="outline">{sourceLabel(row.source)}</Badge>,
     },
     {
       id: "total_rows",
@@ -125,54 +149,64 @@ export function ImportsHistory() {
       id: "actions",
       header: "",
       align: "center",
-      headerClassName: "w-32",
-      className: "w-32",
+      headerClassName: "w-14",
+      className: "w-14",
       cell: (row) => (
-        <div className="flex justify-center gap-1">
-          <Button
-            size="icon"
-            variant="ghost"
-            onClick={() => {
-              setAccountTarget(row);
-              setAccountId(row.account_id);
-            }}
-            aria-label={t("imports.history.changeAccount")}
-          >
-            <Landmark className="h-4 w-4" />
-          </Button>
-          <Button
-            size="icon"
-            variant="ghost"
-            asChild
-            aria-label={t("imports.history.openTransactions")}
-          >
-            <Link href={transactionsHref({ import_id: row.id })}>
-              <Receipt className="h-4 w-4" />
-            </Link>
-          </Button>
-          <Button
-            size="icon"
-            variant="ghost"
-            onClick={() => onDelete(row)}
-            disabled={deleteMut.isPending}
-            aria-label={t("common.delete")}
-          >
-            <Trash2 className="h-4 w-4 text-destructive" />
-          </Button>
-        </div>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-8 w-8"
+              aria-label={t("common.actions")}
+            >
+              <MoreHorizontal className="h-4 w-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem
+              onSelect={() => {
+                setAccountTarget(row);
+                setAccountId(row.account_id);
+              }}
+            >
+              <Landmark className="h-4 w-4" />
+              {t("imports.history.changeAccount")}
+            </DropdownMenuItem>
+            <DropdownMenuItem asChild>
+              <Link href={transactionsHref({ import_id: row.id })}>
+                <Receipt className="h-4 w-4" />
+                {t("imports.history.openTransactions")}
+              </Link>
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              className="text-destructive focus:text-destructive"
+              onSelect={() => void onDelete(row)}
+              disabled={deleteMut.isPending}
+            >
+              <Trash2 className="h-4 w-4" />
+              {t("imports.history.deleteAction")}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       ),
     },
   ];
 
   return (
     <>
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base">
-          <History className="h-4 w-4" /> {t("imports.history.title")}
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="p-0">
+      <section className="space-y-3">
+        <div className="flex min-h-9 items-center gap-2">
+          <h2 className="text-base font-semibold">
+            {t("imports.history.title")}
+          </h2>
+          {!isLoading && !isError ? (
+            <Badge variant="secondary" className="tabular-nums">
+              {imports.length}
+            </Badge>
+          ) : null}
+        </div>
         <DataTable
           columns={columns}
           data={imports}
@@ -183,47 +217,46 @@ export function ImportsHistory() {
           emptyTitle={t("imports.history.empty")}
           initialSort={{ id: "created_at", dir: "desc" }}
           pagination={{ mode: "client" }}
-          className="rounded-none border-0"
+          className="rounded-xl"
         />
-      </CardContent>
-    </Card>
-    <Dialog
-      open={accountTarget !== null}
-      onOpenChange={(open) => {
-        if (!open && !accountMut.isPending) setAccountTarget(null);
-      }}
-    >
-      <DialogContent className="max-w-lg">
-        <DialogHeader>
-          <DialogTitle>{t("imports.history.changeAccountTitle")}</DialogTitle>
-        </DialogHeader>
-        <AccountSelect
-          value={accountId}
-          onChange={setAccountId}
-          disabled={accountMut.isPending}
-          quickCreate={false}
-        />
-        <DialogFooter>
-          <Button
-            variant="outline"
-            onClick={() => setAccountTarget(null)}
+      </section>
+      <Dialog
+        open={accountTarget !== null}
+        onOpenChange={(open) => {
+          if (!open && !accountMut.isPending) setAccountTarget(null);
+        }}
+      >
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{t("imports.history.changeAccountTitle")}</DialogTitle>
+          </DialogHeader>
+          <AccountSelect
+            value={accountId}
+            onChange={setAccountId}
             disabled={accountMut.isPending}
-          >
-            {t("common.cancel")}
-          </Button>
-          <Button
-            onClick={() => accountMut.mutate()}
-            disabled={
-              accountId === null ||
-              accountId === accountTarget?.account_id ||
-              accountMut.isPending
-            }
-          >
-            {t("common.save")}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+            quickCreate={false}
+          />
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setAccountTarget(null)}
+              disabled={accountMut.isPending}
+            >
+              {t("common.cancel")}
+            </Button>
+            <Button
+              onClick={() => accountMut.mutate()}
+              disabled={
+                accountId === null ||
+                accountId === accountTarget?.account_id ||
+                accountMut.isPending
+              }
+            >
+              {t("common.save")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

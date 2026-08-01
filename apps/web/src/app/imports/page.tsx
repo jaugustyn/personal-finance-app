@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { AlertCircle, FileSpreadsheet, Loader2 } from "lucide-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { AlertCircle, FileSpreadsheet, Landmark, Loader2 } from "lucide-react";
 import {
   api,
   type ImportPreview,
@@ -13,10 +13,11 @@ import { PageHeader } from "@/components/page-header";
 import { toast } from "sonner";
 import { useT } from "@/lib/i18n";
 import { showErrorToast } from "@/lib/toasts";
-import { invalidateImportData } from "@/lib/query-keys";
+import { invalidateImportData, queryKeys } from "@/lib/query-keys";
 import { Dropzone } from "./_components/dropzone";
 import { ImportPreviewDialog } from "./_components/import-preview-dialog";
 import { ImportsHistory } from "./_components/imports-history";
+import { SuccessBox } from "./_components/success-box";
 import {
   LOGICAL_FIELDS,
   type FieldKey,
@@ -29,11 +30,29 @@ export default function ImportsPage() {
   const [preview, setPreview] = useState<ImportPreview | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
   const latestMappingPreviewKey = useRef<string | null>(null);
+  const preferredAccountId = useRef<number | null>(null);
   const [mapping, setMapping] = useState<Record<FieldKey, string>>(
     {} as Record<FieldKey, string>,
   );
   const [skipCategories, setSkipCategories] = useState(false);
   const [accountId, setAccountId] = useState<number | null>(null);
+  const accountsQuery = useQuery({
+    queryKey: queryKeys.accounts.list(),
+    queryFn: () => api.accounts(),
+  });
+  const selectedAccount = accountsQuery.data?.find(
+    (account) => account.id === accountId,
+  );
+
+  /* eslint-disable react-hooks/set-state-in-effect -- initialize the import context from the client URL after hydration */
+  useEffect(() => {
+    const nextAccountId = parsePositiveId(
+      new URLSearchParams(window.location.search).get("account_id"),
+    );
+    preferredAccountId.current = nextAccountId;
+    setAccountId(nextAccountId);
+  }, []);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const previewMut = useMutation({
     mutationFn: (f: File) => api.previewImport(f),
@@ -46,8 +65,11 @@ export default function ImportsPage() {
         if (v) seeded[key] = v;
       }
       setMapping(seeded);
-      if (p.suggested_account_id !== null) {
-        setAccountId(p.suggested_account_id);
+      const nextAccountId =
+        preferredAccountId.current ?? p.suggested_account_id;
+      if (nextAccountId !== null) {
+        preferredAccountId.current = nextAccountId;
+        setAccountId(nextAccountId);
       }
     },
     onError: (error) => showErrorToast(error, t("toast.error")),
@@ -90,6 +112,12 @@ export default function ImportsPage() {
       }),
     onSuccess: () => {
       void invalidateImportData(qc);
+      setFile(null);
+      setPreview(null);
+      latestMappingPreviewKey.current = null;
+      setMapping({} as Record<FieldKey, string>);
+      setSkipCategories(false);
+      qualityPreviewMut.reset();
       toast.success(t("toast.imported"));
     },
     onError: (error) => showErrorToast(error, t("toast.error")),
@@ -102,7 +130,7 @@ export default function ImportsPage() {
     latestMappingPreviewKey.current = null;
     setMapping({} as Record<FieldKey, string>);
     setSkipCategories(false);
-    setAccountId(null);
+    setAccountId(preferredAccountId.current);
     uploadMut.reset();
     qualityPreviewMut.reset();
     if (f) previewMut.mutate(f);
@@ -186,57 +214,90 @@ export default function ImportsPage() {
     !qualityPreviewMut.error &&
     (preview?.quality_report.blocking_issues ?? 0) === 0 &&
     (preview?.detected_source ? true : requiredOk);
+  const showPreviewStatus =
+    previewMut.isPending || Boolean(previewMut.error) || Boolean(preview);
+  const showStatusPanel = showPreviewStatus || Boolean(uploadMut.data);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       <PageHeader title={t("imports.title")} />
 
       <Card>
         <CardContent className="pt-6">
-          <Dropzone
-            onFile={onChooseFile}
-            label={file ? file.name : t("imports.dropzone")}
-            disabled={previewMut.isPending || uploadMut.isPending}
-          />
+          {selectedAccount ? (
+            <div className="mb-4 flex items-center gap-2 text-sm">
+              <Landmark className="h-4 w-4 text-muted-foreground" />
+              <span className="text-muted-foreground">
+                {t("imports.selectedAccount")}:
+              </span>
+              <span className="font-medium">{selectedAccount.name}</span>
+            </div>
+          ) : null}
+          <div
+            className={
+              showStatusPanel
+                ? "grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(22rem,1fr)]"
+                : undefined
+            }
+          >
+            <Dropzone
+              key={uploadMut.data?.import_id ?? "empty"}
+              onFile={onChooseFile}
+              label={
+                uploadMut.isPending
+                  ? t("imports.uploading")
+                  : file
+                    ? t("imports.replaceFile")
+                    : t("imports.dropzone")
+              }
+              disabled={previewMut.isPending || uploadMut.isPending}
+            />
+
+            {uploadMut.data ? (
+              <SuccessBox summary={uploadMut.data} />
+            ) : showPreviewStatus ? (
+              <div className="flex min-h-32 min-w-0 flex-col justify-between rounded-md border bg-muted/15 p-4">
+                <div className="flex min-w-0 items-start gap-3">
+                  {previewMut.isPending || uploadMut.isPending ? (
+                    <Loader2 className="mt-0.5 h-4 w-4 shrink-0 animate-spin text-muted-foreground" />
+                  ) : previewMut.error ? (
+                    <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
+                  ) : (
+                    <FileSpreadsheet className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                  )}
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium">
+                      {file?.name ?? t("imports.preview")}
+                    </p>
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      {uploadMut.isPending
+                        ? t("imports.uploading")
+                        : previewMut.isPending
+                          ? t("common.loading")
+                          : previewMut.error
+                            ? (previewMut.error as Error).message
+                            : t("imports.previewReady", {
+                                rows: preview?.quality_report.total_rows ?? 0,
+                              })}
+                    </p>
+                  </div>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="self-end"
+                  onClick={() => setPreviewOpen(true)}
+                  disabled={
+                    uploadMut.isPending || (!preview && !previewMut.error)
+                  }
+                >
+                  {t("imports.openPreview")}
+                </Button>
+              </div>
+            ) : null}
+          </div>
         </CardContent>
       </Card>
-
-      {(previewMut.isPending || previewMut.error || preview) && (
-        <Card>
-          <CardContent className="flex flex-col gap-3 pt-6 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex min-w-0 items-center gap-3">
-              {previewMut.isPending ? (
-                <Loader2 className="h-4 w-4 shrink-0 animate-spin text-muted-foreground" />
-              ) : previewMut.error ? (
-                <AlertCircle className="h-4 w-4 shrink-0 text-destructive" />
-              ) : (
-                <FileSpreadsheet className="h-4 w-4 shrink-0 text-muted-foreground" />
-              )}
-              <div className="min-w-0">
-                <p className="truncate text-sm font-medium">
-                  {file?.name ?? t("imports.preview")}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  {previewMut.isPending
-                    ? t("common.loading")
-                    : previewMut.error
-                      ? (previewMut.error as Error).message
-                      : t("imports.previewReady", {
-                          rows: preview?.quality_report.total_rows ?? 0,
-                        })}
-                </p>
-              </div>
-            </div>
-            <Button
-              variant="outline"
-              onClick={() => setPreviewOpen(true)}
-              disabled={!preview && !previewMut.error}
-            >
-              {t("imports.openPreview")}
-            </Button>
-          </CardContent>
-        </Card>
-      )}
 
       <ImportPreviewDialog
         open={previewOpen}
@@ -252,10 +313,10 @@ export default function ImportsPage() {
         qualityError={qualityPreviewMut.error}
         uploadPending={uploadMut.isPending}
         uploadError={uploadMut.error}
-        uploadData={uploadMut.data}
         canCommit={canCommit}
         onMappingChange={updateMapping}
         onAccountChange={(nextAccountId) => {
+          preferredAccountId.current = nextAccountId;
           setAccountId(nextAccountId);
         }}
         onSkipCategoriesChange={setSkipCategories}
@@ -273,4 +334,10 @@ function cleanImportMapping(mapping: Record<FieldKey, string>): Record<string, s
     if (value) cleaned[key] = value;
   }
   return cleaned;
+}
+
+function parsePositiveId(value: string | null): number | null {
+  if (!value) return null;
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null;
 }

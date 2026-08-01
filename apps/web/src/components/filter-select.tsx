@@ -1,11 +1,12 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { Fragment, type ReactNode } from "react";
 
 import {
   Select,
   SelectContent,
   SelectItem,
+  SelectSeparator,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
@@ -16,6 +17,7 @@ export interface FilterSelectOption {
   label: string;
   leading?: ReactNode;
   muted?: boolean;
+  separatorBefore?: boolean;
 }
 
 export function FilterSelect({
@@ -50,21 +52,20 @@ export function FilterSelect({
       </SelectTrigger>
       <SelectContent className={contentClassName}>
         {options.map((option) => (
-          <SelectItem
-            key={option.value}
-            value={option.value}
-            indicatorPosition="right"
-          >
-            <span
-              className={cn(
-                "flex min-w-0 items-center gap-2",
-                option.muted && "text-muted-foreground",
-              )}
-            >
-              {option.leading}
-              <span className="truncate">{option.label}</span>
-            </span>
-          </SelectItem>
+          <Fragment key={option.value}>
+            {option.separatorBefore ? <SelectSeparator /> : null}
+            <SelectItem value={option.value} indicatorPosition="right">
+              <span
+                className={cn(
+                  "flex min-w-0 items-center gap-2",
+                  option.muted && "text-muted-foreground",
+                )}
+              >
+                {option.leading}
+                <span className="truncate">{option.label}</span>
+              </span>
+            </SelectItem>
+          </Fragment>
         ))}
       </SelectContent>
     </Select>

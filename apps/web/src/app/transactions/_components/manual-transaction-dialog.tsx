@@ -150,8 +150,8 @@ export function ManualTransactionDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="grid gap-4 py-1 sm:grid-cols-2">
-          <div className="space-y-1.5 sm:col-span-2">
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid gap-2 sm:col-span-2">
             <Label htmlFor="manual-transaction-account">
               {t("accounts.selectLabel")}
             </Label>
@@ -167,7 +167,7 @@ export function ManualTransactionDialog({
               }
             />
           </div>
-          <div className="space-y-1.5">
+          <div className="grid gap-2">
             <Label htmlFor="manual-transaction-date">
               {t("transactions.manual.date")}
             </Label>
@@ -180,7 +180,7 @@ export function ManualTransactionDialog({
               ariaLabel={t("transactions.manual.date")}
             />
           </div>
-          <div className="space-y-1.5">
+          <div className="grid gap-2">
             <Label htmlFor="manual-transaction-amount">
               {t("transactions.manual.amount")}
             </Label>
@@ -204,7 +204,7 @@ export function ManualTransactionDialog({
             </div>
           </div>
 
-          <div className="space-y-1.5">
+          <div className="grid gap-2">
             <Label htmlFor="manual-transaction-direction">
               {t("transactions.manual.direction")}
             </Label>
@@ -238,7 +238,7 @@ export function ManualTransactionDialog({
               ariaLabel={t("transactions.manual.direction")}
             />
           </div>
-          <div className="space-y-1.5">
+          <div className="grid gap-2">
             <Label htmlFor="manual-transaction-type">
               {t("transactions.manual.type")}
             </Label>
@@ -264,7 +264,7 @@ export function ManualTransactionDialog({
             />
           </div>
 
-          <div className="space-y-1.5 sm:col-span-2">
+          <div className="grid gap-2 sm:col-span-2">
             <Label htmlFor="manual-transaction-merchant">
               {t("transactions.manual.merchant")}
             </Label>
@@ -279,7 +279,7 @@ export function ManualTransactionDialog({
               }
             />
           </div>
-          <div className="space-y-1.5 sm:col-span-2">
+          <div className="grid gap-2 sm:col-span-2">
             <Label htmlFor="manual-transaction-title">
               {t("transactions.manual.transactionTitle")}
             </Label>
@@ -294,7 +294,7 @@ export function ManualTransactionDialog({
               }
             />
           </div>
-          <div className="space-y-1.5 sm:col-span-2">
+          <div className="grid gap-2 sm:col-span-2">
             <Label htmlFor="manual-transaction-category">
               {t("transactions.manual.category")}
             </Label>
@@ -315,7 +315,7 @@ export function ManualTransactionDialog({
               className="w-full"
             />
           </div>
-          <div className="space-y-1.5 sm:col-span-2">
+          <div className="grid gap-2 sm:col-span-2">
             <Label htmlFor="manual-transaction-notes">
               {t("transactions.manual.notes")}
             </Label>

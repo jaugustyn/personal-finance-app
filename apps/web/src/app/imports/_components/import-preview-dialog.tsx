@@ -1,24 +1,21 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { type ReactNode, useState } from "react";
 import {
   AlertCircle,
+  ChevronDown,
   FileSpreadsheet,
-  HelpCircle,
   Loader2,
   Upload,
 } from "lucide-react";
-import type { ImportPreview, ImportSummary } from "@/lib/api";
+import type { ImportPreview } from "@/lib/api";
 import { AccountSelect } from "@/components/account-select";
 import { useT, type TranslationKey } from "@/lib/i18n";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
-import {
-  DEFAULT_TABLE_PAGE_SIZE,
-  TablePagination,
-} from "@/components/table-pagination";
+import { TablePagination } from "@/components/table-pagination";
 import {
   Dialog,
   DialogContent,
@@ -41,7 +38,6 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { ImportQualityPanel } from "./import-quality-panel";
-import { SuccessBox } from "./success-box";
 import {
   buildCustomWarnings,
   fieldHintKey,
@@ -63,7 +59,6 @@ export function ImportPreviewDialog({
   qualityError,
   uploadPending,
   uploadError,
-  uploadData,
   canCommit,
   onMappingChange,
   onAccountChange,
@@ -83,7 +78,6 @@ export function ImportPreviewDialog({
   qualityError: unknown;
   uploadPending: boolean;
   uploadError: unknown;
-  uploadData: ImportSummary | undefined;
   canCommit: boolean;
   onMappingChange: (key: FieldKey, value: string) => void;
   onAccountChange: (accountId: number) => void;
@@ -96,24 +90,27 @@ export function ImportPreviewDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-h-[92vh] w-[calc(100vw-1.5rem)] max-w-7xl flex-col gap-0 overflow-hidden p-0">
+      <DialogContent className="flex max-h-[90vh] w-[calc(100vw-1.5rem)] max-w-6xl flex-col gap-0 overflow-hidden p-0">
         <DialogHeader className="shrink-0 border-b px-6 py-4">
-          <DialogTitle className="flex items-center gap-2 text-base">
+          <DialogTitle className="flex items-center gap-2">
             <FileSpreadsheet className="h-4 w-4" />
-            {t("imports.preview")}
+            {t("imports.reviewTitle")}
           </DialogTitle>
-          <DialogDescription className="flex flex-wrap items-center gap-x-3 gap-y-1">
-            <span>{file?.name ?? t("imports.title")}</span>
+          <DialogDescription className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <span className="max-w-xl truncate">
+              {file?.name ?? t("imports.title")}
+            </span>
             {preview ? (
               <>
-                <span>{preview.encoding}</span>
-                <span>&quot;{preview.delimiter}&quot;</span>
+                <span aria-hidden="true">·</span>
                 <span>
-                  {t("imports.previewRows", {
-                    shown: preview.sample_rows.length,
-                    total: preview.quality_report.total_rows,
+                  {t("imports.fileRows", {
+                    rows: preview.quality_report.total_rows,
                   })}
                 </span>
+                <Badge variant="outline">
+                  {preview.detected_source ?? t("imports.customFormat")}
+                </Badge>
               </>
             ) : null}
           </DialogDescription>
@@ -130,42 +127,34 @@ export function ImportPreviewDialog({
           {previewError ? <InlineError message={(previewError as Error).message} /> : null}
 
           {preview ? (
-            <div className="space-y-5">
-              <div className="max-w-xl space-y-1.5 rounded-lg border bg-muted/20 p-4">
-                <Label htmlFor="import-account">{t("imports.account")}</Label>
-                <AccountSelect
-                  id="import-account"
-                  value={accountId}
-                  onChange={onAccountChange}
-                  disabled={busy}
+            <div className="space-y-4">
+              <div className="grid gap-4 lg:grid-cols-2 lg:items-start">
+                <section className="rounded-lg border p-4">
+                  <div className="grid gap-2">
+                    <Label htmlFor="import-account">{t("imports.account")}</Label>
+                    <AccountSelect
+                      id="import-account"
+                      value={accountId}
+                      onChange={onAccountChange}
+                      disabled={busy}
+                    />
+                  </div>
+                </section>
+                <ImportQualityPanel report={preview.quality_report} />
+              </div>
+
+              {!preview.detected_source ? (
+                <ColumnMappingSection
+                  preview={preview}
+                  mapping={mapping}
+                  customWarnings={customWarnings}
+                  qualityPending={qualityPending}
+                  qualityError={qualityError}
+                  onMappingChange={onMappingChange}
                 />
-                <p className="text-xs text-muted-foreground">
-                  {t("imports.accountHelp")}
-                </p>
-              </div>
-              <div
-                className={
-                  preview.detected_source
-                    ? "grid gap-5"
-                    : "grid gap-5 lg:grid-cols-[minmax(340px,420px)_1fr]"
-                }
-              >
-                <div className="space-y-4">
-                  <ImportSummaryHeader preview={preview} />
-                  <ImportQualityPanel report={preview.quality_report} />
-                </div>
-                {!preview.detected_source ? (
-                  <ColumnMappingPanel
-                    preview={preview}
-                    mapping={mapping}
-                    customWarnings={customWarnings}
-                    qualityPending={qualityPending}
-                    qualityError={qualityError}
-                    onMappingChange={onMappingChange}
-                  />
-                ) : null}
-              </div>
-              <PreviewRowsTable preview={preview} />
+              ) : null}
+
+              <PreviewRowsSection preview={preview} />
             </div>
           ) : null}
 
@@ -177,65 +166,55 @@ export function ImportPreviewDialog({
             </div>
           ) : null}
 
-          {uploadData ? (
-            <div className="mt-4">
-              <SuccessBox summary={uploadData} />
-            </div>
-          ) : null}
         </div>
 
-        <DialogFooter className="grid shrink-0 gap-4 border-t bg-muted/20 px-6 py-5 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
-          <label className="flex min-w-0 cursor-pointer select-none items-start gap-3 py-1 text-sm text-muted-foreground transition-colors hover:text-foreground">
-            <Checkbox
-              id="skip-categories-checkbox"
-              checked={skipCategories}
-              onCheckedChange={(checked) => onSkipCategoriesChange(checked === true)}
+        <DialogFooter className="grid shrink-0 gap-4 border-t bg-muted/20 px-6 py-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+          <TooltipProvider delayDuration={150}>
+            <label className="flex w-fit cursor-pointer select-none items-center gap-2.5 text-sm font-medium">
+              <Checkbox
+                id="skip-categories-checkbox"
+                checked={skipCategories}
+                onCheckedChange={(value) =>
+                  onSkipCategoriesChange(value === true)
+                }
+                disabled={busy}
+              />
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="cursor-help">
+                    {t("imports.skipCategories")}
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent className="max-w-80">
+                  {t("imports.skipCategoriesHelp")}
+                </TooltipContent>
+              </Tooltip>
+            </label>
+          </TooltipProvider>
+          <div className="flex justify-end gap-2">
+            <Button
+              variant="outline"
+              onClick={() => onOpenChange(false)}
               disabled={busy}
-              className="mt-1"
-            />
-            <span className="grid min-w-0 gap-1">
-              <span className="text-sm font-semibold leading-none text-foreground">
-                {t("imports.skipCategories")}
-              </span>
-              <span className="max-h-9 overflow-hidden text-xs leading-snug text-muted-foreground">
-                {t("imports.skipCategoriesHelp")}
-              </span>
-            </span>
-          </label>
-
-          <Button onClick={onCommit} disabled={!canCommit} className="min-w-32 sm:justify-self-end">
-            {busy ? (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            ) : (
-              <Upload className="mr-2 h-4 w-4" />
-            )}
-            {t("imports.upload")}
-          </Button>
+            >
+              {t("common.cancel")}
+            </Button>
+            <Button onClick={onCommit} disabled={!canCommit} className="min-w-32">
+              {busy ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Upload className="mr-2 h-4 w-4" />
+              )}
+              {t("imports.upload")}
+            </Button>
+          </div>
         </DialogFooter>
       </DialogContent>
     </Dialog>
   );
 }
 
-function ImportSummaryHeader({ preview }: { preview: ImportPreview }) {
-  const { t } = useT();
-  return (
-    <div className="rounded-md border bg-muted/20 p-4">
-      <div className="flex flex-wrap items-center gap-2 text-sm">
-        {preview.detected_source ? (
-          <>
-            <span className="text-muted-foreground">{t("imports.detectedSource")}:</span>
-            <Badge>{preview.detected_source}</Badge>
-          </>
-        ) : (
-          <span className="text-muted-foreground">{t("imports.detectedNone")}</span>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function ColumnMappingPanel({
+function ColumnMappingSection({
   preview,
   mapping,
   customWarnings,
@@ -251,39 +230,50 @@ function ColumnMappingPanel({
   onMappingChange: (key: FieldKey, value: string) => void;
 }) {
   const { t } = useT();
-  return (
-    <div className="space-y-3 rounded-md border p-4">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <h3 className="text-sm font-semibold">{t("imports.columnMap.title")}</h3>
-          <p className="text-xs text-muted-foreground">{t("imports.columnMap.help")}</p>
-        </div>
-        {qualityPending ? (
-          <Loader2 className="mt-0.5 h-4 w-4 shrink-0 animate-spin text-muted-foreground" />
-        ) : null}
-      </div>
+  const fieldSpecs = fieldSpecsFromPreview(preview);
+  const requiredComplete = fieldSpecs
+    .filter((spec) => spec.required)
+    .every((spec) => Boolean(mapping[spec.key]));
 
-      <TooltipProvider delayDuration={150}>
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          {fieldSpecsFromPreview(preview).map((spec) => {
-            const { key, required, recommended } = spec;
-            const labelKey: TranslationKey = `imports.field.${key}` as TranslationKey;
-            const hint = t(fieldHintKey(key));
-            return (
-              <label key={key} className="grid gap-1 text-sm">
-                <span className="flex items-center gap-1.5 font-medium">
-                  <span>
-                    {t(labelKey)}
-                    {required ? (
-                      <span className="text-destructive" aria-label={t("imports.required")}>
-                        {" "}
-                        *
-                      </span>
-                    ) : null}
-                  </span>
+  return (
+    <DisclosureSection
+      title={t("imports.columnMap.title")}
+      summary={t(
+        requiredComplete
+          ? "imports.columnMap.ready"
+          : "imports.columnMap.incomplete",
+      )}
+      defaultOpen={!requiredComplete || Boolean(qualityError)}
+    >
+      <div className="space-y-3">
+        {qualityPending ? (
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            {t("common.loading")}
+          </div>
+        ) : null}
+
+        <TooltipProvider delayDuration={150}>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            {fieldSpecs.map((spec) => {
+              const { key, required, recommended } = spec;
+              const labelKey: TranslationKey = `imports.field.${key}` as TranslationKey;
+              const hint = t(fieldHintKey(key));
+              return (
+                <label key={key} className="grid gap-1.5 text-sm">
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <HelpCircle className="h-3.5 w-3.5 cursor-help text-muted-foreground" />
+                      <span className="w-fit cursor-help font-medium">
+                        {t(labelKey)}
+                        {required ? (
+                          <span
+                            className="text-destructive"
+                            aria-label={t("imports.required")}
+                          >
+                            {" "}*
+                          </span>
+                        ) : null}
+                      </span>
                     </TooltipTrigger>
                     <TooltipContent className="max-w-64">
                       <p>{hint}</p>
@@ -294,63 +284,65 @@ function ColumnMappingPanel({
                       ) : null}
                     </TooltipContent>
                   </Tooltip>
-                </span>
-                <Select
-                  value={mapping[key] || "none"}
-                  onValueChange={(value) => onMappingChange(key, value)}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">{t("imports.fieldNone")}</SelectItem>
-                    {preview.headers.map((header) => (
-                      <SelectItem key={header} value={header}>
-                        {header}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </label>
-            );
-          })}
-        </div>
-      </TooltipProvider>
+                  <Select
+                    value={mapping[key] || "none"}
+                    onValueChange={(value) => onMappingChange(key, value)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">{t("imports.fieldNone")}</SelectItem>
+                      {preview.headers.map((header) => (
+                        <SelectItem key={header} value={header}>
+                          {header}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </label>
+              );
+            })}
+          </div>
+        </TooltipProvider>
 
-      {customWarnings.length > 0 ? (
-        <div className="space-y-1 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-800 dark:text-amber-300">
-          {customWarnings.map((warning) => (
-            <p key={warning}>{warning}</p>
-          ))}
-        </div>
-      ) : null}
+        {customWarnings.length > 0 ? (
+          <div className="space-y-1 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-800 dark:text-amber-300">
+            {customWarnings.map((warning) => (
+              <p key={warning}>{warning}</p>
+            ))}
+          </div>
+        ) : null}
 
-      {qualityError ? <InlineError message={(qualityError as Error).message} /> : null}
-    </div>
+        {qualityError ? <InlineError message={(qualityError as Error).message} /> : null}
+      </div>
+    </DisclosureSection>
   );
 }
 
-function PreviewRowsTable({ preview }: { preview: ImportPreview }) {
+function PreviewRowsSection({ preview }: { preview: ImportPreview }) {
   const { t } = useT();
   const [page, setPage] = useState(0);
-  const [pageSize, setPageSize] = useState(DEFAULT_TABLE_PAGE_SIZE);
+  const [pageSize, setPageSize] = useState(5);
   const maxPage = Math.max(
     0,
     Math.ceil(preview.sample_rows.length / pageSize) - 1,
   );
   const currentPage = Math.min(page, maxPage);
-  const visibleRows = useMemo(() => {
-    const start = currentPage * pageSize;
-    return preview.sample_rows.slice(start, start + pageSize);
-  }, [currentPage, pageSize, preview.sample_rows]);
+  const pageStart = currentPage * pageSize;
+  const visibleRows = preview.sample_rows.slice(pageStart, pageStart + pageSize);
 
   return (
-    <section className="min-w-0 space-y-3 rounded-md border p-4">
-      <h3 className="text-sm font-semibold">{t("imports.rowsPreview.title")}</h3>
+    <DisclosureSection
+      title={t("imports.rowsPreview.title")}
+      summary={t("imports.rowsPreview.summary", {
+        count: preview.sample_rows.length,
+      })}
+    >
       <div className="overflow-hidden rounded-md border">
-        <div className="max-h-[56vh] overflow-x-auto overflow-y-auto">
+        <div className="overflow-x-auto">
           <table className="min-w-full caption-bottom text-sm">
-            <thead className="sticky top-0 z-10 bg-background shadow-sm">
+            <thead className="bg-muted/30">
               <tr className="border-b">
                 {preview.headers.map((header) => (
                   <th
@@ -366,7 +358,7 @@ function PreviewRowsTable({ preview }: { preview: ImportPreview }) {
               {visibleRows.map((row, index) => (
                 <tr
                   key={`${currentPage}:${index}`}
-                  className="border-b transition-colors last:border-0 hover:bg-muted/50"
+                  className="border-b transition-colors last:border-0 hover:bg-muted/30"
                 >
                   {preview.headers.map((header) => (
                     <td
@@ -387,6 +379,7 @@ function PreviewRowsTable({ preview }: { preview: ImportPreview }) {
           pageSize={pageSize}
           currentCount={visibleRows.length}
           total={preview.sample_rows.length}
+          pageSizeOptions={[5, 10, 25]}
           onPageChange={setPage}
           onPageSizeChange={(nextPageSize) => {
             setPageSize(nextPageSize);
@@ -394,6 +387,41 @@ function PreviewRowsTable({ preview }: { preview: ImportPreview }) {
           }}
         />
       </div>
+    </DisclosureSection>
+  );
+}
+
+function DisclosureSection({
+  title,
+  summary,
+  defaultOpen = false,
+  children,
+}: {
+  title: string;
+  summary: string;
+  defaultOpen?: boolean;
+  children: ReactNode;
+}) {
+  const [expanded, setExpanded] = useState(defaultOpen);
+  return (
+    <section className="overflow-hidden rounded-lg border">
+      <button
+        type="button"
+        className="flex w-full items-center justify-between gap-4 px-4 py-3 text-left transition-colors hover:bg-muted/40"
+        aria-expanded={expanded}
+        onClick={() => setExpanded((current) => !current)}
+      >
+        <span className="min-w-0">
+          <span className="block text-sm font-semibold">{title}</span>
+          <span className="block truncate text-xs text-muted-foreground">
+            {summary}
+          </span>
+        </span>
+        <ChevronDown
+          className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${expanded ? "rotate-180" : ""}`}
+        />
+      </button>
+      {expanded ? <div className="border-t p-4">{children}</div> : null}
     </section>
   );
 }

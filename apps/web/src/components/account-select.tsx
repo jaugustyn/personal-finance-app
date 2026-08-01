@@ -2,25 +2,18 @@
 
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Loader2, Plus } from "lucide-react";
+import { Plus } from "lucide-react";
 
+import { AccountFormDialog } from "@/components/account-form-dialog";
 import { FilterSelect } from "@/components/filter-select";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { api, type TransactionAccountKind } from "@/lib/api";
 import { useT } from "@/lib/i18n";
 import { queryKeys } from "@/lib/query-keys";
 import { showErrorToast } from "@/lib/toasts";
 import { cn } from "@/lib/utils";
 
-const ACCOUNT_KINDS: TransactionAccountKind[] = [
-  "bank",
-  "savings",
-  "credit_card",
-  "cash",
-  "other",
-];
+const CREATE_ACCOUNT_VALUE = "__create_account__";
 
 export function AccountSelect({
   value,
@@ -70,13 +63,33 @@ export function AccountSelect({
       <FilterSelect
         id={id}
         value={value === null ? "" : String(value)}
-        onValueChange={(next) => onChange(Number(next))}
-        options={accounts.map((account) => ({
-          value: String(account.id),
-          label: account.archived_at
-            ? `${account.name} (${t("accounts.archivedLabel")})`
-            : account.name,
-        }))}
+        onValueChange={(next) => {
+          if (next === CREATE_ACCOUNT_VALUE) {
+            setName("");
+            setKind("bank");
+            setCreating(true);
+            return;
+          }
+          onChange(Number(next));
+        }}
+        options={[
+          ...accounts.map((account) => ({
+            value: String(account.id),
+            label: account.archived_at
+              ? `${account.name} (${t("accounts.archivedLabel")})`
+              : account.name,
+          })),
+          ...(quickCreate
+            ? [
+                {
+                  value: CREATE_ACCOUNT_VALUE,
+                  label: t("accounts.quickCreate"),
+                  leading: <Plus className="h-4 w-4" />,
+                  separatorBefore: accounts.length > 0,
+                },
+              ]
+            : []),
+        ]}
         placeholder={
           accountsQuery.isLoading
             ? t("common.loading")
@@ -101,69 +114,18 @@ export function AccountSelect({
         </div>
       ) : null}
 
-      {quickCreate && !creating ? (
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          className="h-8 px-1.5 text-muted-foreground"
-          disabled={disabled}
-          onClick={() => setCreating(true)}
-        >
-          <Plus className="h-4 w-4" />
-          {t("accounts.quickCreate")}
-        </Button>
-      ) : null}
-
-      {quickCreate && creating ? (
-        <div className="grid gap-3 rounded-lg border border-dashed bg-muted/20 p-3 sm:grid-cols-[minmax(0,1fr)_12rem_auto] sm:items-end">
-          <div className="space-y-1.5">
-            <Label htmlFor={`${id ?? "account"}-new-name`}>
-              {t("accounts.name")}
-            </Label>
-            <Input
-              id={`${id ?? "account"}-new-name`}
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              placeholder={t("accounts.namePlaceholder")}
-              autoFocus
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label>{t("accounts.kind")}</Label>
-            <FilterSelect
-              value={kind}
-              onValueChange={(next) => setKind(next as TransactionAccountKind)}
-              options={ACCOUNT_KINDS.map((item) => ({
-                value: item,
-                label: t(`accounts.kind.${item}`),
-              }))}
-              ariaLabel={t("accounts.kind")}
-            />
-          </div>
-          <div className="flex gap-2">
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={() => setCreating(false)}
-              disabled={createMutation.isPending}
-            >
-              {t("common.cancel")}
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              disabled={!name.trim() || createMutation.isPending}
-              onClick={() => createMutation.mutate()}
-            >
-              {createMutation.isPending ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : null}
-              {t("common.add")}
-            </Button>
-          </div>
-        </div>
+      {quickCreate ? (
+        <AccountFormDialog
+          open={creating}
+          onOpenChange={setCreating}
+          mode="create"
+          name={name}
+          onNameChange={setName}
+          kind={kind}
+          onKindChange={setKind}
+          pending={createMutation.isPending}
+          onSubmit={() => createMutation.mutate()}
+        />
       ) : null}
     </div>
   );

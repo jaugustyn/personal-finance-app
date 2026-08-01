@@ -15,6 +15,7 @@ import { useT } from "@/lib/i18n";
 interface ConfirmOptions {
   title: string;
   description?: string;
+  details?: ReadonlyArray<{ label: string; value: string }>;
   confirmLabel?: string;
   cancelLabel?: string;
   destructive?: boolean;
@@ -53,15 +54,37 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
         open={options !== null}
         onOpenChange={(open) => !open && close(false)}
       >
-        <DialogContent className="max-w-md">
+        <DialogContent
+          className={options?.details?.length ? "max-w-xl" : "max-w-md"}
+        >
           {options && (
             <>
               <DialogHeader>
                 <DialogTitle>{options.title}</DialogTitle>
-                {options.description && (
+                {options.description && !options.details?.length && (
                   <DialogDescription>{options.description}</DialogDescription>
                 )}
               </DialogHeader>
+              {options.details?.length ? (
+                <dl className="space-y-3 text-sm">
+                  {options.details.map((detail) => (
+                    <div
+                      key={detail.label}
+                      className="grid gap-1 sm:grid-cols-[7rem_minmax(0,1fr)] sm:gap-4"
+                    >
+                      <dt className="text-muted-foreground">{detail.label}</dt>
+                      <dd className="min-w-0 break-words font-medium text-foreground">
+                        {detail.value}
+                      </dd>
+                    </div>
+                  ))}
+                </dl>
+              ) : null}
+              {options.description && options.details?.length ? (
+                <DialogDescription>
+                  {options.description}
+                </DialogDescription>
+              ) : null}
               <DialogFooter>
                 <Button variant="outline" onClick={() => close(false)}>
                   {options.cancelLabel ?? t("common.cancel")}

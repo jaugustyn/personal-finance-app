@@ -746,6 +746,7 @@ export interface TransactionAccount {
   import_count: number;
   currencies: string[];
   last_transaction_date: string | null;
+  last_imported_at: string | null;
 }
 
 export interface TransactionAccountInput {
@@ -801,6 +802,8 @@ export interface MerchantAlias {
   canonical_key: string;
   canonical_label: string;
   usage_count: number;
+  total_expenses: number | string;
+  base_currency: string;
   created_at: string | null;
 }
 
@@ -848,6 +851,8 @@ export interface MerchantAliasGroup {
   canonical_key: string;
   canonical_label: string;
   aliases: MerchantAlias[];
+  total_expenses: number;
+  base_currency: string;
 }
 
 export interface MlMetricSummary {
