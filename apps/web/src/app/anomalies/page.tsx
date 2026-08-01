@@ -444,8 +444,8 @@ export default function AnomaliesPage() {
                   variant="muted"
                   className={
                     active
-                      ? "bg-primary/10 px-1.5 text-[10px] tabular-nums text-primary ring-1 ring-primary/15"
-                      : "px-1.5 text-[10px] tabular-nums"
+                      ? "h-5 min-w-5 justify-center bg-primary/10 px-1.5 text-[11px] tabular-nums text-primary ring-1 ring-primary/15"
+                      : "h-5 min-w-5 justify-center px-1.5 text-[11px] tabular-nums"
                   }
                 >
                   {count}

@@ -45,9 +45,9 @@ export function SortableTableHead<T extends string>({
         onClick={() => onSort(id)}
         title={t("table.sort")}
         className={cn(
-          "inline-flex items-center gap-1 transition-colors hover:text-foreground",
+          "group inline-flex items-center gap-1 transition-colors hover:text-foreground",
           active && "text-foreground",
-          align === "right" && "ml-auto flex-row-reverse",
+          align === "right" && "ml-auto",
           align === "center" && "mx-auto",
         )}
       >
@@ -59,7 +59,7 @@ export function SortableTableHead<T extends string>({
             <ArrowDown className="h-3.5 w-3.5" />
           )
         ) : (
-          <ChevronsUpDown className="h-3.5 w-3.5 opacity-50" />
+          <ChevronsUpDown className="h-3.5 w-3.5 opacity-30 transition-opacity group-hover:opacity-60" />
         )}
       </button>
     </TableHead>

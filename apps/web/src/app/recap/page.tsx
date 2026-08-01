@@ -135,7 +135,7 @@ export default function RecapPage() {
   ];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       <PageHeader title={t("recap.title")} description={t("recap.subtitle")} />
 
       <section className="rounded-lg border bg-card px-4 py-3">
@@ -244,7 +244,7 @@ function AnalysisContent({
   ].every((value) => Number(value) === 0);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       {data.unconverted_count > 0 && (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-300/70 bg-amber-50 px-4 py-3 text-sm text-amber-950 dark:border-amber-900/70 dark:bg-amber-950/30 dark:text-amber-100">
           <span className="flex items-start gap-2">

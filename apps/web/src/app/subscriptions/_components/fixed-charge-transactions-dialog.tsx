@@ -159,7 +159,7 @@ export function FixedChargeTransactionsDialog({
           <div className="max-h-[min(65vh,36rem)] space-y-5 overflow-y-auto pr-1">
             <section className="space-y-2">
               <div className="flex items-center justify-between gap-3">
-                <h3 className="text-sm font-medium">
+                <h3 className="text-sm font-semibold">
                   {t("subscriptions.fixed.transactions.candidates")}
                 </h3>
                 <span className="text-xs text-muted-foreground">
@@ -198,7 +198,7 @@ export function FixedChargeTransactionsDialog({
             </section>
 
             <section className="space-y-2">
-              <h3 className="text-sm font-medium">
+              <h3 className="text-sm font-semibold">
                 {t("subscriptions.fixed.transactions.history")}
               </h3>
               {query.data.linked.length === 0 ? (

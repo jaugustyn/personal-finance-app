@@ -177,7 +177,7 @@ export default function MlPage() {
             </TabsTrigger>
           </TabsList>
 
-          <TabsContent value="overview" className="space-y-3">
+          <TabsContent value="overview" className="space-y-4">
             <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.75fr)]">
               <Card>
                 <CardHeader className="flex flex-row items-start justify-between gap-3">

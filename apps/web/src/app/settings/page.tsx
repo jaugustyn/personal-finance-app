@@ -294,7 +294,7 @@ export default function SettingsPage() {
                   createRule.mutate();
                 }}
               >
-                <h3 className="text-sm font-medium">
+                <h3 className="text-sm font-semibold">
                   {t("settings.addRule")}
                 </h3>
                 <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-12">
@@ -402,7 +402,7 @@ export default function SettingsPage() {
 
               <section className="space-y-3">
                 <div className="flex items-center gap-2">
-                  <h3 className="text-sm font-medium">
+                  <h3 className="text-sm font-semibold">
                     {t("settings.savedRules")}
                   </h3>
                   <Badge variant="muted">

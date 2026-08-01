@@ -5,7 +5,6 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   AlertTriangle,
-  CheckCircle2,
   Loader2,
   Plus,
   RefreshCw,
@@ -179,7 +178,7 @@ export default function CurrenciesPage() {
 
   if (statusQuery.isError || ratesQuery.isError) {
     return (
-      <div className="space-y-6">
+      <div className="space-y-5">
         <PageHeader
           title={t("currencies.title")}
           description={t("currencies.subtitle")}
@@ -197,7 +196,7 @@ export default function CurrenciesPage() {
 
   if (statusQuery.isLoading || ratesQuery.isLoading) {
     return (
-      <div className="space-y-6">
+      <div className="space-y-5">
         <PageHeader
           title={t("currencies.title")}
           description={t("currencies.subtitle")}
@@ -217,44 +216,11 @@ export default function CurrenciesPage() {
     numericRate > 0;
 
   return (
-    <div className="space-y-6">
-      <div className="space-y-2">
-        <PageHeader
-          title={t("currencies.title")}
-          description={t("currencies.subtitle")}
-        />
-        <div className="flex flex-col gap-1 text-sm text-muted-foreground sm:flex-row sm:flex-wrap sm:items-center sm:gap-2">
-          <span>
-            {t("currencies.baseCurrency")}: {" "}
-            <strong className="font-medium text-foreground">{baseCurrency}</strong>
-          </span>
-          <span className="hidden text-border sm:inline" aria-hidden="true">
-            ·
-          </span>
-          <span>
-            {t("currencies.detectedCurrencies")}: {" "}
-            <strong className="font-medium text-foreground">
-              {formatNumber(currencyTotals.length)}
-            </strong>
-          </span>
-          <span className="hidden text-border sm:inline" aria-hidden="true">
-            ·
-          </span>
-          {missingTransactionCount > 0 ? (
-            <span className="inline-flex items-center gap-1.5 text-warning">
-              <AlertTriangle className="h-3.5 w-3.5" />
-              {t("currencies.unconvertedMetadata", {
-                count: formatNumber(missingTransactionCount),
-              })}
-            </span>
-          ) : (
-            <span className="inline-flex items-center gap-1.5 text-positive">
-              <CheckCircle2 className="h-3.5 w-3.5" />
-              {t("currencies.allConverted")}
-            </span>
-          )}
-        </div>
-      </div>
+    <div className="space-y-5">
+      <PageHeader
+        title={t("currencies.title")}
+        description={t("currencies.subtitle")}
+      />
 
       {missing.length > 0 ? (
         <section className="rounded-lg border border-warning/35 bg-warning/5 p-4">
@@ -320,10 +286,13 @@ export default function CurrenciesPage() {
 
       <div className="grid gap-6 xl:grid-cols-[minmax(20rem,2fr)_minmax(0,3fr)] xl:items-start">
         <section className="space-y-3">
-          <div className="flex min-h-8 items-center">
+          <div className="flex min-h-9 items-center gap-2">
             <h2 className="text-base font-semibold">
               {t("currencies.detectedCurrencies")}
             </h2>
+            <Badge variant="secondary" className="tabular-nums">
+              {formatNumber(currencyTotals.length)}
+            </Badge>
           </div>
           {currencyTotals.length === 0 ? (
             <EmptyState title={t("currencies.noTransactions")} />
@@ -383,7 +352,7 @@ export default function CurrenciesPage() {
         </section>
 
         <section className="space-y-3">
-          <div className="flex min-h-8 items-center">
+          <div className="flex min-h-9 items-center">
             <h2 className="text-base font-semibold">
               {t("currencies.savedRates")}
             </h2>
@@ -420,7 +389,7 @@ export default function CurrenciesPage() {
         }}
       >
         <DialogContent className="max-w-sm">
-          <form onSubmit={submitRate} className="space-y-4">
+          <form onSubmit={submitRate} className="space-y-5">
             <DialogHeader>
               <DialogTitle>{t("currencies.manualRate")}</DialogTitle>
               <DialogDescription className="sr-only">
@@ -429,7 +398,7 @@ export default function CurrenciesPage() {
             </DialogHeader>
 
             <div className="grid gap-4 sm:grid-cols-[7rem_minmax(0,1fr)]">
-              <div className="block space-y-1.5 text-sm">
+              <div className="grid gap-2 text-sm">
                 <label htmlFor="manual-rate-currency" className="font-medium">
                   {t("currencies.currency")}
                 </label>
@@ -442,7 +411,7 @@ export default function CurrenciesPage() {
                 />
               </div>
 
-              <div className="block space-y-1.5 text-sm">
+              <div className="grid gap-2 text-sm">
                 <label htmlFor="manual-rate-date" className="font-medium">
                   {t("currencies.rateDate")}
                 </label>
@@ -455,7 +424,7 @@ export default function CurrenciesPage() {
               </div>
             </div>
 
-            <div className="space-y-1.5">
+            <div className="grid gap-2">
               <label htmlFor="manual-rate-value" className="text-sm font-medium">
                 {t("currencies.rate")}
               </label>
@@ -484,7 +453,7 @@ export default function CurrenciesPage() {
               </div>
             ) : null}
 
-            <DialogFooter className="pt-1">
+            <DialogFooter>
               <Button
                 type="button"
                 variant="outline"
@@ -544,7 +513,7 @@ function CurrenciesPageSkeleton() {
       <Skeleton className="h-4 w-96 max-w-full" />
       <div className="grid gap-6 xl:grid-cols-[minmax(20rem,2fr)_minmax(0,3fr)]">
         <div className="space-y-3">
-          <div className="flex min-h-8 items-center">
+          <div className="flex min-h-9 items-center">
             <Skeleton className="h-5 w-44" />
           </div>
           <div className="divide-y rounded-lg border bg-card">
@@ -573,7 +542,7 @@ function CurrenciesPageSkeleton() {
           </div>
         </div>
         <div className="space-y-3">
-          <div className="flex min-h-8 items-center">
+          <div className="flex min-h-9 items-center">
             <Skeleton className="h-5 w-36" />
           </div>
           <TableSkeleton rows={5} />

@@ -471,7 +471,7 @@ export function AssetAccountDialog({
               </div>
             ) : (
               <section className="space-y-4">
-                <h3 className="text-sm font-semibold">
+                <h3 className="text-base font-semibold">
                   {t("assets.basicData")}
                 </h3>
                 <div className="grid gap-4 sm:grid-cols-2">

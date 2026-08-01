@@ -154,7 +154,7 @@ export function AssetItemDialog({
       onOpenChange={(next) => (next ? onOpenChange(true) : close())}
     >
       <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
-        <form onSubmit={submit}>
+        <form onSubmit={submit} className="space-y-5">
           <DialogHeader>
             <DialogTitle>
               {editing ? t("assets.editItem") : t("assets.addItem")}
@@ -163,7 +163,7 @@ export function AssetItemDialog({
               {account ? account.name : t("assets.addItemDescription")}
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-5 py-5">
+          <div className="space-y-5">
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
                 <Label htmlFor="asset-item-name">{t("assets.itemName")}</Label>

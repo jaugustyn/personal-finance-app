@@ -281,7 +281,7 @@ export default function AssetsPage() {
           ) : null}
 
           <section className="space-y-3">
-            <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex min-h-9 flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-2">
                 <h2 className="text-base font-semibold">{t("assets.accounts")}</h2>
                 <Badge variant="secondary">{accounts.length}</Badge>

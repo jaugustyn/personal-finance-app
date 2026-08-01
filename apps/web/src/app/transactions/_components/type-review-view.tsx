@@ -207,7 +207,7 @@ export function TypeReviewView() {
         <div className="overflow-hidden rounded-lg border bg-card">
           <Table className="min-w-[920px] table-fixed">
             <TableHeader>
-              <TableRow className="divide-x divide-border/40 bg-muted/30 hover:bg-muted/30">
+              <TableRow className="hover:bg-transparent">
                 <TableHead className="w-10">
                   <Checkbox
                     checked={allSelected}
@@ -254,7 +254,7 @@ export function TypeReviewView() {
             <TableBody>
               {rows.map((row) => {
                 return (
-                  <TableRow key={row.id} className="divide-x divide-border/40">
+                  <TableRow key={row.id}>
                     <TableCell>
                       <Checkbox
                         checked={selected.has(row.id)}

@@ -140,7 +140,7 @@ export function AssetValuationHistoryDialog({
           <DialogTitle>{t("assets.valuationHistory")}</DialogTitle>
           <DialogDescription>{target?.itemName}</DialogDescription>
         </DialogHeader>
-        <div className="pt-2">
+        <div>
           {query.isLoading ? <TableSkeleton rows={4} /> : null}
           {query.isError ? (
             <ErrorState title={t("assets.historyError")} onRetry={() => void query.refetch()} />

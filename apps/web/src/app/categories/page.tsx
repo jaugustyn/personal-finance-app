@@ -64,7 +64,7 @@ function CategoriesSkeleton() {
     <div className="grid items-start gap-6 lg:grid-cols-2">
       {[0, 1].map((section) => (
         <section key={section} className="space-y-3">
-          <div className="flex min-h-8 items-center gap-2">
+          <div className="flex min-h-9 items-center gap-2">
             <Skeleton className="h-5 w-40" />
             <Skeleton className="h-5 w-7" />
           </div>
@@ -199,7 +199,7 @@ export default function CategoriesPage() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       <PageHeader
         title={t("categories.title")}
         description={t("categories.subtitle")}
@@ -392,7 +392,7 @@ function CategorySection({
 
   return (
     <section className="space-y-3">
-      <div className="flex min-h-8 items-center justify-between gap-3">
+      <div className="flex min-h-9 items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <h2 className="text-base font-semibold">{title}</h2>
           <Badge variant="secondary" className="tabular-nums">
@@ -592,7 +592,7 @@ function ColorField({
   return (
     <div className="space-y-3">
       <span className="text-sm font-medium">{t("categories.color")}</span>
-      <div className="space-y-1.5">
+      <div className="grid gap-2">
         <span className="block text-xs text-muted-foreground">
           {t("categories.palette")}
         </span>

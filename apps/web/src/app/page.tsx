@@ -202,8 +202,8 @@ export default function DashboardPage() {
     (categoryTrend.data?.length ?? 0) === 0;
 
   return (
-    <div>
-      <PageHeader title={t("nav.dashboard")} className="mb-3" />
+    <div className="space-y-5">
+      <PageHeader title={t("nav.dashboard")} />
 
       <DashboardToolbar
         range={range}
@@ -218,12 +218,11 @@ export default function DashboardPage() {
         <ErrorState
           variant="compact"
           onRetry={() => void currencyStatus.refetch()}
-          className="mt-4"
         />
       ) : null}
 
       {unconvertedCount > 0 && (
-        <div className="mt-4 flex items-center gap-2 rounded-lg border border-amber-300/70 bg-amber-50/60 px-3 py-2 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/25 dark:text-amber-200">
+        <div className="flex items-center gap-2 rounded-lg border border-amber-300/70 bg-amber-50/60 px-3 py-2 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/25 dark:text-amber-200">
           <CircleAlert className="h-4 w-4 shrink-0" />
           <span>
             {t("dashboard.unconvertedWarning", {
@@ -233,8 +232,8 @@ export default function DashboardPage() {
         </div>
       )}
 
-      <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
-        <div className="min-w-0 space-y-7">
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+        <div className="min-w-0 space-y-6">
           <DashboardSection
             title={t("dashboard.overviewSectionTitle")}
             description={t("dashboard.overviewSectionDescription")}

@@ -90,7 +90,7 @@ export function TransactionCategoryCell({
             {tCategory(t, tx.category_predicted!)}
           </Badge>
           {tx.category_confidence !== null && (
-            <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
+            <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
               <ConfidenceBadge value={tx.category_confidence} />
             </span>
           )}
@@ -123,7 +123,7 @@ export function TransactionCategoryCell({
             {tCategory(t, tx.category_predicted)}
           </Badge>
           {tx.category_confidence !== null && (
-            <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
+            <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
               {t("transactions.suggestion")}
               <ConfidenceBadge value={tx.category_confidence} />
               {decisionAction ? (
@@ -186,7 +186,7 @@ function ClassificationDecisionBadge({
   const variant =
     action === "accept" ? "success" : action === "review" ? "warning" : "muted";
   return (
-    <Badge variant={variant} className="text-[10px]">
+    <Badge variant={variant} className="text-[11px]">
       {t(labelKey[action])}
     </Badge>
   );

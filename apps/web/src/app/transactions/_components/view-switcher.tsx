@@ -67,7 +67,7 @@ export function ViewSwitcher({ value, onChange }: ViewSwitcherProps) {
                 <Badge
                   variant="muted"
                   className={cn(
-                    "px-1.5 text-[10px] tabular-nums",
+                    "h-5 min-w-5 justify-center px-1.5 text-[11px] tabular-nums",
                     active &&
                       "bg-primary/10 text-primary ring-1 ring-primary/15",
                   )}

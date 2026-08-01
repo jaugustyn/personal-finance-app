@@ -266,7 +266,6 @@ export function GroupsView() {
           columns={columns}
           data={rows}
           rowKey={(g) => g.merchant_canonical_key}
-          className="bg-card [&_tbody_tr]:divide-x [&_tbody_tr]:divide-border/40 [&_thead_tr]:divide-x [&_thead_tr]:divide-border/40 [&_thead_tr]:bg-muted/30 [&_thead_tr:hover]:bg-muted/30"
           tableClassName="min-w-[760px] table-fixed"
           sort={sort}
           onSortChange={(nextSort) => {

@@ -85,7 +85,7 @@ type SortState = DataTableSortState;
 
 const alignClass = {
   left: "text-left",
-  right: "text-right",
+  right: "text-right tabular-nums",
   center: "text-center",
 } as const;
 

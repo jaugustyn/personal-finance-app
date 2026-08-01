@@ -116,7 +116,6 @@ export function TransactionRow({
   return (
     <TableRow
       className={cn(
-        "divide-x divide-border/40",
         selected && "bg-primary/5",
       )}
     >
@@ -161,7 +160,7 @@ export function TransactionRow({
               {(tx.tags?.length ?? 0) > 0 && (
                 <div className="flex flex-wrap gap-1">
                   {tx.tags!.map((tag) => (
-                    <Badge key={tag} variant="outline" className="text-[10px]">
+                    <Badge key={tag} variant="outline" className="text-[11px]">
                       <Tag className="mr-1 h-2.5 w-2.5" />
                       {tag}
                     </Badge>

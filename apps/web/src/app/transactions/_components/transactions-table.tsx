@@ -123,7 +123,7 @@ export function TransactionsTable({
         <>
           <Table className="table-fixed">
             <TableHeader>
-              <TableRow className="divide-x divide-border/40 bg-muted/30 hover:bg-muted/30">
+              <TableRow className="hover:bg-transparent">
                 <TableHead className="w-10">
                   <Checkbox
                     checked={allOnPageSelected}

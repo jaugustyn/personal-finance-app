@@ -68,7 +68,7 @@ export function FeedbackQualityCard({
       <div className="space-y-4 border-t px-4 py-4">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <div>
-            <h3 className="text-sm font-medium text-foreground">
+            <h3 className="text-sm font-semibold text-foreground">
               {t("ml.feedback.errorAnalysis")}
             </h3>
             <p className="mt-0.5 text-xs text-muted-foreground">

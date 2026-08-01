@@ -80,7 +80,7 @@ export function AssetValuationDialog({
   return (
     <Dialog open={open} onOpenChange={(next) => !pending && onOpenChange(next)}>
       <DialogContent className="max-h-[90vh] max-w-xl overflow-y-auto">
-        <form onSubmit={submit}>
+        <form onSubmit={submit} className="space-y-5">
           <DialogHeader>
             <DialogTitle>
               {target?.valuation
@@ -89,7 +89,7 @@ export function AssetValuationDialog({
             </DialogTitle>
             <DialogDescription>{target?.itemName}</DialogDescription>
           </DialogHeader>
-          <div className="py-5">
+          <div>
             <AssetValuationFields
               value={draft}
               onChange={setDraft}
