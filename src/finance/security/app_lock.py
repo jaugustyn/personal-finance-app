@@ -12,7 +12,7 @@ from dataclasses import dataclass
 APP_LOCK_COOKIE_NAME = "finance_app_lock_session"
 ALLOWED_TIMEOUT_MINUTES = frozenset({5, 15, 30, 60})
 DEFAULT_TIMEOUT_MINUTES = 15
-MIN_CODE_LENGTH = 6
+MIN_CODE_LENGTH = 3
 MAX_CODE_LENGTH = 128
 
 _SCRYPT_N = 2**17

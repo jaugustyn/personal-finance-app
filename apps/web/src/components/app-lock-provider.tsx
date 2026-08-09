@@ -15,6 +15,7 @@ const CHANNEL_NAME = "finance-app-lock";
 const STORAGE_KEY = "finance-app-lock-event";
 const HEARTBEAT_INTERVAL_MS = 30_000;
 const SENSITIVE_STORAGE_KEYS = ["finance.transactions.filters.search"];
+export const APP_LOCK_MIN_CODE_LENGTH = 3;
 
 type LockMessage = "activity" | "locked" | "unlocked";
 
@@ -303,7 +304,7 @@ function AppUnlockScreen({
             autoComplete="current-password"
             value={code}
             onChange={(event) => setCode(event.target.value)}
-            minLength={6}
+            minLength={APP_LOCK_MIN_CODE_LENGTH}
             maxLength={128}
             required
           />

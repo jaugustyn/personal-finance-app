@@ -24,19 +24,32 @@ class AppLockStatus(BaseModel):
 
 
 class AppLockSetup(BaseModel):
-    code: str = Field(min_length=6, max_length=128)
+    code: str = Field(
+        min_length=app_lock.MIN_CODE_LENGTH,
+        max_length=app_lock.MAX_CODE_LENGTH,
+    )
     timeout_minutes: TimeoutMinutes = 15
 
 
 class AppLockUnlock(BaseModel):
-    code: str = Field(min_length=6, max_length=128)
+    code: str = Field(
+        min_length=app_lock.MIN_CODE_LENGTH,
+        max_length=app_lock.MAX_CODE_LENGTH,
+    )
 
 
 class AppLockSettingsUpdate(BaseModel):
     enabled: bool
-    current_code: str = Field(min_length=6, max_length=128)
+    current_code: str = Field(
+        min_length=app_lock.MIN_CODE_LENGTH,
+        max_length=app_lock.MAX_CODE_LENGTH,
+    )
     timeout_minutes: TimeoutMinutes = 15
-    new_code: str | None = Field(default=None, min_length=6, max_length=128)
+    new_code: str | None = Field(
+        default=None,
+        min_length=app_lock.MIN_CODE_LENGTH,
+        max_length=app_lock.MAX_CODE_LENGTH,
+    )
 
 
 @router.get("/status", response_model=AppLockStatus)

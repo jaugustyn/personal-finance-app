@@ -65,6 +65,18 @@ def test_setup_hashes_code_sets_cookie_and_unlocks(client, db_session):
     assert client.get("/profile/rules").status_code == 200
 
 
+def test_setup_accepts_three_character_code_and_rejects_shorter_code(client):
+    too_short = _setup(client, code="12")
+    assert too_short.status_code == 422
+
+    accepted = _setup(client, code="123")
+    assert accepted.status_code == 200
+
+    app_lock.revoke_all_sessions()
+    unlocked = client.post("/app-lock/unlock", json={"code": "123"})
+    assert unlocked.status_code == 200
+
+
 def test_missing_expired_or_damaged_runtime_session_returns_423(client):
     assert _setup(client).status_code == 200
     app_lock.revoke_all_sessions()
