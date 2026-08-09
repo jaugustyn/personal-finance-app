@@ -20,6 +20,7 @@ from finance.transactions.queries import (
     list_transactions,
     matching_transactions,
     merchant_groups,
+    merchant_groups_page,
     summary_by_category,
 )
 from finance.transactions.review import review_summary
@@ -71,6 +72,7 @@ __all__ = [
     "list_transactions",
     "matching_transactions",
     "merchant_groups",
+    "merchant_groups_page",
     "reject_suggestions",
     "restore_suggestions",
     "review_summary",

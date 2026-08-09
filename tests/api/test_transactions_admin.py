@@ -162,10 +162,13 @@ def test_groups_returns_uncategorized_merchants(client, db_session) -> None:
     r = client.get("/transactions/groups?only_uncategorized=true&min_count=2")
     assert r.status_code == 200
     body = r.json()
-    merchants = {g["merchant"] for g in body}
+    assert body["total"] == 1
+    merchants = {g["merchant"] for g in body["items"]}
     assert "Biedronka" in merchants
     assert "Lidl" not in merchants
-    biedronka = next(g for g in body if g["merchant"] == "Biedronka")
+    biedronka = next(
+        g for g in body["items"] if g["merchant"] == "Biedronka"
+    )
     assert biedronka["sample_merchants"] == ["Biedronka"]
 
 
@@ -175,9 +178,24 @@ def test_groups_min_count_filter(client, db_session) -> None:
     _tx(db_session, merchant="Frequent", dedup_hash="f2")
     r = client.get("/transactions/groups?min_count=2&only_uncategorized=true")
     body = r.json()
-    merchants = {g["merchant"] for g in body}
+    assert body["total"] == 1
+    merchants = {g["merchant"] for g in body["items"]}
     assert "Frequent" in merchants
     assert "OneOff" not in merchants
+
+
+def test_groups_total_is_independent_from_page_limit(client, db_session) -> None:
+    for merchant in ("Alpha", "Beta", "Gamma"):
+        _tx(db_session, merchant=merchant, dedup_hash=f"{merchant}-1")
+        _tx(db_session, merchant=merchant, dedup_hash=f"{merchant}-2")
+
+    response = client.get(
+        "/transactions/groups?min_count=2&only_uncategorized=true&limit=1"
+    )
+
+    assert response.status_code == 200
+    assert response.json()["total"] == 3
+    assert len(response.json()["items"]) == 1
 
 
 def test_groups_rejects_unknown_sort(client) -> None:

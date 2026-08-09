@@ -20,6 +20,7 @@ from apps.api.schemas.transactions import (
     FilterSummaryResponse,
     ManualTransactionWrite,
     MerchantGroup,
+    MerchantGroupPage,
     RareClass,
     RecurringMerchant,
     RejectSuggestions,
@@ -232,7 +233,7 @@ def filter_summary(
     )
 
 
-@router.get("/groups", response_model=list[MerchantGroup])
+@router.get("/groups", response_model=MerchantGroupPage)
 def merchant_groups(
     session: Session = Depends(get_session),
     only_uncategorized: bool = Query(default=True),
@@ -241,12 +242,12 @@ def merchant_groups(
     offset: int = Query(default=0, ge=0),
     sort_by: tx_service.MerchantGroupSortBy = Query(default="count"),
     sort_direction: tx_service.TransactionSortDirection = Query(default="desc"),
-) -> list[MerchantGroup]:
+) -> MerchantGroupPage:
     """Group transactions by merchant for bulk categorisation.
 
     Sorting is applied to the complete matching set before the response limit.
     """
-    rows = tx_service.merchant_groups(
+    rows, total = tx_service.merchant_groups_page(
         session,
         only_uncategorized=only_uncategorized,
         min_count=min_count,
@@ -255,7 +256,10 @@ def merchant_groups(
         sort_by=sort_by,
         sort_direction=sort_direction,
     )
-    return [MerchantGroup(**r.__dict__) for r in rows]
+    return MerchantGroupPage(
+        items=[MerchantGroup(**r.__dict__) for r in rows],
+        total=total,
+    )
 
 
 @router.get("/review-summary", response_model=ReviewSummary)

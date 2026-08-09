@@ -115,6 +115,11 @@ class MerchantGroup(BaseModel):
     sample_titles: list[str]
 
 
+class MerchantGroupPage(BaseModel):
+    items: list[MerchantGroup]
+    total: int
+
+
 class ReviewCounts(BaseModel):
     uncategorized: int
     no_suggestion: int

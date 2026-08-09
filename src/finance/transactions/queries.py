@@ -535,7 +535,7 @@ def summary_by_category(
     ]
 
 
-def merchant_groups(
+def merchant_groups_page(
     session: Session,
     *,
     only_uncategorized: bool,
@@ -544,7 +544,7 @@ def merchant_groups(
     offset: int = 0,
     sort_by: MerchantGroupSortBy = "count",
     sort_direction: TransactionSortDirection = "desc",
-) -> list[MerchantGroupSummary]:
+) -> tuple[list[MerchantGroupSummary], int]:
     amount = amount_base_expr()
     stmt = select(
         Transaction.merchant,
@@ -642,6 +642,7 @@ def merchant_groups(
         key=sort_value,
         reverse=sort_direction == "desc",
     )
+    total = len(eligible_groups)
     sorted_groups = eligible_groups[offset : offset + limit]
     out: list[MerchantGroupSummary] = []
     for group in sorted_groups:
@@ -676,4 +677,26 @@ def merchant_groups(
                 sample_titles=titles,
             )
         )
-    return out
+    return out, total
+
+
+def merchant_groups(
+    session: Session,
+    *,
+    only_uncategorized: bool,
+    min_count: int,
+    limit: int,
+    offset: int = 0,
+    sort_by: MerchantGroupSortBy = "count",
+    sort_direction: TransactionSortDirection = "desc",
+) -> list[MerchantGroupSummary]:
+    rows, _total = merchant_groups_page(
+        session,
+        only_uncategorized=only_uncategorized,
+        min_count=min_count,
+        limit=limit,
+        offset=offset,
+        sort_by=sort_by,
+        sort_direction=sort_direction,
+    )
+    return rows
