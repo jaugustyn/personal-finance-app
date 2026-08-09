@@ -334,9 +334,6 @@ function FixedChargeSummary({
     {
       label: t("subscriptions.fixed.next30"),
       value: formatCurrency(summary.next_30_days_total, summary.base_currency),
-      meta: t("subscriptions.fixed.paymentCount", {
-        count: summary.next_30_days_count,
-      }),
     },
     {
       label: t("subscriptions.fixed.activeCount"),
@@ -349,7 +346,7 @@ function FixedChargeSummary({
         <div
           key={item.label}
           className={cn(
-            "min-w-0 px-4 py-3",
+            "min-w-0 px-4 py-3.5",
             index > 0 && "border-t sm:border-t-0",
             index % 2 === 1 && "sm:border-l",
             index >= 2 && "sm:border-t xl:border-t-0",
@@ -359,14 +356,9 @@ function FixedChargeSummary({
           <div className="truncate text-xs text-muted-foreground">
             {item.label}
           </div>
-          <div className="mt-1 truncate text-base font-semibold tabular-nums">
+          <div className="mt-1 truncate text-lg font-semibold tabular-nums">
             {item.value}
           </div>
-          {item.meta ? (
-            <div className="mt-0.5 text-xs text-muted-foreground">
-              {item.meta}
-            </div>
-          ) : null}
         </div>
       ))}
     </section>

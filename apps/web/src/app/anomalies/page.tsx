@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { api, type Anomaly } from "@/lib/api";
+import { api, type Anomaly, type AnomalyListResponse } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DataTable, type DataTableColumn } from "@/components/data-table";
@@ -148,17 +148,26 @@ export default function AnomaliesPage() {
     "pending",
     { validate: isAnomalyReviewState },
   );
+  const pendingQueryKey = queryKeys.anomalies.list({
+    direction: "all",
+    reviewState: "pending",
+  });
+  const reviewedQueryKey = queryKeys.anomalies.list({
+    direction: "all",
+    reviewState: "reviewed",
+  });
   const query = useQuery({
-    queryKey: queryKeys.anomalies.list({
-      direction: "all",
-      reviewState,
-    }),
+    queryKey: reviewState === "pending" ? pendingQueryKey : reviewedQueryKey,
     queryFn: () =>
       api.anomalies({
         direction: "all",
         review_state: reviewState,
       }),
   });
+  const countSource =
+    query.data ??
+    qc.getQueryData<AnomalyListResponse>(pendingQueryKey) ??
+    qc.getQueryData<AnomalyListResponse>(reviewedQueryKey);
   const feedback = useMutation({
     mutationFn: ({
       transactionId,
@@ -302,7 +311,7 @@ export default function AnomaliesPage() {
     {
       id: "assessment",
       header: t("anomalies.decision"),
-      headerClassName: reviewState === "pending" ? "w-60" : "w-72",
+      headerClassName: "w-72",
       align: "center",
       sortValue:
         reviewState === "reviewed"
@@ -427,8 +436,8 @@ export default function AnomaliesPage() {
           const active = reviewState === state;
           const count =
             state === "pending"
-              ? query.data?.pending_total
-              : query.data?.reviewed_total;
+              ? (countSource?.pending_total ?? 0)
+              : (countSource?.reviewed_total ?? 0);
           return (
             <button
               key={state}
@@ -439,18 +448,16 @@ export default function AnomaliesPage() {
               {state === "pending"
                 ? t("anomalies.tab.pending")
                 : t("anomalies.tab.reviewed")}
-              {count !== undefined ? (
-                <Badge
-                  variant="muted"
-                  className={
-                    active
-                      ? "h-5 min-w-5 justify-center bg-primary/10 px-1.5 text-[11px] tabular-nums text-primary ring-1 ring-primary/15"
-                      : "h-5 min-w-5 justify-center px-1.5 text-[11px] tabular-nums"
-                  }
-                >
-                  {count}
-                </Badge>
-              ) : null}
+              <Badge
+                variant="muted"
+                className={
+                  active
+                    ? "h-5 min-w-5 justify-center bg-primary/10 px-1.5 text-[11px] tabular-nums text-primary ring-1 ring-primary/15"
+                    : "h-5 min-w-5 justify-center px-1.5 text-[11px] tabular-nums"
+                }
+              >
+                {count}
+              </Badge>
             </button>
           );
         })}

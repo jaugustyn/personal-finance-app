@@ -1,6 +1,7 @@
 import { request } from "./client";
 import { withQuery, type QueryValue } from "./query";
 import type {
+  AttentionSummary,
   CashflowPoint,
   CategoryBreakdown,
   CategoryTrendPoint,
@@ -45,6 +46,8 @@ function directionalRangeQueryValues(
 
 export const statsApi = {
   health: () => request<{ status: string }>("/health"),
+  attentionSummary: () =>
+    request<AttentionSummary>("/stats/attention-summary"),
   overview: (months = 12, allData = false, includeTransfers = false) =>
     request<OverviewStats>(
       withQuery("/stats/overview", rangeQueryValues(months, { allData, includeTransfers })),

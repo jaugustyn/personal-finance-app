@@ -24,6 +24,8 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { transactionsHref } from "@/lib/transaction-links";
+import { EmptyState } from "@/components/empty-state";
+import { TableSkeleton } from "@/components/ui/skeleton";
 import { AliasSuggestionInput } from "./alias-suggestion-input";
 
 export function AliasGroupsPanel({
@@ -63,21 +65,28 @@ export function AliasGroupsPanel({
           </h2>
           <Badge variant="secondary">{groups.length}</Badge>
         </div>
-        <Button variant="outline" size="sm" onClick={onAddManual}>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={onAddManual}
+        >
           <Plus className="mr-2 h-4 w-4" />
           {t("merchants.addAlias")}
         </Button>
       </div>
       {isLoading ? (
-        <div className="flex h-24 items-center justify-center rounded-xl border bg-card text-muted-foreground">
-          <Loader2 className="h-5 w-5 animate-spin" />
+        <div className="rounded-xl border bg-card p-3">
+          <TableSkeleton rows={3} />
         </div>
       ) : groups.length === 0 ? (
-        <div className="rounded-xl border bg-card px-4 py-8 text-center text-sm text-muted-foreground">
-          {isFiltered
-            ? t("merchants.savedSearchEmpty")
-            : t("merchants.savedEmpty")}
-        </div>
+        <EmptyState
+          title={
+            isFiltered
+              ? t("merchants.savedSearchEmpty")
+              : t("merchants.savedEmpty")
+          }
+          className="bg-card py-8"
+        />
       ) : (
         <div className="divide-y rounded-xl border bg-card">
           {groups.map((group) => {
@@ -88,9 +97,9 @@ export function AliasGroupsPanel({
 
             return (
               <details key={group.canonical_key} className="group">
-                <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3.5 transition-colors hover:bg-muted/40 group-open:bg-muted/30 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3.5 transition-colors hover:bg-muted/40 group-open:bg-primary/5 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
                   <div className="flex min-w-0 items-center gap-3">
-                    <ChevronDown className="h-4 w-4 shrink-0 -rotate-90 text-muted-foreground transition-transform group-open:rotate-0" />
+                    <ChevronDown className="h-4 w-4 shrink-0 -rotate-90 text-muted-foreground transition-all group-open:rotate-0 group-open:text-primary" />
                     <div className="min-w-0">
                       <div className="truncate text-sm font-medium">
                         {group.canonical_label}

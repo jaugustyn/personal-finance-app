@@ -7,7 +7,6 @@ import { EmptyState } from "@/components/empty-state";
 import { ErrorState } from "@/components/error-state";
 import {
   CashflowChart,
-  CategoryMoMChart,
   CategoryTrendChart,
   CumulativeCashflowChart,
 } from "@/components/charts";
@@ -19,7 +18,6 @@ import {
   useLocalStorageState,
 } from "@/hooks/use-local-storage-state";
 import { queryKeys } from "@/lib/query-keys";
-import { AttentionPanel } from "./_components/dashboard-operational";
 import { MerchantRankingCard } from "./_components/dashboard-merchant-ranking";
 import { FinancialSnapshot } from "./_components/dashboard-snapshot";
 import { SpendingBreakdownCard } from "./_components/dashboard-category-panel";
@@ -61,8 +59,6 @@ export default function DashboardPage() {
   const allData = range === "all";
   const months = RANGE_MONTHS[range];
   const trendMonths = months;
-  const comparisonMonths = allData ? months : Math.max(months, 2);
-  const periodComparison = range !== "1m";
   const rangeKey = { months, allData, includeTransfers };
   const trendRangeKey = { months: trendMonths, allData, includeTransfers };
   const rankingKey = { ...rangeKey, limit: chartLimit };
@@ -78,27 +74,6 @@ export default function DashboardPage() {
   const assetsOverview = useQuery({
     queryKey: queryKeys.assets.overview,
     queryFn: api.assetOverview,
-  });
-  const reviewQueue = useQuery({
-    queryKey: queryKeys.dashboard.reviewQueue(8),
-    queryFn: () => api.reviewQueue(8),
-  });
-  const anomalies = useQuery({
-    queryKey: queryKeys.dashboard.anomalies({
-      direction: "all",
-      reviewState: "pending",
-      limit: 5,
-    }),
-    queryFn: () =>
-      api.anomalies({
-        direction: "all",
-        review_state: "pending",
-        limit: 5,
-      }),
-  });
-  const subscriptionsOverview = useQuery({
-    queryKey: queryKeys.dashboard.subscriptionsOverview,
-    queryFn: () => api.subscriptionsOverview(),
   });
   const cashflow = useQuery({
     queryKey: queryKeys.dashboard.cashflow(rangeKey),
@@ -134,22 +109,6 @@ export default function DashboardPage() {
     queryFn: () =>
       api.categoryTrend(
         trendMonths,
-        chartLimit,
-        allData,
-        "debit",
-        includeTransfers,
-      ),
-  });
-  const categoryDeltaTrend = useQuery({
-    queryKey: queryKeys.dashboard.categoryDeltaTrend({
-      months: comparisonMonths,
-      allData,
-      includeTransfers,
-      limit: chartLimit,
-    }),
-    queryFn: () =>
-      api.categoryTrend(
-        comparisonMonths,
         chartLimit,
         allData,
         "debit",
@@ -193,14 +152,6 @@ export default function DashboardPage() {
   const savingsRate = overviewData ? Number(overviewData.savings_rate) : 0;
   const unconvertedCount = currencyStatus.data?.missing_rate_count ?? 0;
   const cashflowData = normalizeCashflowMonths(cashflow.data ?? [], range, months);
-  const categoryTrendsEmpty =
-    !categoryDeltaTrend.isLoading &&
-    !categoryDeltaTrend.isError &&
-    !categoryTrend.isLoading &&
-    !categoryTrend.isError &&
-    (categoryDeltaTrend.data?.length ?? 0) === 0 &&
-    (categoryTrend.data?.length ?? 0) === 0;
-
   return (
     <div className="space-y-5">
       <PageHeader title={t("nav.dashboard")} />
@@ -232,175 +183,129 @@ export default function DashboardPage() {
         </div>
       )}
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
-        <div className="min-w-0 space-y-6">
-          <DashboardSection
-            title={t("dashboard.overviewSectionTitle")}
-            description={t("dashboard.overviewSectionDescription")}
+      <div className="min-w-0 space-y-6">
+        <DashboardSection
+          title={t("dashboard.overviewSectionTitle")}
+          description={t("dashboard.overviewSectionDescription")}
+        >
+          {overview.isError ? (
+            <ErrorState
+              variant="compact"
+              onRetry={() => void overview.refetch()}
+            />
+          ) : (
+            <FinancialSnapshot
+              income={totalIncome}
+              expenses={totalExpenses}
+              net={netCashflow}
+              savingsRate={savingsRate}
+              currency={baseCurrency}
+              isLoading={overview.isLoading}
+              isFetching={overview.isFetching}
+            />
+          )}
+
+          <DashboardAssetsSummary
+            data={assetsOverview.data}
+            isLoading={assetsOverview.isLoading}
+            isError={assetsOverview.isError}
+            onRetry={() => void assetsOverview.refetch()}
+          />
+
+          <ChartCard
+            title={t("dashboard.cashflowTitle")}
+            hint={t("dashboard.cashflowHint")}
           >
-            {overview.isError ? (
+            {cashflow.isLoading ? (
+              <ChartSkeleton />
+            ) : cashflow.isError ? (
               <ErrorState
                 variant="compact"
-                onRetry={() => void overview.refetch()}
+                onRetry={() => void cashflow.refetch()}
               />
+            ) : cashflowData.length > 0 ? (
+              <CashflowChart data={cashflowData} currency={baseCurrency} />
             ) : (
-              <FinancialSnapshot
-                income={totalIncome}
-                expenses={totalExpenses}
-                net={netCashflow}
-                savingsRate={savingsRate}
-                currency={baseCurrency}
-                isLoading={overview.isLoading}
-                isFetching={overview.isFetching}
-              />
+              <EmptyState title={t("common.empty")} />
             )}
+          </ChartCard>
 
-            <DashboardAssetsSummary
-              data={assetsOverview.data}
-              isLoading={assetsOverview.isLoading}
-              isError={assetsOverview.isError}
-              onRetry={() => void assetsOverview.refetch()}
+          <div className="grid gap-4 2xl:grid-cols-2">
+            <SpendingBreakdownCard
+              data={categoryBreakdown.data}
+              isLoading={categoryBreakdown.isLoading}
+              isError={categoryBreakdown.isError}
+              onRetry={() => void categoryBreakdown.refetch()}
+              currency={baseCurrency}
+              direction="debit"
             />
-
-            <ChartCard title={t("dashboard.cashflowTitle")}>
-              {cashflow.isLoading ? (
-                <ChartSkeleton />
-              ) : cashflow.isError ? (
-                <ErrorState
-                  variant="compact"
-                  onRetry={() => void cashflow.refetch()}
-                />
-              ) : cashflowData.length > 0 ? (
-                <CashflowChart data={cashflowData} currency={baseCurrency} />
-              ) : (
-                <EmptyState title={t("common.empty")} />
-              )}
-            </ChartCard>
-
-            <div className="grid gap-4 2xl:grid-cols-2">
-              <SpendingBreakdownCard
-                data={categoryBreakdown.data}
-                isLoading={categoryBreakdown.isLoading}
-                isError={categoryBreakdown.isError}
-                onRetry={() => void categoryBreakdown.refetch()}
-                currency={baseCurrency}
-                direction="debit"
-              />
-              <MerchantRankingCard
-                data={topMerchants.data}
-                isLoading={topMerchants.isLoading}
-                isError={topMerchants.isError}
-                onRetry={() => void topMerchants.refetch()}
-                currency={baseCurrency}
-                direction="debit"
-              />
-            </div>
-          </DashboardSection>
-
-          <DashboardSection
-            title={t("dashboard.incomeSectionTitle")}
-            description={t("dashboard.incomeSectionDescription")}
-            separated
-          >
-            <div className="grid gap-4 2xl:grid-cols-2">
-              <SpendingBreakdownCard
-                data={transactionTypeBreakdown.data}
-                isLoading={transactionTypeBreakdown.isLoading}
-                isError={transactionTypeBreakdown.isError}
-                onRetry={() => void transactionTypeBreakdown.refetch()}
-                currency={baseCurrency}
-                direction="credit"
-              />
-              <MerchantRankingCard
-                data={incomeSources.data}
-                isLoading={incomeSources.isLoading}
-                isError={incomeSources.isError}
-                onRetry={() => void incomeSources.refetch()}
-                currency={baseCurrency}
-                direction="credit"
-              />
-            </div>
-          </DashboardSection>
-
-          <div className="xl:hidden">
-            <AttentionPanel
-              reviewRows={reviewQueue.data}
-              anomalies={anomalies.data}
-              subscriptions={subscriptionsOverview.data}
-              reviewLoading={reviewQueue.isLoading}
-              anomaliesLoading={anomalies.isLoading}
-              subscriptionsLoading={subscriptionsOverview.isLoading}
-              reviewError={reviewQueue.isError}
-              anomaliesError={anomalies.isError}
-              subscriptionsError={subscriptionsOverview.isError}
-              onReviewRetry={() => void reviewQueue.refetch()}
-              onAnomaliesRetry={() => void anomalies.refetch()}
-              onSubscriptionsRetry={() => void subscriptionsOverview.refetch()}
+            <MerchantRankingCard
+              data={topMerchants.data}
+              isLoading={topMerchants.isLoading}
+              isError={topMerchants.isError}
+              onRetry={() => void topMerchants.refetch()}
+              currency={baseCurrency}
+              direction="debit"
             />
           </div>
+        </DashboardSection>
 
-          <DashboardSection
-            title={t("dashboard.trends.title")}
-            description={t("dashboard.trends.description")}
-            separated
-          >
-            {categoryTrendsEmpty ? (
-              <EmptyState
-                title={t("dashboard.categoryTrendsEmptyTitle")}
-                description={t("dashboard.categoryTrendsEmptyDescription")}
-              />
-            ) : (
-              <div className="grid gap-4 2xl:grid-cols-2">
-                <ChartCard
-                  title={
-                    periodComparison
-                      ? t("dashboard.periodDeltaTitle")
-                      : t("dashboard.momTitle")
-                  }
-                >
-                  {categoryDeltaTrend.isLoading ? (
-                    <ChartSkeleton />
-                  ) : categoryDeltaTrend.isError ? (
-                    <ErrorState
-                      variant="compact"
-                      onRetry={() => void categoryDeltaTrend.refetch()}
-                    />
-                  ) : categoryDeltaTrend.data && categoryDeltaTrend.data.length > 0 ? (
-                    <CategoryMoMChart
-                      data={categoryDeltaTrend.data}
-                      currency={baseCurrency}
-                      comparisonMode={periodComparison ? "period" : "latest"}
-                    />
-                  ) : (
-                    <EmptyState
-                      title={t("dashboard.categoryTrendsEmptyTitle")}
-                      description={t("dashboard.categoryTrendsEmptyDescription")}
-                    />
-                  )}
-                </ChartCard>
-                <ChartCard title={t("dashboard.categoryTrendTitle")}>
-                  {categoryTrend.isLoading ? (
-                    <ChartSkeleton />
-                  ) : categoryTrend.isError ? (
-                    <ErrorState
-                      variant="compact"
-                      onRetry={() => void categoryTrend.refetch()}
-                    />
-                  ) : categoryTrend.data && categoryTrend.data.length > 0 ? (
-                    <CategoryTrendChart
-                      data={categoryTrend.data}
-                      currency={baseCurrency}
-                    />
-                  ) : (
-                    <EmptyState
-                      title={t("dashboard.categoryTrendsEmptyTitle")}
-                      description={t("dashboard.categoryTrendsEmptyDescription")}
-                    />
-                  )}
-                </ChartCard>
-              </div>
-            )}
-            <ChartCard title={t("dashboard.cumulativeCashflowTitle")}>
+        <DashboardSection
+          title={t("dashboard.incomeSectionTitle")}
+          description={t("dashboard.incomeSectionDescription")}
+          separated
+        >
+          <div className="grid gap-4 2xl:grid-cols-2">
+            <SpendingBreakdownCard
+              data={transactionTypeBreakdown.data}
+              isLoading={transactionTypeBreakdown.isLoading}
+              isError={transactionTypeBreakdown.isError}
+              onRetry={() => void transactionTypeBreakdown.refetch()}
+              currency={baseCurrency}
+              direction="credit"
+            />
+            <MerchantRankingCard
+              data={incomeSources.data}
+              isLoading={incomeSources.isLoading}
+              isError={incomeSources.isError}
+              onRetry={() => void incomeSources.refetch()}
+              currency={baseCurrency}
+              direction="credit"
+            />
+          </div>
+        </DashboardSection>
+
+        <DashboardSection
+          title={t("dashboard.trends.title")}
+          description={t("dashboard.trends.description")}
+          separated
+        >
+          <div className="grid gap-4 2xl:grid-cols-2">
+            <ChartCard title={t("dashboard.categoryTrendTitle")}>
+              {categoryTrend.isLoading ? (
+                <ChartSkeleton />
+              ) : categoryTrend.isError ? (
+                <ErrorState
+                  variant="compact"
+                  onRetry={() => void categoryTrend.refetch()}
+                />
+              ) : categoryTrend.data && categoryTrend.data.length > 0 ? (
+                <CategoryTrendChart
+                  data={categoryTrend.data}
+                  currency={baseCurrency}
+                />
+              ) : (
+                <EmptyState
+                  className="h-[300px] py-6"
+                  title={t("dashboard.categoryTrendsEmptyTitle")}
+                  description={t("dashboard.categoryTrendsEmptyDescription")}
+                />
+              )}
+            </ChartCard>
+            <ChartCard
+              title={t("dashboard.cumulativeCashflowTitle")}
+              hint={t("dashboard.cumulativeCashflowHint")}
+            >
               {cumulativeCashflow.isLoading ? (
                 <ChartSkeleton />
               ) : cumulativeCashflow.isError ? (
@@ -415,31 +320,11 @@ export default function DashboardPage() {
                   currency={baseCurrency}
                 />
               ) : (
-                <EmptyState title={t("common.empty")} />
+                <EmptyState className="h-[300px] py-6" title={t("common.empty")} />
               )}
             </ChartCard>
-          </DashboardSection>
-        </div>
-
-        <aside className="hidden min-w-0 xl:block">
-          <div className="sticky top-[4.5rem]">
-            <AttentionPanel
-              reviewRows={reviewQueue.data}
-              anomalies={anomalies.data}
-              subscriptions={subscriptionsOverview.data}
-              reviewLoading={reviewQueue.isLoading}
-              anomaliesLoading={anomalies.isLoading}
-              subscriptionsLoading={subscriptionsOverview.isLoading}
-              reviewError={reviewQueue.isError}
-              anomaliesError={anomalies.isError}
-              subscriptionsError={subscriptionsOverview.isError}
-              onReviewRetry={() => void reviewQueue.refetch()}
-              onAnomaliesRetry={() => void anomalies.refetch()}
-              onSubscriptionsRetry={() => void subscriptionsOverview.refetch()}
-              layout="rail"
-            />
           </div>
-        </aside>
+        </DashboardSection>
       </div>
     </div>
   );

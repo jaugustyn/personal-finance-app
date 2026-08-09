@@ -26,6 +26,9 @@ interface DateRangePickerProps {
   onToChange: (value: string) => void;
   onClear?: () => void;
   ariaLabel: string;
+  triggerClassName?: string;
+  compactLabel?: boolean;
+  showIcon?: boolean;
 }
 
 type CalendarMode = "days" | "months" | "years";
@@ -37,6 +40,9 @@ export function DateRangePicker({
   onToChange,
   onClear,
   ariaLabel,
+  triggerClassName,
+  compactLabel = false,
+  showIcon = true,
 }: DateRangePickerProps) {
   const { t } = useT();
   const { formatDate, localeTag } = useFormatters();
@@ -57,7 +63,10 @@ export function DateRangePicker({
   const activeFrom = draftFrom ?? selectedFrom;
   const activeTo = draftFrom ? null : selectedTo;
   const monthDays = useMemo(() => buildMonthDays(visibleMonth), [visibleMonth]);
-  const label = rangeLabel(displayFrom, displayTo, t, formatDate);
+  const fullLabel = rangeLabel(displayFrom, displayTo, t, formatDate);
+  const label = compactLabel
+    ? compactRangeLabel(displayFrom, displayTo, fullLabel)
+    : fullLabel;
   const canClear = displayFrom !== "" || displayTo !== "" || draftFrom !== null;
 
   /* eslint-disable react-hooks/set-state-in-effect -- reset transient selection after controlled props commit */
@@ -142,10 +151,14 @@ export function DateRangePicker({
             className={cn(
               "w-full justify-start bg-transparent px-3 font-normal",
               canClear && "pr-9",
+              triggerClassName,
             )}
             aria-label={ariaLabel}
+            title={compactLabel ? fullLabel : undefined}
           >
-            <CalendarRange className="h-4 w-4 text-muted-foreground" />
+            {showIcon ? (
+              <CalendarRange className="h-4 w-4 text-muted-foreground" />
+            ) : null}
             <span className="truncate">{label}</span>
           </Button>
         </PopoverTrigger>
@@ -629,6 +642,25 @@ function rangeLabel(
     });
   }
   return t("transactions.dateRange.any");
+}
+
+function compactRangeLabel(from: string, to: string, fallback: string) {
+  const start = parseDateValue(from);
+  const end = parseDateValue(to);
+  if (!start || !end) return fallback;
+
+  const day = (date: Date) => String(date.getDate()).padStart(2, "0");
+  const month = (date: Date) => String(date.getMonth() + 1).padStart(2, "0");
+  const year = (date: Date) => String(date.getFullYear()).slice(-2);
+
+  if (start.getFullYear() === end.getFullYear()) {
+    if (start.getMonth() === end.getMonth()) {
+      return `${day(start)} - ${day(end)}.${month(end)}.${year(end)}`;
+    }
+    return `${day(start)}.${month(start)} - ${day(end)}.${month(end)}.${year(end)}`;
+  }
+
+  return `${day(start)}.${month(start)}.${year(start)} - ${day(end)}.${month(end)}.${year(end)}`;
 }
 
 function parseDateValue(value: string) {

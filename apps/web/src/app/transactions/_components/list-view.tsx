@@ -25,8 +25,14 @@ import {
   hasRejectedCategorySuggestion,
 } from "../_lib/constants";
 import { useTransactionMutations } from "../_lib/use-transaction-mutations";
-import { BulkActionsBar } from "./bulk-actions-bar";
+import { TransactionListBulkActionsBar } from "./bulk-actions-bar";
+import { CategoryReviewBulkActionsBar } from "./category-review-bulk-actions-bar";
 import { TransactionFilters } from "./transaction-filters";
+import {
+  type TransactionCategoryReviewControlsProps,
+  TransactionListToolbar,
+  type TransactionListControlsProps,
+} from "./transaction-list-controls";
 import {
   TransactionsTable,
   type TransactionSort,
@@ -116,6 +122,11 @@ export function ListView({
   );
   const [reviewSearch, setReviewSearch] = useState("");
   const [reviewCategory, setReviewCategory] = useState("");
+  const [reviewMinAmount, setReviewMinAmount] = useState("");
+  const [reviewMaxAmount, setReviewMaxAmount] = useState("");
+  const [reviewDirection, setReviewDirection] = useState<Direction>("all");
+  const [reviewDateFrom, setReviewDateFrom] = useState("");
+  const [reviewDateTo, setReviewDateTo] = useState("");
   const [reviewState, setReviewState] =
     useState<CategoryState>("needs_review");
   const [page, setPage] = useState(0);
@@ -163,6 +174,11 @@ export function ListView({
     if (reviewMode) {
       setReviewSearch(initialFilters.search ?? "");
       setReviewCategory(initialFilters.category ?? "");
+      setReviewMinAmount(initialFilters.minAmount ?? "");
+      setReviewMaxAmount(initialFilters.maxAmount ?? "");
+      setReviewDirection(initialFilters.direction ?? "all");
+      setReviewDateFrom(initialFilters.dateFrom ?? "");
+      setReviewDateTo(initialFilters.dateTo ?? "");
       setReviewState(
         initialFilters.reviewState === "rejected" ? "rejected" : "needs_review",
       );
@@ -211,7 +227,13 @@ export function ListView({
   const filterParams: TransactionFilterParams = reviewMode
     ? {
         search: searchFilter,
+        direction:
+          reviewDirection === "all" ? undefined : reviewDirection,
         category: categoryFilter,
+        min_amount: amountFilterValue(reviewMinAmount),
+        max_amount: amountFilterValue(reviewMaxAmount),
+        date_from: reviewDateFrom || undefined,
+        date_to: reviewDateTo || undefined,
         category_state: reviewState,
       }
     : {
@@ -270,18 +292,6 @@ export function ListView({
         .map((tx) => tx.id),
     [filtered, selected],
   );
-  const selectedTypeSuggestionIds = useMemo(
-    () =>
-      filtered
-        .filter(
-          (tx) =>
-            selected.has(tx.id) &&
-            Boolean(tx.transaction_type_needs_review),
-        )
-        .map((tx) => tx.id),
-    [filtered, selected],
-  );
-
   const {
     patchCategory,
     deleteOne,
@@ -293,7 +303,6 @@ export function ListView({
     acceptSuggestions,
     rejectSuggestions,
     restoreSuggestions,
-    acceptTypeSuggestions,
   } = useTransactionMutations({
     clearSelection: () => setSelected(new Set()),
     clearBulkCategory: () => setBulkCat(null),
@@ -303,6 +312,11 @@ export function ListView({
   const hasActiveFilters = reviewMode
     ? reviewSearch !== "" ||
       reviewCategory !== "" ||
+      reviewMinAmount !== "" ||
+      reviewMaxAmount !== "" ||
+      reviewDirection !== "all" ||
+      reviewDateFrom !== "" ||
+      reviewDateTo !== "" ||
       reviewState !== "needs_review"
     : search !== "" ||
       direction !== "all" ||
@@ -320,6 +334,11 @@ export function ListView({
     if (reviewMode) {
       setReviewSearch("");
       setReviewCategory("");
+      setReviewMinAmount("");
+      setReviewMaxAmount("");
+      setReviewDirection("all");
+      setReviewDateFrom("");
+      setReviewDateTo("");
       setReviewState("needs_review");
       setPage(0);
       clearUrlFilters();
@@ -353,6 +372,11 @@ export function ListView({
     else next.add(id);
     setSelected(next);
   };
+  const clearBulkSelection = () => {
+    setSelected(new Set());
+    setBulkCat(null);
+    setBulkType("");
+  };
 
   const onConfirmDelete = async () => {
     const ids = Array.from(selected);
@@ -371,146 +395,229 @@ export function ListView({
     if (ok) deleteOne.mutate(id);
   };
 
+  const handleSearchChange = (value: string) => {
+    if (reviewMode) setReviewSearch(value);
+    else setSearch(value);
+    updateUrlFilter("search", value.trim() || undefined);
+    resetPage();
+  };
+  const handleCategoryChange = (value: string) => {
+    if (reviewMode) setReviewCategory(value);
+    else setCategory(value);
+    updateUrlFilter("category", value || undefined);
+    resetPage();
+  };
+  const handleMinAmountChange = (value: string) => {
+    setMinAmount(value);
+    updateUrlFilter("min_amount", value || undefined);
+    resetPage();
+  };
+  const handleMaxAmountChange = (value: string) => {
+    setMaxAmount(value);
+    updateUrlFilter("max_amount", value || undefined);
+    resetPage();
+  };
+  const handleDirectionChange = (value: Direction) => {
+    setDirection(value);
+    updateUrlFilter("direction", value === "all" ? undefined : value);
+    resetPage();
+  };
+  const handleTransactionTypeChange = (value: string) => {
+    setTransactionType(value);
+    updateUrlFilter("transaction_type", value || undefined);
+    resetPage();
+  };
+  const handleDateFromChange = (value: string) => {
+    setDateFrom(value);
+    updateUrlFilter("date_from", value || undefined);
+    resetPage();
+  };
+  const handleDateToChange = (value: string) => {
+    setDateTo(value);
+    updateUrlFilter("date_to", value || undefined);
+    resetPage();
+  };
+  const handleImportIdChange = (value: number | undefined) => {
+    setImportId(value);
+    updateUrlFilter(
+      "import_id",
+      value === undefined ? undefined : String(value),
+    );
+    resetPage();
+  };
+  const handleAccountIdChange = (value: number | undefined) => {
+    setAccountId(value);
+    updateUrlFilter(
+      "account_id",
+      value === undefined ? undefined : String(value),
+    );
+    resetPage();
+  };
+  const handleReviewStateChange = (value: CategoryState) => {
+    setReviewState(value);
+    updateUrlFilter(
+      "category_state",
+      value === "needs_review" ? undefined : value,
+    );
+    setSelected(new Set());
+    resetPage();
+  };
+  const handleReviewMinAmountChange = (value: string) => {
+    setReviewMinAmount(value);
+    updateUrlFilter("min_amount", value || undefined);
+    resetPage();
+  };
+  const handleReviewMaxAmountChange = (value: string) => {
+    setReviewMaxAmount(value);
+    updateUrlFilter("max_amount", value || undefined);
+    resetPage();
+  };
+  const handleReviewDirectionChange = (value: Direction) => {
+    setReviewDirection(value);
+    updateUrlFilter("direction", value === "all" ? undefined : value);
+    resetPage();
+  };
+  const handleReviewDateFromChange = (value: string) => {
+    setReviewDateFrom(value);
+    updateUrlFilter("date_from", value || undefined);
+    resetPage();
+  };
+  const handleReviewDateToChange = (value: string) => {
+    setReviewDateTo(value);
+    updateUrlFilter("date_to", value || undefined);
+    resetPage();
+  };
+  const handleIncludeTransfersChange = (value: boolean) => {
+    setIncludeTransfers(value);
+    updateUrlFilter("include_transfers", value ? undefined : "false");
+    resetPage();
+  };
+  const listControls: TransactionListControlsProps | undefined = reviewMode
+    ? undefined
+    : {
+        search,
+        category,
+        minAmount,
+        maxAmount,
+        direction,
+        transactionType,
+        dateFrom,
+        dateTo,
+        importId,
+        accountId,
+        includeTransfers,
+        hasActiveFilters,
+        filterSummary: summaryQuery.data,
+        onAddManualTransaction,
+        onSearchChange: handleSearchChange,
+        onCategoryChange: handleCategoryChange,
+        onMinAmountChange: handleMinAmountChange,
+        onMaxAmountChange: handleMaxAmountChange,
+        onDirectionChange: handleDirectionChange,
+        onTransactionTypeChange: handleTransactionTypeChange,
+        onDateFromChange: handleDateFromChange,
+        onDateToChange: handleDateToChange,
+        onImportIdChange: handleImportIdChange,
+        onAccountIdChange: handleAccountIdChange,
+        onIncludeTransfersChange: handleIncludeTransfersChange,
+        onClearFilters: clearFilters,
+      };
+  const categoryReviewControls:
+    | TransactionCategoryReviewControlsProps
+    | undefined = reviewMode
+    ? {
+        search: reviewSearch,
+        category: reviewCategory,
+        minAmount: reviewMinAmount,
+        maxAmount: reviewMaxAmount,
+        direction: reviewDirection,
+        dateFrom: reviewDateFrom,
+        dateTo: reviewDateTo,
+        hasActiveFilters,
+        onSearchChange: handleSearchChange,
+        onCategoryChange: handleCategoryChange,
+        onMinAmountChange: handleReviewMinAmountChange,
+        onMaxAmountChange: handleReviewMaxAmountChange,
+        onDirectionChange: handleReviewDirectionChange,
+        onDateFromChange: handleReviewDateFromChange,
+        onDateToChange: handleReviewDateToChange,
+        onClearFilters: clearFilters,
+      }
+    : undefined;
+
   return (
     <div className="space-y-5">
-      <TransactionFilters
-        reviewMode={reviewMode}
-        search={activeSearch}
-        category={activeCategory}
-        minAmount={minAmount}
-        maxAmount={maxAmount}
-        direction={direction}
-        transactionType={transactionType}
-        dateFrom={dateFrom}
-        dateTo={dateTo}
-        importId={importId}
-        accountId={accountId}
-        reviewState={reviewState}
-        includeTransfers={includeTransfers}
-        hasActiveFilters={hasActiveFilters}
-        filterSummary={summaryQuery.data}
-        onAddManualTransaction={onAddManualTransaction}
-        onSearchChange={(value) => {
-          if (reviewMode) setReviewSearch(value);
-          else setSearch(value);
-          updateUrlFilter("search", value.trim() || undefined);
-          resetPage();
-        }}
-        onCategoryChange={(value) => {
-          if (reviewMode) setReviewCategory(value);
-          else setCategory(value);
-          updateUrlFilter("category", value || undefined);
-          resetPage();
-        }}
-        onMinAmountChange={(value) => {
-          setMinAmount(value);
-          updateUrlFilter("min_amount", value || undefined);
-          resetPage();
-        }}
-        onMaxAmountChange={(value) => {
-          setMaxAmount(value);
-          updateUrlFilter("max_amount", value || undefined);
-          resetPage();
-        }}
-        onDirectionChange={(value) => {
-          setDirection(value);
-          updateUrlFilter("direction", value === "all" ? undefined : value);
-          resetPage();
-        }}
-        onTransactionTypeChange={(value) => {
-          setTransactionType(value);
-          updateUrlFilter("transaction_type", value || undefined);
-          resetPage();
-        }}
-        onDateFromChange={(value) => {
-          setDateFrom(value);
-          updateUrlFilter("date_from", value || undefined);
-          resetPage();
-        }}
-        onDateToChange={(value) => {
-          setDateTo(value);
-          updateUrlFilter("date_to", value || undefined);
-          resetPage();
-        }}
-        onImportIdChange={(value) => {
-          setImportId(value);
-          updateUrlFilter(
-            "import_id",
-            value === undefined ? undefined : String(value),
-          );
-          resetPage();
-        }}
-        onAccountIdChange={(value) => {
-          setAccountId(value);
-          updateUrlFilter(
-            "account_id",
-            value === undefined ? undefined : String(value),
-          );
-          resetPage();
-        }}
-        onReviewStateChange={(value) => {
-          setReviewState(value);
-          updateUrlFilter(
-            "category_state",
-            value === "needs_review" ? undefined : value,
-          );
-          setSelected(new Set());
-          resetPage();
-        }}
-        onIncludeTransfersChange={(value) => {
-          setIncludeTransfers(value);
-          updateUrlFilter("include_transfers", value ? undefined : "false");
-          resetPage();
-        }}
-        onClearFilters={clearFilters}
-      />
+      {reviewMode ? (
+        <TransactionFilters
+          reviewState={reviewState}
+          onReviewStateChange={handleReviewStateChange}
+        />
+      ) : listControls ? (
+        <section>
+          <TransactionListToolbar {...listControls} />
+        </section>
+      ) : null}
 
-      <BulkActionsBar
-        reviewMode={reviewMode}
-        selectedCount={selected.size}
-        selectedSuggestionCount={selectedSuggestionIds.length}
-        selectedRejectedSuggestionCount={selectedRejectedSuggestionIds.length}
-        selectedTypeSuggestionCount={selectedTypeSuggestionIds.length}
-        bulkCategory={bulkCat}
-        bulkType={bulkType}
-        bulkCategorizePending={bulkCategorize.isPending}
-        bulkTypePending={bulkSetType.isPending}
-        bulkDeletePending={bulkDelete.isPending}
-        rejectPending={rejectSuggestions.isPending}
-        restorePending={restoreSuggestions.isPending}
-        typeSuggestionPending={acceptTypeSuggestions.isPending}
-        onBulkCategoryChange={setBulkCat}
-        onBulkTypeChange={(value) =>
-          setBulkType(value === "none" ? "" : value)
-        }
-        onBulkCategorize={() =>
-          bulkCategorize.mutate({
-            ids: Array.from(selected),
-            category: bulkCat,
-          })
-        }
-        onBulkType={() =>
-          bulkSetType.mutate({
-            ids: Array.from(selected),
-            transactionType: bulkType,
-          })
-        }
-        onRejectSuggestions={() =>
-          rejectSuggestions.mutate(selectedSuggestionIds)
-        }
-        onRestoreSuggestions={() =>
-          restoreSuggestions.mutate(selectedRejectedSuggestionIds)
-        }
-        onAcceptTypeSuggestions={() =>
-          acceptTypeSuggestions.mutate(selectedTypeSuggestionIds)
-        }
-        onDelete={onConfirmDelete}
-        onCancel={() => {
-          setSelected(new Set());
-          setBulkCat(null);
-          setBulkType("");
-        }}
-      />
+      {reviewMode ? (
+        <CategoryReviewBulkActionsBar
+          selectedCount={selected.size}
+          selectedSuggestionCount={selectedSuggestionIds.length}
+          selectedRejectedSuggestionCount={selectedRejectedSuggestionIds.length}
+          bulkCategory={bulkCat}
+          bulkCategorizePending={bulkCategorize.isPending}
+          acceptPending={acceptSuggestions.isPending}
+          rejectPending={rejectSuggestions.isPending}
+          restorePending={restoreSuggestions.isPending}
+          onBulkCategoryChange={setBulkCat}
+          onBulkCategorize={() =>
+            bulkCategorize.mutate({
+              ids: Array.from(selected),
+              category: bulkCat,
+            })
+          }
+          onAcceptSuggestions={() =>
+            acceptSuggestions.mutate({
+              ids: selectedSuggestionIds,
+              minConfidence: 0,
+              manual: true,
+            })
+          }
+          onRejectSuggestions={() =>
+            rejectSuggestions.mutate(selectedSuggestionIds)
+          }
+          onRestoreSuggestions={() =>
+            restoreSuggestions.mutate(selectedRejectedSuggestionIds)
+          }
+          onCancel={clearBulkSelection}
+        />
+      ) : (
+        <TransactionListBulkActionsBar
+          selectedCount={selected.size}
+          bulkCategory={bulkCat}
+          bulkType={bulkType}
+          bulkCategorizePending={bulkCategorize.isPending}
+          bulkTypePending={bulkSetType.isPending}
+          bulkDeletePending={bulkDelete.isPending}
+          onBulkCategoryChange={setBulkCat}
+          onBulkTypeChange={(value) =>
+            setBulkType(value === "none" ? "" : value)
+          }
+          onBulkCategorize={() =>
+            bulkCategorize.mutate({
+              ids: Array.from(selected),
+              category: bulkCat,
+            })
+          }
+          onBulkType={() =>
+            bulkSetType.mutate({
+              ids: Array.from(selected),
+              transactionType: bulkType,
+            })
+          }
+          onDelete={onConfirmDelete}
+          onCancel={clearBulkSelection}
+        />
+      )}
 
       {summaryQuery.isError ? (
         <ErrorState
@@ -539,12 +646,16 @@ export function ListView({
           acceptPending={acceptSuggestions.isPending}
           rejectPending={rejectSuggestions.isPending}
           restorePending={restoreSuggestions.isPending}
+          listControls={listControls}
+          categoryReviewControls={categoryReviewControls}
           onToggleAll={toggleAll}
           onToggleOne={toggleOne}
-          onPatchCategory={(id, value, subcategory) =>
-            patchCategory.mutate({ id, value, subcategory })
-          }
-          onPatchType={(id, value) => patchType.mutate({ id, value })}
+          onPatchCategory={async (id, value, subcategory) => {
+            await patchCategory.mutateAsync({ id, value, subcategory });
+          }}
+          onPatchType={async (id, value) => {
+            await patchType.mutateAsync({ id, value });
+          }}
           onAcceptSuggestion={(id) =>
             acceptSuggestions.mutate({
               ids: [id],

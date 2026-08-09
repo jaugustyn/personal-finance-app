@@ -10,7 +10,7 @@ import { queryKeys } from "@/lib/query-keys";
 import { showErrorToast } from "@/lib/toasts";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { CategoryAccent } from "@/components/category-accent";
+import { CategoryCompactAccent } from "@/components/category-accent";
 import {
   Popover,
   PopoverContent,
@@ -56,7 +56,12 @@ export function CategoryColorDot({
   color?: string | null;
   subtle?: boolean;
 }) {
-  return <CategoryAccent color={color} size={subtle ? "xs" : "sm"} subtle={subtle} />;
+  return (
+    <CategoryCompactAccent
+      color={color}
+      className={subtle ? "opacity-60" : undefined}
+    />
+  );
 }
 
 /**
@@ -241,45 +246,64 @@ export function CategoryCombobox({
                 {!value && <Check className="ml-auto h-3.5 w-3.5" />}
               </CommandItem>
             </CommandGroup>
-            {groups.map(({ parent, children }) => {
-              const parentLabel = catLabel(parent.name, parent.is_system);
-              return (
-                <CommandGroup key={parent.id} heading={parentLabel}>
-                  <CommandItem
-                    value={`${parent.name} ${parentLabel}`}
-                    onSelect={() => selectGroup(parent.name)}
-                  >
-                    <CategoryColorDot color={parent.color} />
-                    <span className="truncate">{parentLabel}</span>
-                    {value === parent.name &&
-                      (!SHOW_SUBCATEGORIES || !subValue) && (
+            {SHOW_SUBCATEGORIES ? (
+              groups.map(({ parent, children }) => {
+                const parentLabel = catLabel(parent.name, parent.is_system);
+                return (
+                  <CommandGroup key={parent.id} heading={parentLabel}>
+                    <CommandItem
+                      value={`${parent.name} ${parentLabel}`}
+                      onSelect={() => selectGroup(parent.name)}
+                    >
+                      <CategoryColorDot color={parent.color} />
+                      <span className="truncate">{parentLabel}</span>
+                      {value === parent.name && !subValue && (
                         <Check className="ml-auto h-3.5 w-3.5" />
                       )}
-                  </CommandItem>
-                  {SHOW_SUBCATEGORIES &&
-                    !groupsOnly &&
-                    children.map((child) => {
-                      const childLabel = catLabel(child.name, child.is_system);
-                      return (
-                        <CommandItem
-                          key={child.id}
-                          value={`${child.name} ${childLabel} ${parentLabel}`}
-                          onSelect={() => selectSub(parent.name, child.name)}
-                          className="pl-6"
-                        >
-                          <CategoryColorDot color={child.color} subtle />
-                          <span className="truncate text-muted-foreground">
-                            {childLabel}
-                          </span>
-                          {subValue === child.name && (
-                            <Check className="ml-auto h-3.5 w-3.5" />
-                          )}
-                        </CommandItem>
-                      );
-                    })}
-                </CommandGroup>
-              );
-            })}
+                    </CommandItem>
+                    {!groupsOnly &&
+                      children.map((child) => {
+                        const childLabel = catLabel(child.name, child.is_system);
+                        return (
+                          <CommandItem
+                            key={child.id}
+                            value={`${child.name} ${childLabel} ${parentLabel}`}
+                            onSelect={() => selectSub(parent.name, child.name)}
+                            className="pl-6"
+                          >
+                            <CategoryColorDot color={child.color} subtle />
+                            <span className="truncate text-muted-foreground">
+                              {childLabel}
+                            </span>
+                            {subValue === child.name && (
+                              <Check className="ml-auto h-3.5 w-3.5" />
+                            )}
+                          </CommandItem>
+                        );
+                      })}
+                  </CommandGroup>
+                );
+              })
+            ) : (
+              <CommandGroup>
+                {groups.map(({ parent }) => {
+                  const parentLabel = catLabel(parent.name, parent.is_system);
+                  return (
+                    <CommandItem
+                      key={parent.id}
+                      value={`${parent.name} ${parentLabel}`}
+                      onSelect={() => selectGroup(parent.name)}
+                    >
+                      <CategoryColorDot color={parent.color} />
+                      <span className="truncate">{parentLabel}</span>
+                      {value === parent.name && (
+                        <Check className="ml-auto h-3.5 w-3.5" />
+                      )}
+                    </CommandItem>
+                  );
+                })}
+              </CommandGroup>
+            )}
             {trimmed && !exactExists && (
               <CommandGroup>
                 <CommandItem

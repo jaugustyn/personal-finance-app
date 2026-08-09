@@ -18,24 +18,33 @@ import {
 import { TableCell, TableRow } from "@/components/ui/table";
 import type { Transaction } from "@/lib/api";
 import { tTransactionType, useFormatters, useT } from "@/lib/i18n";
+import { TRANSACTION_TYPE_ICONS } from "@/lib/transaction-types";
 import { cn } from "@/lib/utils";
 import {
   ArrowLeftRight,
+  Ban,
   Check,
   MoreHorizontal,
   Pencil,
+  RotateCcw,
   StickyNote,
   Tag,
   Trash2,
   X,
 } from "lucide-react";
-import { TRANSACTION_TYPE_OPTIONS, isCategoryCandidate } from "../_lib/constants";
+import {
+  TRANSACTION_TYPE_OPTIONS,
+  hasCategorySuggestion,
+  hasRejectedCategorySuggestion,
+  isCategoryCandidate,
+} from "../_lib/constants";
 import { TransactionAnnotationEditor } from "./transaction-annotation-editor";
 import { AssignmentValue } from "./assignment-value";
 import { TransactionCategoryCell } from "./transaction-category-cell";
 
 interface TransactionRowProps {
   tx: Transaction;
+  categoryColor: string | null;
   reviewMode: boolean;
   selected: boolean;
   editing: boolean;
@@ -66,6 +75,7 @@ interface TransactionRowProps {
 
 export function TransactionRow({
   tx,
+  categoryColor,
   reviewMode,
   selected,
   editing,
@@ -93,6 +103,9 @@ export function TransactionRow({
   const { t } = useT();
   const { formatCurrency, formatDate } = useFormatters();
   const canEditCategory = isCategoryCandidate(tx) || Boolean(tx.category);
+  const hasActiveCategorySuggestion = hasCategorySuggestion(tx);
+  const hasRejectedCategorySuggestionValue =
+    hasRejectedCategorySuggestion(tx);
   const merchantDisplay = tx.merchant_display || tx.merchant || tx.title;
   const rawMerchant = tx.merchant_raw || tx.merchant;
   const showRawMerchant =
@@ -112,6 +125,42 @@ export function TransactionRow({
   };
   const typeSourceLabel = typeSourceLabels[typeSource] ?? typeSource;
   const displayedType = tx.transaction_type_effective;
+  const displayedTypeOption = TRANSACTION_TYPE_OPTIONS.find(
+    (type) => type === displayedType,
+  );
+  const DisplayedTypeIcon = displayedTypeOption
+    ? TRANSACTION_TYPE_ICONS[displayedTypeOption]
+    : null;
+  const amountCell = (
+    <TableCell
+      className={cn(
+        "pr-4 text-right tabular-nums",
+        reviewMode
+          ? "border-r border-border/40"
+          : "border-r border-border/50",
+      )}
+    >
+      <div className="space-y-0.5">
+        <Money
+          amount={Number(tx.amount)}
+          currency={tx.currency}
+          direction={tx.direction}
+        />
+        {reviewMode && displayedType === "refund" ? (
+          <div className="text-xs font-normal text-muted-foreground">
+            {tTransactionType(t, "refund")}
+          </div>
+        ) : null}
+        {tx.amount_base != null &&
+        tx.base_currency &&
+        tx.base_currency !== tx.currency ? (
+          <div className="text-xs text-muted-foreground">
+            {formatCurrency(Number(tx.amount_base), tx.base_currency)}
+          </div>
+        ) : null}
+      </div>
+    </TableCell>
+  );
 
   return (
     <TableRow
@@ -119,17 +168,33 @@ export function TransactionRow({
         selected && "bg-primary/5",
       )}
     >
-      <TableCell>
-        <Checkbox
-          checked={selected}
-          onCheckedChange={onToggle}
-          aria-label={t("transactions.selectRow", { id: tx.id })}
-        />
+      <TableCell className="border-r border-border/60 p-0">
+        <div className="flex min-h-10 w-full items-center justify-center">
+          <Checkbox
+            checked={selected}
+            onCheckedChange={onToggle}
+            aria-label={t("transactions.selectRow", { id: tx.id })}
+          />
+        </div>
       </TableCell>
-      <TableCell className="text-muted-foreground">
+      <TableCell
+        className={cn(
+          "whitespace-nowrap text-center text-muted-foreground",
+          reviewMode
+            ? "border-r border-border/40"
+            : "border-r border-border/50",
+        )}
+      >
         {formatDate(tx.booking_date)}
       </TableCell>
-      <TableCell className="overflow-hidden font-medium">
+      <TableCell
+        className={cn(
+          "overflow-hidden font-medium",
+          reviewMode
+            ? "border-r border-border/40"
+            : "border-r border-border/50",
+        )}
+      >
         <div className="min-w-0 space-y-0.5">
           <div className="flex min-w-0 items-center gap-2">
             <span className="truncate">{merchantDisplay}</span>
@@ -144,9 +209,6 @@ export function TransactionRow({
               {t("transactions.sourceTitle", { value: tx.title })}
             </div>
           ) : null}
-          <div className="truncate text-xs font-normal text-muted-foreground">
-            {t("transactions.sourceAccount", { value: tx.account_name })}
-          </div>
         </div>
         {annotating ? (
           <TransactionAnnotationEditor
@@ -177,34 +239,44 @@ export function TransactionRow({
           )
         )}
       </TableCell>
+      {reviewMode ? amountCell : null}
+      {!reviewMode ? (
+        <TableCell
+          className="overflow-hidden border-r border-border/50"
+          onDoubleClick={() => {
+            if (!editingType) onEditType();
+          }}
+          title={!editingType ? t("transactions.editTypeHint") : undefined}
+        >
+          {editingType ? (
+            <TransactionTypeInlineSelect
+              value={displayedType || "expense"}
+              onChange={onPatchType}
+              onCancel={onCancelEditType}
+            />
+          ) : (
+            <div className="flex justify-start">
+              <AssignmentValue
+                label={displayedType ? tTransactionType(t, displayedType) : null}
+                icon={
+                  DisplayedTypeIcon ? (
+                    <DisplayedTypeIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                  ) : undefined
+                }
+                title={typeSourceLabel}
+                onEdit={onEditType}
+              />
+            </div>
+          )}
+        </TableCell>
+      ) : null}
       <TableCell
-        className="overflow-hidden"
-        onDoubleClick={() => {
-          if (!editingType) onEditType();
-        }}
-        title={!editingType ? t("transactions.editTypeHint") : undefined}
-      >
-        {editingType ? (
-          <TransactionTypeInlineSelect
-            value={displayedType || "expense"}
-            onChange={onPatchType}
-            onCancel={onCancelEditType}
-          />
-        ) : (
-          <AssignmentValue
-            label={displayedType ? tTransactionType(t, displayedType) : null}
-            icon={
-              tx.is_transfer ? (
-                <ArrowLeftRight className="mr-1 h-3 w-3 shrink-0" />
-              ) : undefined
-            }
-            title={typeSourceLabel}
-            onEdit={onEditType}
-          />
+        className={cn(
+          "overflow-hidden",
+          reviewMode
+            ? "border-r border-border/40"
+            : "border-r border-border/50",
         )}
-      </TableCell>
-      <TableCell
-        className="overflow-hidden"
         onDoubleClick={() => {
           if (canEditCategory && !editing) onEdit();
         }}
@@ -214,111 +286,190 @@ export function TransactionRow({
             : undefined
         }
       >
-        <TransactionCategoryCell
-          tx={tx}
-          reviewMode={reviewMode}
-          editing={editing}
-          acceptPending={acceptPending}
-          rejectPending={rejectPending}
-          restorePending={restorePending}
-          onEdit={onEdit}
-          onPatchCategory={onPatchCategory}
-          onAcceptSuggestion={onAcceptSuggestion}
-          onRejectSuggestion={onRejectSuggestion}
-          onRestoreSuggestion={onRestoreSuggestion}
-        />
-      </TableCell>
-      <TableCell className="text-right">
-        <div className="space-y-0.5">
-          <Money
-            amount={Number(tx.amount)}
-            currency={tx.currency}
-            direction={tx.direction}
+        <div className={cn(!reviewMode && !editing && "flex justify-start")}>
+          <TransactionCategoryCell
+            tx={tx}
+            categoryColor={categoryColor}
+            reviewMode={reviewMode}
+            editing={editing}
+            onEdit={onEdit}
+            onPatchCategory={onPatchCategory}
+            onAcceptSuggestion={onAcceptSuggestion}
           />
-          {tx.amount_base != null &&
-          tx.base_currency &&
-          tx.base_currency !== tx.currency ? (
-            <div className="text-xs text-muted-foreground">
-              {formatCurrency(Number(tx.amount_base), tx.base_currency)}
-            </div>
-          ) : null}
         </div>
       </TableCell>
-      <TableCell className="px-1 text-center">
-        {editing ? (
-          <Button
-            size="icon"
-            variant="ghost"
-            onClick={onCancelEdit}
-            aria-label={t("common.cancel")}
-          >
-            <X className="h-4 w-4" />
-          </Button>
-        ) : (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                size="icon"
-                variant="ghost"
-                aria-label={t("transactions.rowActions")}
-              >
-                <MoreHorizontal className="h-4 w-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-52">
-              {tx.source === "manual" ? (
-                <DropdownMenuItem onClick={onEditTransaction}>
-                  <Pencil className="h-4 w-4" />
-                  {t("transactions.manual.editTitle")}
+      {!reviewMode ? amountCell : null}
+      {reviewMode ? (
+        <TableCell className="px-1 text-center">
+          {editing ? (
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-8 w-8"
+              onClick={onCancelEdit}
+              aria-label={t("common.cancel")}
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          ) : (
+            <CategoryReviewActions
+              hasSuggestion={hasActiveCategorySuggestion}
+              hasRejectedSuggestion={hasRejectedCategorySuggestionValue}
+              acceptPending={acceptPending}
+              rejectPending={rejectPending}
+              restorePending={restorePending}
+              onAccept={onAcceptSuggestion}
+              onReject={onRejectSuggestion}
+              onRestore={onRestoreSuggestion}
+            />
+          )}
+        </TableCell>
+      ) : (
+        <TableCell className="px-1 text-center">
+          {editing ? (
+            <Button
+              size="icon"
+              variant="ghost"
+              onClick={onCancelEdit}
+              aria-label={t("common.cancel")}
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          ) : (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  aria-label={t("transactions.rowActions")}
+                >
+                  <MoreHorizontal className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-52">
+                {tx.source === "manual" ? (
+                  <DropdownMenuItem onClick={onEditTransaction}>
+                    <Pencil className="h-4 w-4" />
+                    {t("transactions.manual.editTitle")}
+                  </DropdownMenuItem>
+                ) : null}
+                {canEditCategory && (
+                  <DropdownMenuItem onClick={onEdit}>
+                    <Pencil className="h-4 w-4" />
+                    {t("transactions.editCategory")}
+                  </DropdownMenuItem>
+                )}
+                <DropdownMenuItem onClick={onAnnotate}>
+                  <Tag className="h-4 w-4" />
+                  {t("transactions.editAnnotations")}
                 </DropdownMenuItem>
-              ) : null}
-              {canEditCategory && (
-                <DropdownMenuItem onClick={onEdit}>
-                  <Pencil className="h-4 w-4" />
-                  {t("transactions.editCategory")}
+                <DropdownMenuSeparator />
+                <DropdownMenuSub>
+                  <DropdownMenuSubTrigger>
+                    <ArrowLeftRight className="h-4 w-4" />
+                    {t("transactions.changeType")}
+                  </DropdownMenuSubTrigger>
+                  <DropdownMenuSubContent className="max-h-80 overflow-y-auto">
+                    {TRANSACTION_TYPE_OPTIONS.map((type) => (
+                      <DropdownMenuItem
+                        key={type}
+                        onClick={() => onPatchType(type)}
+                        disabled={tx.transaction_type_effective === type}
+                      >
+                        {tx.transaction_type_effective === type ? (
+                          <Check className="h-4 w-4 text-primary" />
+                        ) : (
+                          <span className="h-4 w-4" />
+                        )}
+                        {tTransactionType(t, type)}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuSubContent>
+                </DropdownMenuSub>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onClick={onDelete}
+                  className="text-destructive focus:text-destructive"
+                >
+                  <Trash2 className="h-4 w-4" />
+                  {t("common.delete")}
                 </DropdownMenuItem>
-              )}
-              <DropdownMenuItem onClick={onAnnotate}>
-                <Tag className="h-4 w-4" />
-                {t("transactions.editAnnotations")}
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuSub>
-                <DropdownMenuSubTrigger>
-                  <ArrowLeftRight className="h-4 w-4" />
-                  {t("transactions.changeType")}
-                </DropdownMenuSubTrigger>
-                <DropdownMenuSubContent className="max-h-80 overflow-y-auto">
-                  {TRANSACTION_TYPE_OPTIONS.map((type) => (
-                    <DropdownMenuItem
-                      key={type}
-                      onClick={() => onPatchType(type)}
-                      disabled={tx.transaction_type_effective === type}
-                    >
-                      {tx.transaction_type_effective === type ? (
-                        <Check className="h-4 w-4 text-primary" />
-                      ) : (
-                        <span className="h-4 w-4" />
-                      )}
-                      {tTransactionType(t, type)}
-                    </DropdownMenuItem>
-                  ))}
-                </DropdownMenuSubContent>
-              </DropdownMenuSub>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem
-                onClick={onDelete}
-                className="text-destructive focus:text-destructive"
-              >
-                <Trash2 className="h-4 w-4" />
-                {t("common.delete")}
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        )}
-      </TableCell>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+        </TableCell>
+      )}
     </TableRow>
   );
+}
+
+function CategoryReviewActions({
+  hasSuggestion,
+  hasRejectedSuggestion,
+  acceptPending,
+  rejectPending,
+  restorePending,
+  onAccept,
+  onReject,
+  onRestore,
+}: {
+  hasSuggestion: boolean;
+  hasRejectedSuggestion: boolean;
+  acceptPending: boolean;
+  rejectPending: boolean;
+  restorePending: boolean;
+  onAccept: () => void;
+  onReject: () => void;
+  onRestore: () => void;
+}) {
+  const { t } = useT();
+
+  if (hasSuggestion) {
+    return (
+      <div className="flex items-center justify-center gap-0.5">
+        <Button
+          size="icon"
+          variant="ghost"
+          className="h-8 w-8 text-positive hover:text-positive"
+          disabled={acceptPending}
+          onClick={onAccept}
+          title={t("transactions.acceptOne")}
+          aria-label={t("transactions.acceptOne")}
+        >
+          <Check className="h-4 w-4" />
+        </Button>
+        <Button
+          size="icon"
+          variant="ghost"
+          className="h-8 w-8 text-muted-foreground"
+          disabled={rejectPending}
+          onClick={onReject}
+          title={t("transactions.rejectOne")}
+          aria-label={t("transactions.rejectOne")}
+        >
+          <Ban className="h-4 w-4" />
+        </Button>
+      </div>
+    );
+  }
+
+  if (hasRejectedSuggestion) {
+    return (
+      <Button
+        size="icon"
+        variant="ghost"
+        className="h-8 w-8 text-muted-foreground"
+        disabled={restorePending}
+        onClick={onRestore}
+        title={t("transactions.restoreSuggestion")}
+        aria-label={t("transactions.restoreSuggestion")}
+      >
+        <RotateCcw className="h-4 w-4" />
+      </Button>
+    );
+  }
+
+  return null;
 }
 
 function sameDisplayText(left: string | null | undefined, right: string | null | undefined) {
@@ -345,6 +496,7 @@ function TransactionTypeInlineSelect({
       onCancel={onCancel}
       autoFocus
       size="sm"
+      className="mx-auto"
     />
   );
 }

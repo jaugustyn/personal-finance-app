@@ -4,7 +4,6 @@ import { type ReactNode, useState } from "react";
 import {
   AlertCircle,
   ChevronDown,
-  FileSpreadsheet,
   Loader2,
   Upload,
 } from "lucide-react";
@@ -42,6 +41,7 @@ import {
   buildCustomWarnings,
   fieldHintKey,
   fieldSpecsFromPreview,
+  LOGICAL_FIELDS,
   type FieldKey,
 } from "../_lib/import-fields";
 
@@ -92,10 +92,7 @@ export function ImportPreviewDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="flex max-h-[90vh] w-[calc(100vw-1.5rem)] max-w-6xl flex-col gap-0 overflow-hidden p-0">
         <DialogHeader className="shrink-0 border-b px-6 py-4">
-          <DialogTitle className="flex items-center gap-2">
-            <FileSpreadsheet className="h-4 w-4" />
-            {t("imports.reviewTitle")}
-          </DialogTitle>
+          <DialogTitle>{t("imports.reviewTitle")}</DialogTitle>
           <DialogDescription className="flex flex-wrap items-center gap-x-2 gap-y-1">
             <span className="max-w-xl truncate">
               {file?.name ?? t("imports.title")}
@@ -109,7 +106,7 @@ export function ImportPreviewDialog({
                   })}
                 </span>
                 <Badge variant="outline">
-                  {preview.detected_source ?? t("imports.customFormat")}
+                  {preview.detected_source ?? t("imports.customMapping")}
                 </Badge>
               </>
             ) : null}
@@ -127,34 +124,36 @@ export function ImportPreviewDialog({
           {previewError ? <InlineError message={(previewError as Error).message} /> : null}
 
           {preview ? (
-            <div className="space-y-4">
-              <div className="grid gap-4 lg:grid-cols-2 lg:items-start">
-                <section className="rounded-lg border p-4">
-                  <div className="grid gap-2">
-                    <Label htmlFor="import-account">{t("imports.account")}</Label>
-                    <AccountSelect
-                      id="import-account"
-                      value={accountId}
-                      onChange={onAccountChange}
-                      disabled={busy}
-                    />
-                  </div>
+            <div className="overflow-hidden rounded-lg border">
+              <div className="grid gap-5 p-4 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] lg:items-start">
+                <section className="grid gap-2">
+                  <Label htmlFor="import-account">{t("imports.account")}</Label>
+                  <AccountSelect
+                    id="import-account"
+                    value={accountId}
+                    onChange={onAccountChange}
+                    disabled={busy}
+                  />
                 </section>
                 <ImportQualityPanel report={preview.quality_report} />
               </div>
 
               {!preview.detected_source ? (
-                <ColumnMappingSection
-                  preview={preview}
-                  mapping={mapping}
-                  customWarnings={customWarnings}
-                  qualityPending={qualityPending}
-                  qualityError={qualityError}
-                  onMappingChange={onMappingChange}
-                />
+                <div className="border-t px-4 py-3">
+                  <ColumnMappingSection
+                    preview={preview}
+                    mapping={mapping}
+                    customWarnings={customWarnings}
+                    qualityPending={qualityPending}
+                    qualityError={qualityError}
+                    onMappingChange={onMappingChange}
+                  />
+                </div>
               ) : null}
 
-              <PreviewRowsSection preview={preview} />
+              <div className="border-t px-4 py-3">
+                <PreviewRowsSection preview={preview} mapping={mapping} />
+              </div>
             </div>
           ) : null}
 
@@ -320,10 +319,24 @@ function ColumnMappingSection({
   );
 }
 
-function PreviewRowsSection({ preview }: { preview: ImportPreview }) {
+type PreviewColumn = {
+  key: string;
+  sourceHeader: string;
+  label: string;
+  mapped: boolean;
+};
+
+function PreviewRowsSection({
+  preview,
+  mapping,
+}: {
+  preview: ImportPreview;
+  mapping: Record<FieldKey, string>;
+}) {
   const { t } = useT();
   const [page, setPage] = useState(0);
   const [pageSize, setPageSize] = useState(5);
+  const columns = buildPreviewColumns(preview, mapping, t);
   const maxPage = Math.max(
     0,
     Math.ceil(preview.sample_rows.length / pageSize) - 1,
@@ -335,21 +348,32 @@ function PreviewRowsSection({ preview }: { preview: ImportPreview }) {
   return (
     <DisclosureSection
       title={t("imports.rowsPreview.title")}
-      summary={t("imports.rowsPreview.summary", {
-        count: preview.sample_rows.length,
+      summary={t("imports.previewRows", {
+        shown: preview.sample_rows.length,
+        total: preview.quality_report.total_rows,
       })}
+      defaultOpen
     >
       <div className="overflow-hidden rounded-md border">
         <div className="overflow-x-auto">
           <table className="min-w-full caption-bottom text-sm">
             <thead className="bg-muted/30">
               <tr className="border-b">
-                {preview.headers.map((header) => (
+                {columns.map((column) => (
                   <th
-                    key={header}
-                    className="h-10 whitespace-nowrap px-3 text-left align-middle font-medium text-muted-foreground"
+                    key={column.key}
+                    className="h-12 whitespace-nowrap px-3 text-left align-middle font-medium text-muted-foreground"
                   >
-                    {header}
+                    <span className="flex min-h-8 flex-col justify-center">
+                      <span className={column.mapped ? "text-foreground" : undefined}>
+                        {column.label}
+                      </span>
+                      {column.mapped ? (
+                        <span className="text-[11px] font-normal text-muted-foreground">
+                          {column.sourceHeader}
+                        </span>
+                      ) : null}
+                    </span>
                   </th>
                 ))}
               </tr>
@@ -360,13 +384,15 @@ function PreviewRowsSection({ preview }: { preview: ImportPreview }) {
                   key={`${currentPage}:${index}`}
                   className="border-b transition-colors last:border-0 hover:bg-muted/30"
                 >
-                  {preview.headers.map((header) => (
+                  {columns.map((column) => (
                     <td
-                      key={header}
+                      key={column.key}
                       className="max-w-64 whitespace-nowrap p-3 align-middle text-xs"
-                      title={row[header] ?? ""}
+                      title={row[column.sourceHeader] ?? ""}
                     >
-                      <span className="block truncate">{row[header] ?? ""}</span>
+                      <span className="block truncate">
+                        {row[column.sourceHeader] ?? ""}
+                      </span>
                     </td>
                   ))}
                 </tr>
@@ -391,6 +417,44 @@ function PreviewRowsSection({ preview }: { preview: ImportPreview }) {
   );
 }
 
+function buildPreviewColumns(
+  preview: ImportPreview,
+  mapping: Record<FieldKey, string>,
+  t: (key: TranslationKey) => string,
+): PreviewColumn[] {
+  const mappedHeaders = new Set<string>();
+  const mappedColumns: PreviewColumn[] = [];
+
+  for (const field of LOGICAL_FIELDS) {
+    const sourceHeader = mapping[field.key];
+    if (
+      !sourceHeader ||
+      !preview.headers.includes(sourceHeader) ||
+      mappedHeaders.has(sourceHeader)
+    ) {
+      continue;
+    }
+    mappedHeaders.add(sourceHeader);
+    mappedColumns.push({
+      key: `mapped:${field.key}:${sourceHeader}`,
+      sourceHeader,
+      label: t(`imports.field.${field.key}` as TranslationKey),
+      mapped: true,
+    });
+  }
+
+  const sourceColumns = preview.headers
+    .filter((header) => !mappedHeaders.has(header))
+    .map((header) => ({
+      key: `source:${header}`,
+      sourceHeader: header,
+      label: header,
+      mapped: false,
+    }));
+
+  return [...mappedColumns, ...sourceColumns];
+}
+
 function DisclosureSection({
   title,
   summary,
@@ -404,10 +468,10 @@ function DisclosureSection({
 }) {
   const [expanded, setExpanded] = useState(defaultOpen);
   return (
-    <section className="overflow-hidden rounded-lg border">
+    <section>
       <button
         type="button"
-        className="flex w-full items-center justify-between gap-4 px-4 py-3 text-left transition-colors hover:bg-muted/40"
+        className="flex w-full items-center justify-between gap-4 py-1.5 text-left transition-colors hover:text-foreground"
         aria-expanded={expanded}
         onClick={() => setExpanded((current) => !current)}
       >
@@ -421,7 +485,7 @@ function DisclosureSection({
           className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${expanded ? "rotate-180" : ""}`}
         />
       </button>
-      {expanded ? <div className="border-t p-4">{children}</div> : null}
+      {expanded ? <div className="pt-3">{children}</div> : null}
     </section>
   );
 }

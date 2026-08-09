@@ -29,7 +29,7 @@ export interface NavSection {
   items: NavItem[];
 }
 
-/** Single source of truth for navigation, shared by sidebar, mobile nav and ⌘K. */
+/** Single source of truth for desktop and mobile navigation. */
 export const NAV_SECTIONS: NavSection[] = [
   {
     titleKey: "nav.section.overview",

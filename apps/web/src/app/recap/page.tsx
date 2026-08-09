@@ -2,37 +2,35 @@
 
 import Link from "next/link";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import {
-  AlertTriangle,
-  CalendarRange,
-  CircleDollarSign,
-  Loader2,
-  Scale,
-  Store,
-  Tags,
-} from "lucide-react";
+import { AlertTriangle, ArrowRight, CalendarRange, Loader2 } from "lucide-react";
 
 import { DataTable, type DataTableColumn } from "@/components/data-table";
 import { DateRangePicker } from "@/components/date-range-picker";
 import { EmptyState } from "@/components/empty-state";
 import { ErrorState } from "@/components/error-state";
 import { PageHeader } from "@/components/page-header";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { SegmentedControl } from "@/components/segmented-control";
+import { Card, CardContent } from "@/components/ui/card";
 import { CardGridSkeleton } from "@/components/ui/skeleton";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import {
   storedValueOneOf,
   useLocalStorageState,
 } from "@/hooks/use-local-storage-state";
 import { api, type Recap } from "@/lib/api";
-import { useFormatters, useT, tCategory } from "@/lib/i18n";
+import { useFormatters, useT } from "@/lib/i18n";
 import type { Formatters } from "@/lib/formatters";
 import { transactionsHref } from "@/lib/transaction-links";
 import { queryKeys } from "@/lib/query-keys";
 import { cn } from "@/lib/utils";
+import { CategoryChangeList } from "./_components/category-change-list";
 
 type Period = "week" | "month" | "custom";
 const isPeriod = storedValueOneOf<Period>(["week", "month", "custom"]);
-type CategoryChangeRow = Recap["category_changes"][number];
 type MerchantChangeRow = Recap["merchant_changes"][number];
 
 export default function RecapPage() {
@@ -71,102 +69,70 @@ export default function RecapPage() {
 
   const data = query.data;
   const currency = data?.base_currency ?? "PLN";
-  const categoryColumns: DataTableColumn<CategoryChangeRow>[] = [
-    {
-      id: "category",
-      header: t("transactions.column.category"),
-      sortValue: (row) => tCategory(t, row.category),
-      cell: (row) => (
-        <Link
-          href={transactionsHref({
-            category: row.category,
-            date_from:
-              row.current_count > 0 ? data?.current_from : data?.previous_from,
-            date_to: row.current_count > 0 ? data?.current_to : data?.previous_to,
-          })}
-          className="font-medium text-primary underline-offset-4 hover:underline"
-        >
-          {tCategory(t, row.category)}
-        </Link>
-      ),
-    },
-    amountColumn("previous", t("recap.previous"), currency, formatters),
-    amountColumn("current", t("recap.current"), currency, formatters),
-    {
-      id: "count",
-      header: t("recap.transactionsChange"),
-      align: "right",
-      className: "tabular-nums text-muted-foreground",
-      sortValue: (row) => row.current_count - row.previous_count,
-      cell: (row) => `${row.previous_count} → ${row.current_count}`,
-    },
-    changeColumn(t, currency, formatters),
-  ];
   const merchantColumns: DataTableColumn<MerchantChangeRow>[] = [
     {
       id: "merchant",
       header: t("transactions.column.merchant"),
+      headerClassName: "w-[38%]",
       sortValue: (row) => row.merchant_display || row.merchant,
       cell: (row) => (
-        <Link
-          href={transactionsHref({
-            search: row.merchant,
-            date_from:
-              row.current_count > 0 ? data?.current_from : data?.previous_from,
-            date_to: row.current_count > 0 ? data?.current_to : data?.previous_to,
-          })}
-          className="font-medium text-primary underline-offset-4 hover:underline"
-        >
-          {row.merchant_display || row.merchant}
-        </Link>
+        <div className="min-w-0">
+          <Link
+            href={transactionsHref({
+              search: row.merchant,
+              date_from:
+                row.current_count > 0 ? data?.current_from : data?.previous_from,
+              date_to: row.current_count > 0 ? data?.current_to : data?.previous_to,
+            })}
+            className="font-medium text-primary underline-offset-4 hover:underline"
+          >
+            {row.merchant_display || row.merchant}
+          </Link>
+          <p
+            className="mt-0.5 flex items-center gap-1.5 text-xs tabular-nums text-muted-foreground"
+            aria-label={t("recap.operationsComparison", {
+              previous: row.previous_count,
+              current: row.current_count,
+            })}
+          >
+            <span>{t("recap.operations")}</span>
+            <span>{row.previous_count}</span>
+            <ArrowRight className="h-3 w-3 shrink-0" aria-hidden />
+            <span className="text-foreground/75">{row.current_count}</span>
+          </p>
+        </div>
       ),
     },
-    amountColumn("previous", t("recap.previous"), currency, formatters),
     amountColumn("current", t("recap.current"), currency, formatters),
-    {
-      id: "count",
-      header: t("recap.transactionsChange"),
-      align: "right",
-      className: "tabular-nums text-muted-foreground",
-      sortValue: (row) => row.current_count - row.previous_count,
-      cell: (row) => `${row.previous_count} → ${row.current_count}`,
-    },
+    amountColumn("previous", t("recap.previous"), currency, formatters),
     changeColumn(t, currency, formatters),
   ];
 
   return (
     <div className="space-y-5">
-      <PageHeader title={t("recap.title")} description={t("recap.subtitle")} />
+      <PageHeader title={t("recap.title")} />
 
-      <section className="rounded-lg border bg-card px-4 py-3">
+      <section className="-mx-4 border-y border-border/70 px-4 py-4 sm:-mx-6 sm:px-6">
         <div className="flex flex-wrap items-end gap-4">
           <div className="space-y-1">
             <div className="text-xs font-medium text-muted-foreground">
               {t("recap.analysisRange")}
             </div>
-            <div className="inline-flex h-9 items-stretch divide-x divide-border/60 overflow-hidden rounded-md border border-input bg-card">
-              {(["week", "month", "custom"] as Period[]).map((value) => (
-                <button
-                  key={value}
-                  type="button"
-                  onClick={() => setPeriod(value)}
-                  className={cn(
-                    "px-3 text-xs font-medium transition-colors",
-                    period === value
-                      ? "bg-accent-soft text-accent-soft-foreground"
-                      : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
-                  )}
-                >
-                  {t(`recap.period.${value}`)}
-                </button>
-              ))}
-            </div>
+            <SegmentedControl
+              value={period}
+              options={(["week", "month", "custom"] as Period[]).map(
+                (value) => ({
+                  value,
+                  label: t(`recap.period.${value}`),
+                  tooltip: t(`recap.period.${value}Hint`),
+                }),
+              )}
+              onValueChange={(value) => setPeriod(value as Period)}
+              ariaLabel={t("recap.analysisRange")}
+            />
           </div>
           {period === "custom" && (
-            <div className="w-full max-w-sm space-y-1">
-              <div className="text-xs font-medium text-muted-foreground">
-                {t("recap.customRange")}
-              </div>
+            <div className="w-full max-w-[18rem]">
               <DateRangePicker
                 from={dateFrom}
                 to={dateTo}
@@ -183,18 +149,17 @@ export default function RecapPage() {
         </div>
 
         {data && (period !== "custom" || isCustomReady) && (
-          <div className="mt-3 flex min-h-8 flex-wrap items-center gap-x-2 gap-y-1 border-t pt-3 text-sm leading-5">
-            <CalendarRange className="h-4 w-4 shrink-0 self-center text-muted-foreground" />
-            <span className="font-medium tabular-nums text-foreground">
-              {formatDate(data.current_from)} – {formatDate(data.current_to)}
-            </span>
-            <span className="text-muted-foreground" aria-hidden>
-              ·
-            </span>
-            <span className="tabular-nums text-muted-foreground">
-              {t("recap.comparedWith")} {formatDate(data.previous_from)} –{" "}
-              {formatDate(data.previous_to)}
-            </span>
+          <div className="mt-4 flex min-h-8 flex-wrap items-center gap-x-8 gap-y-2 text-sm leading-5">
+            {period !== "custom" && (
+              <PeriodRange
+                label={t("recap.current")}
+                value={`${formatDate(data.current_from)} – ${formatDate(data.current_to)}`}
+              />
+            )}
+            <PeriodRange
+              label={period === "custom" ? t("recap.comparedWith") : t("recap.previous")}
+              value={`${formatDate(data.previous_from)} – ${formatDate(data.previous_to)}`}
+            />
             {query.isFetching && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
           </div>
         )}
@@ -215,7 +180,6 @@ export default function RecapPage() {
       ) : (
         <AnalysisContent
           data={data}
-          categoryColumns={categoryColumns}
           merchantColumns={merchantColumns}
         />
       )}
@@ -225,23 +189,14 @@ export default function RecapPage() {
 
 function AnalysisContent({
   data,
-  categoryColumns,
   merchantColumns,
 }: {
   data: Recap;
-  categoryColumns: DataTableColumn<CategoryChangeRow>[];
   merchantColumns: DataTableColumn<MerchantChangeRow>[];
 }) {
   const { t } = useT();
   const { formatCurrency } = useFormatters();
   const currency = data.base_currency;
-  const noActivity = [
-    data.cashflow.income,
-    data.cashflow.gross_expenses,
-    data.cashflow.refunds,
-    data.cashflow.debt_payments,
-    data.cashflow.asset_allocations,
-  ].every((value) => Number(value) === 0);
 
   return (
     <div className="space-y-5">
@@ -257,28 +212,22 @@ function AnalysisContent({
         </div>
       )}
 
-      {noActivity && (
-        <div className="flex items-start gap-2 rounded-lg border px-4 py-3 text-sm text-muted-foreground">
-          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-          {t("recap.currentEmpty")}
-        </div>
-      )}
-
       <div className="grid gap-3 lg:grid-cols-3">
         <MetricCard
           title={t("recap.income")}
-          icon={CircleDollarSign}
           current={data.cashflow.income}
           delta={data.cashflow.income_delta}
           currency={currency}
           positiveIncrease
+          deltaWording="amount"
         />
         <MetricCard
           title={t("recap.expenses")}
-          icon={Tags}
+          tooltip={t("recap.expensesHint")}
           current={data.cashflow.expenses}
           delta={data.cashflow.expenses_delta}
           currency={currency}
+          deltaWording="amount"
           details={
             data.cashflow.refunds > 0
               ? t("recap.expenseDetails", {
@@ -290,90 +239,128 @@ function AnalysisContent({
         />
         <MetricCard
           title={t("recap.net")}
-          icon={Scale}
+          tooltip={t("recap.netHint")}
           current={data.cashflow.net}
           delta={data.cashflow.net_delta}
           currency={currency}
           positiveIncrease
+          deltaWording="balance"
+          details={[
+            data.cashflow.debt_payments > 0
+              ? t("recap.debtDetails", {
+                  value: formatCurrency(data.cashflow.debt_payments, currency),
+                })
+              : null,
+            data.cashflow.asset_allocations > 0
+              ? t("recap.assetDetails", {
+                  value: formatCurrency(data.cashflow.asset_allocations, currency),
+                })
+              : null,
+          ]
+            .filter(Boolean)
+            .join(" · ")}
         />
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Tags className="h-4 w-4 text-muted-foreground" />
-            {t("recap.changes.title")}
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <DataTable
-            columns={categoryColumns}
-            data={data.category_changes}
-            rowKey={(row) => row.category}
-            emptyTitle={t("recap.changes.empty")}
-            initialSort={{ id: "delta", dir: "desc" }}
-          />
-        </CardContent>
-      </Card>
+      <section className="space-y-3">
+        <div className="flex min-h-9 items-center">
+          <h2 className="text-base font-semibold">{t("recap.changes.title")}</h2>
+        </div>
+        <CategoryChangeList
+          data={data.category_changes}
+          currency={currency}
+          currentFrom={data.current_from}
+          currentTo={data.current_to}
+          previousFrom={data.previous_from}
+          previousTo={data.previous_to}
+        />
+      </section>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Store className="h-4 w-4 text-muted-foreground" />
-            {t("recap.merchants.title")}
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <DataTable
-            columns={merchantColumns}
-            data={data.merchant_changes}
-            rowKey={(row) => row.merchant_canonical_key || row.merchant}
-            emptyTitle={t("recap.merchants.empty")}
-            initialSort={{ id: "delta", dir: "desc" }}
-          />
-        </CardContent>
-      </Card>
+      <section className="space-y-3">
+        <div className="flex min-h-9 items-center">
+          <h2 className="text-base font-semibold">{t("recap.merchants.title")}</h2>
+        </div>
+        <DataTable
+          columns={merchantColumns}
+          data={data.merchant_changes}
+          rowKey={(row) => row.merchant_canonical_key || row.merchant}
+          emptyTitle={t("recap.merchants.empty")}
+          initialSort={{ id: "delta", dir: "desc" }}
+          tableClassName="min-w-[38rem]"
+        />
+      </section>
+    </div>
+  );
+}
+
+function PeriodRange({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+      <span className="text-xs font-medium text-muted-foreground">{label}</span>
+      <span className="font-medium tabular-nums text-foreground">{value}</span>
     </div>
   );
 }
 
 function MetricCard({
   title,
-  icon: Icon,
+  tooltip,
   current,
   delta,
   currency,
   positiveIncrease = false,
+  deltaWording,
   details,
 }: {
   title: string;
-  icon: typeof CircleDollarSign;
+  tooltip?: string;
   current: number;
   delta: number;
   currency: string;
   positiveIncrease?: boolean;
+  deltaWording: "amount" | "balance";
   details?: string;
 }) {
   const { t } = useT();
   const { formatCurrency } = useFormatters();
-  const previous = current - delta;
   const favorable = positiveIncrease ? delta >= 0 : delta <= 0;
+  const deltaText =
+    delta === 0
+      ? t("recap.metric.unchanged")
+      : t(
+          deltaWording === "balance"
+            ? delta > 0
+              ? "recap.metric.higher"
+              : "recap.metric.lower"
+            : delta > 0
+              ? "recap.metric.more"
+              : "recap.metric.less",
+          { value: formatCurrency(Math.abs(delta), currency) },
+        );
   return (
     <Card>
-      <CardContent className="space-y-2 p-4">
-        <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
-          <Icon className="h-4 w-4" />
-          {title}
-        </div>
-        <div className="text-2xl font-semibold tabular-nums">
+      <CardContent className="p-4">
+        {tooltip ? (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span
+                tabIndex={0}
+                className="cursor-help text-sm font-medium text-muted-foreground outline-none focus-visible:text-foreground"
+              >
+                {title}
+              </span>
+            </TooltipTrigger>
+            <TooltipContent className="max-w-xs text-pretty leading-relaxed">
+              {tooltip}
+            </TooltipContent>
+          </Tooltip>
+        ) : (
+          <div className="text-sm font-medium text-muted-foreground">{title}</div>
+        )}
+        <div className="mt-2 text-2xl font-semibold tracking-tight tabular-nums">
           {formatCurrency(current, currency)}
         </div>
-        <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs">
-          <span className="text-muted-foreground">
-            {t("recap.previousShort", {
-              value: formatCurrency(previous, currency),
-            })}
-          </span>
+        <div className="mt-1.5 text-xs">
           <span
             className={cn(
               "font-medium tabular-nums",
@@ -384,10 +371,10 @@ function MetricCard({
                   : "text-negative",
             )}
           >
-            {signedCurrency(delta, currency, formatCurrency)}
+            {deltaText}
           </span>
         </div>
-        {details && <p className="text-xs text-muted-foreground">{details}</p>}
+        {details ? <p className="mt-1.5 text-xs text-muted-foreground">{details}</p> : null}
       </CardContent>
     </Card>
   );
@@ -403,6 +390,7 @@ function amountColumn<T extends { previous: number; current: number }>(
     id: key,
     header,
     align: "right",
+    headerClassName: "text-right",
     className: cn("tabular-nums", key === "previous" && "text-muted-foreground"),
     sortValue: (row) => row[key],
     cell: (row) => formatters.formatCurrency(row[key], currency),
@@ -423,6 +411,7 @@ function changeColumn<T extends {
     id: "delta",
     header: t("recap.delta"),
     align: "right",
+    headerClassName: "text-right",
     className: "tabular-nums",
     sortValue: (row) => Math.abs(row.delta),
     cell: (row) => (

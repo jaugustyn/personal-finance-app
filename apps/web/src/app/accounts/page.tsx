@@ -178,10 +178,7 @@ export default function AccountsPage() {
 
   return (
     <div className="space-y-5">
-      <PageHeader
-        title={t("accounts.title")}
-        description={t("accounts.description")}
-      />
+      <PageHeader title={t("accounts.title")} />
 
       <DataTable
         columns={columns}

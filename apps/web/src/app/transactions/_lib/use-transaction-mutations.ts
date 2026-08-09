@@ -3,7 +3,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { useConfirm } from "@/components/confirm-dialog";
-import { api, isApiError } from "@/lib/api";
+import { api, isApiError, type Transaction } from "@/lib/api";
 import { useT } from "@/lib/i18n";
 import { invalidateTransactionData } from "@/lib/query-keys";
 import { showErrorToast } from "@/lib/toasts";
@@ -23,6 +23,13 @@ export function useTransactionMutations({
   const qc = useQueryClient();
   const confirm = useConfirm();
   const invalidateAll = () => void invalidateTransactionData(qc);
+  const updateCachedTransaction = (updated: Transaction) => {
+    qc.setQueriesData<Transaction[]>(
+      { queryKey: ["transactions", "list"] },
+      (rows) =>
+        rows?.map((row) => (row.id === updated.id ? updated : row)),
+    );
+  };
 
   const patchCategory = useMutation({
     mutationFn: ({
@@ -37,7 +44,8 @@ export function useTransactionMutations({
       api.patchCategory(id, value, {
         subcategory,
       }),
-    onSuccess: () => {
+    onSuccess: (updated) => {
+      updateCachedTransaction(updated);
       invalidateAll();
       toast.success(t("toast.saved"));
     },
@@ -68,7 +76,8 @@ export function useTransactionMutations({
         throw error;
       }
     },
-    onSuccess: () => {
+    onSuccess: (updated) => {
+      updateCachedTransaction(updated);
       invalidateAll();
       toast.success(t("toast.saved"));
     },
@@ -77,7 +86,8 @@ export function useTransactionMutations({
 
   const acceptTypeSuggestion = useMutation({
     mutationFn: (id: number) => api.acceptTypeSuggestion(id),
-    onSuccess: () => {
+    onSuccess: (updated) => {
+      updateCachedTransaction(updated);
       invalidateAll();
       toast.success(t("toast.saved"));
     },
@@ -94,7 +104,8 @@ export function useTransactionMutations({
       notes?: string | null;
       tags?: string[];
     }) => api.patchAnnotations(id, { notes, tags }),
-    onSuccess: () => {
+    onSuccess: (updated) => {
+      updateCachedTransaction(updated);
       invalidateAll();
       toast.success(t("toast.saved"));
     },

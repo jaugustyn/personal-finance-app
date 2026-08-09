@@ -1,12 +1,17 @@
 "use client";
 
 import { CategoryCombobox } from "@/components/category-combobox";
+import { CategoryCompactAccent } from "@/components/category-accent";
 import { ConfidenceBadge } from "@/components/status-badge";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import type { Transaction } from "@/lib/api";
-import { tCategory, type TranslationKey, useT } from "@/lib/i18n";
-import { Ban, Check, RotateCcw } from "lucide-react";
+import { tCategory, useT } from "@/lib/i18n";
+import { Plus } from "lucide-react";
 import {
   hasCategorySuggestion,
   hasRejectedCategorySuggestion,
@@ -16,48 +21,50 @@ import { AssignmentValue } from "./assignment-value";
 
 interface TransactionCategoryCellProps {
   tx: Transaction;
+  categoryColor: string | null;
   reviewMode: boolean;
   editing: boolean;
-  acceptPending: boolean;
-  rejectPending: boolean;
-  restorePending: boolean;
   onEdit: () => void;
   onPatchCategory: (
     value: string | null,
     subcategory: string | null,
   ) => void;
   onAcceptSuggestion: () => void;
-  onRejectSuggestion: () => void;
-  onRestoreSuggestion: () => void;
 }
 
 export function TransactionCategoryCell({
   tx,
+  categoryColor,
   reviewMode,
   editing,
-  acceptPending,
-  rejectPending,
-  restorePending,
   onEdit,
   onPatchCategory,
   onAcceptSuggestion,
-  onRejectSuggestion,
-  onRestoreSuggestion,
 }: TransactionCategoryCellProps) {
   const { t } = useT();
   const hasSuggestion = hasCategorySuggestion(tx);
   const hasRejectedSuggestion = hasRejectedCategorySuggestion(tx);
   const hasRejectedMarker =
     !tx.category && tx.category_suggestion_rejected && isCategoryCandidate(tx);
-  const decisionAction = tx.classification_decision?.action;
 
   if (editing) {
     return (
       <CategoryCombobox
-        value={tx.category}
+        value={tx.category ?? (reviewMode ? tx.category_predicted : null)}
         subValue={tx.subcategory}
-        onChange={(sel) => onPatchCategory(sel.category, sel.subcategory)}
+        onChange={(sel) => {
+          if (
+            reviewMode &&
+            hasSuggestion &&
+            sel.category === tx.category_predicted
+          ) {
+            onAcceptSuggestion();
+            return;
+          }
+          onPatchCategory(sel.category, sel.subcategory);
+        }}
         autoFocus
+        className="mx-auto"
       />
     );
   }
@@ -66,6 +73,7 @@ export function TransactionCategoryCell({
     return (
       <AssignmentValue
         label={tCategory(t, tx.category)}
+        icon={<CategoryCompactAccent color={categoryColor} />}
         onEdit={onEdit}
         title={t("transactions.editCategory")}
       />
@@ -73,90 +81,39 @@ export function TransactionCategoryCell({
   }
 
   if (!reviewMode) {
-    return <span className="text-muted-foreground">-</span>;
+    return (
+      <EmptyCategoryValue
+        applicable={isCategoryCandidate(tx)}
+        onAssign={onEdit}
+      />
+    );
   }
 
   if (hasRejectedSuggestion) {
     return (
-      <div className="flex items-start gap-1.5">
-        <button
-          type="button"
-          onClick={onEdit}
-          className="flex min-w-0 flex-1 flex-col items-start gap-1 text-left"
-          title={t("transactions.suggestionRejected")}
-        >
-          <Badge variant="outline" className="max-w-full truncate">
-            {t("transactions.suggestionRejected")}:{" "}
-            {tCategory(t, tx.category_predicted!)}
-          </Badge>
-          {tx.category_confidence !== null && (
-            <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
-              <ConfidenceBadge value={tx.category_confidence} />
-            </span>
-          )}
-        </button>
-        <Button
-          size="icon"
-          variant="ghost"
-          className="h-7 w-7 shrink-0"
-          disabled={restorePending}
-          onClick={onRestoreSuggestion}
-          title={t("transactions.restoreSuggestion")}
-          aria-label={t("transactions.restoreSuggestion")}
-        >
-          <RotateCcw className="h-3.5 w-3.5" />
-        </Button>
-      </div>
+      <AssignmentValue
+        label={tCategory(t, tx.category_predicted!)}
+        icon={<CategoryCompactAccent color={categoryColor} />}
+        description={t("transactions.suggestionRejected")}
+        onEdit={onEdit}
+        title={t("transactions.editCategory")}
+      />
     );
   }
 
   if (hasSuggestion) {
     return (
-      <div className="flex items-start gap-1.5">
-        <button
-          type="button"
-          onClick={onEdit}
-          className="flex min-w-0 flex-1 flex-col items-start gap-1 text-left"
-          title={t("transactions.suggestion")}
-        >
-          <Badge variant="outline" className="max-w-full truncate border-dashed">
-            {tCategory(t, tx.category_predicted)}
-          </Badge>
-          {tx.category_confidence !== null && (
-            <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
-              {t("transactions.suggestion")}
-              <ConfidenceBadge value={tx.category_confidence} />
-              {decisionAction ? (
-                <ClassificationDecisionBadge action={decisionAction} />
-              ) : null}
-            </span>
-          )}
-        </button>
-        <div className="flex shrink-0 gap-1">
-          <Button
-            size="icon"
-            variant="ghost"
-            className="h-7 w-7 text-positive hover:text-positive"
-            disabled={acceptPending}
-            onClick={onAcceptSuggestion}
-            title={t("transactions.acceptOne")}
-            aria-label={t("transactions.acceptOne")}
-          >
-            <Check className="h-3.5 w-3.5" />
-          </Button>
-          <Button
-            size="icon"
-            variant="ghost"
-            className="h-7 w-7 text-muted-foreground"
-            disabled={rejectPending}
-            onClick={onRejectSuggestion}
-            title={t("transactions.rejectOne")}
-            aria-label={t("transactions.rejectOne")}
-          >
-            <Ban className="h-3.5 w-3.5" />
-          </Button>
-        </div>
-      </div>
+      <AssignmentValue
+        label={tCategory(t, tx.category_predicted)}
+        icon={<CategoryCompactAccent color={categoryColor} />}
+        description={
+          tx.category_confidence !== null ? (
+            <ConfidenceBadge value={tx.category_confidence} />
+          ) : undefined
+        }
+        onEdit={onEdit}
+        title={t("transactions.editCategory")}
+      />
     );
   }
 
@@ -168,26 +125,52 @@ export function TransactionCategoryCell({
     );
   }
 
-  return <span className="text-muted-foreground">-</span>;
+  return (
+    <EmptyCategoryValue
+      applicable={isCategoryCandidate(tx)}
+      onAssign={onEdit}
+    />
+  );
 }
 
-function ClassificationDecisionBadge({
-  action,
+export function EmptyCategoryValue({
+  applicable,
+  onAssign,
 }: {
-  action: NonNullable<Transaction["classification_decision"]>["action"];
+  applicable: boolean;
+  onAssign: () => void;
 }) {
   const { t } = useT();
-  const labelKey: Record<typeof action, TranslationKey> = {
-    accept: "transactions.classificationDecision.accept",
-    review: "transactions.classificationDecision.review",
-    manual: "transactions.classificationDecision.manual",
-    not_applicable: "transactions.classificationDecision.not_applicable",
-  };
-  const variant =
-    action === "accept" ? "success" : action === "review" ? "warning" : "muted";
+
+  if (applicable) {
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            type="button"
+            onClick={onAssign}
+            className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-dashed border-muted-foreground/45 text-muted-foreground transition-colors hover:border-primary/60 hover:bg-primary/5 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            aria-label={t("transactions.bulkCategorize")}
+          >
+            <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+          </button>
+        </TooltipTrigger>
+        <TooltipContent>{t("transactions.bulkCategorize")}</TooltipContent>
+      </Tooltip>
+    );
+  }
+
   return (
-    <Badge variant={variant} className="text-[11px]">
-      {t(labelKey[action])}
-    </Badge>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span
+          className="inline-flex h-6 w-6 cursor-help items-center justify-center text-muted-foreground"
+          aria-label={t("transactions.categoryNotApplicable")}
+        >
+          <span aria-hidden="true">—</span>
+        </span>
+      </TooltipTrigger>
+      <TooltipContent>{t("transactions.categoryNotApplicable")}</TooltipContent>
+    </Tooltip>
   );
 }

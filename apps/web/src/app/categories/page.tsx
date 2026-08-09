@@ -32,6 +32,12 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { PageHeader } from "@/components/page-header";
 import { Skeleton, TableSkeleton } from "@/components/ui/skeleton";
 import { useConfirm } from "@/components/confirm-dialog";
@@ -200,10 +206,7 @@ export default function CategoriesPage() {
 
   return (
     <div className="space-y-5">
-      <PageHeader
-        title={t("categories.title")}
-        description={t("categories.subtitle")}
-      />
+      <PageHeader title={t("categories.title")} />
 
       {isLoading ? (
         <CategoriesSkeleton />
@@ -248,13 +251,26 @@ export default function CategoriesPage() {
             }}
           >
             <DialogHeader>
-              <DialogTitle>{t("categories.addNew")}</DialogTitle>
-              <DialogDescription>
+              <DialogTitle>
+                <TooltipProvider delayDuration={200}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span className="cursor-help">
+                        {t("categories.addNew")}
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent className="max-w-72">
+                      {t("categories.addDescription")}
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </DialogTitle>
+              <DialogDescription className="sr-only">
                 {t("categories.addDescription")}
               </DialogDescription>
             </DialogHeader>
 
-            <div className="space-y-2">
+            <div className="grid gap-2">
               <label htmlFor="category-name" className="text-sm font-medium">
                 {t("categories.name")}
               </label>
@@ -278,7 +294,7 @@ export default function CategoriesPage() {
 
             <ColorField value={newColor} onChange={setNewColor} />
 
-            <div className="space-y-2">
+            <div className="grid gap-2">
               <span className="text-sm font-medium">{t("categories.preview")}</span>
               <div className="rounded-lg border bg-muted/20 px-4 py-3">
                 <CategoryName
@@ -590,65 +606,60 @@ function ColorField({
   );
 
   return (
-    <div className="space-y-3">
+    <div className="grid gap-2">
       <span className="text-sm font-medium">{t("categories.color")}</span>
-      <div className="grid gap-2">
-        <span className="block text-xs text-muted-foreground">
-          {t("categories.palette")}
-        </span>
-        <div className="flex flex-wrap items-center gap-2">
-          {CATEGORY_COLORS.map((color) => {
-            const selected = value.toLowerCase() === color.toLowerCase();
-            const foreground = getReadableForeground(color);
-            return (
-              <button
-                key={color}
-                type="button"
-                className={`inline-flex h-9 w-9 items-center justify-center rounded-lg border border-border shadow-sm transition-transform hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${
-                  selected
-                    ? "ring-2 ring-ring ring-offset-2 ring-offset-background"
-                    : ""
-                }`}
-                style={{ backgroundColor: color }}
-                onClick={() => onChange(color)}
-                aria-label={`${t("categories.selectColor")} ${color}`}
-                aria-pressed={selected}
-              >
-                {selected ? (
-                  <Check
-                    className="h-4 w-4 drop-shadow-sm"
-                    style={{ color: foreground }}
-                  />
-                ) : null}
-              </button>
-            );
-          })}
-          <label
-            className={`relative inline-flex h-9 w-9 cursor-pointer items-center justify-center rounded-lg border border-primary/35 bg-accent-soft/70 text-accent-soft-foreground shadow-sm transition-transform hover:scale-105 hover:bg-accent-soft focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 ${
+      <div className="flex flex-wrap items-center gap-2">
+        {CATEGORY_COLORS.map((color) => {
+          const selected = value.toLowerCase() === color.toLowerCase();
+          const foreground = getReadableForeground(color);
+          return (
+            <button
+              key={color}
+              type="button"
+              className={`inline-flex h-9 w-9 items-center justify-center rounded-lg border border-border shadow-sm transition-transform hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${
+                selected
+                  ? "ring-2 ring-ring ring-offset-2 ring-offset-background"
+                  : ""
+              }`}
+              style={{ backgroundColor: color }}
+              onClick={() => onChange(color)}
+              aria-label={`${t("categories.selectColor")} ${color}`}
+              aria-pressed={selected}
+            >
+              {selected ? (
+                <Check
+                  className="h-4 w-4 drop-shadow-sm"
+                  style={{ color: foreground }}
+                />
+              ) : null}
+            </button>
+          );
+        })}
+        <label
+          className={`relative inline-flex h-9 w-9 cursor-pointer items-center justify-center rounded-lg border border-primary/35 bg-accent-soft/70 text-accent-soft-foreground shadow-sm transition-transform hover:scale-105 hover:bg-accent-soft focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 ${
+            customColorSelected
+              ? "ring-2 ring-ring ring-offset-2 ring-offset-background"
+              : ""
+          }`}
+          style={customColorSelected ? { backgroundColor: value } : undefined}
+          title={t("categories.chooseCustomColor")}
+        >
+          <Plus
+            className="h-4 w-4"
+            style={
               customColorSelected
-                ? "ring-2 ring-ring ring-offset-2 ring-offset-background"
-                : ""
-            }`}
-            style={customColorSelected ? { backgroundColor: value } : undefined}
-            title={t("categories.chooseCustomColor")}
-          >
-            <Plus
-              className="h-4 w-4"
-              style={
-                customColorSelected
-                  ? { color: getReadableForeground(value) }
-                  : undefined
-              }
-            />
-            <input
-              type="color"
-              value={value.toLowerCase()}
-              onChange={(event) => onChange(event.target.value)}
-              className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
-              aria-label={t("categories.chooseCustomColor")}
-            />
-          </label>
-        </div>
+                ? { color: getReadableForeground(value) }
+                : undefined
+            }
+          />
+          <input
+            type="color"
+            value={value.toLowerCase()}
+            onChange={(event) => onChange(event.target.value)}
+            className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+            aria-label={t("categories.chooseCustomColor")}
+          />
+        </label>
       </div>
     </div>
   );

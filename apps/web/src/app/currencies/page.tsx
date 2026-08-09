@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   AlertTriangle,
+  ArrowRight,
   Loader2,
   Plus,
   RefreshCw,
@@ -103,7 +104,16 @@ export default function CurrenciesPage() {
         header: t("currencies.ratePair"),
         headerClassName: "w-[28%]",
         sortValue: (row) => `${row.currency}/${row.base_currency}`,
-        cell: (row) => `${row.currency} → ${row.base_currency}`,
+        cell: (row) => (
+          <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+            <span>{row.currency}</span>
+            <ArrowRight
+              className="h-3 w-3 shrink-0 text-muted-foreground"
+              aria-hidden
+            />
+            <span>{row.base_currency}</span>
+          </span>
+        ),
       },
       {
         id: "date",
@@ -179,10 +189,7 @@ export default function CurrenciesPage() {
   if (statusQuery.isError || ratesQuery.isError) {
     return (
       <div className="space-y-5">
-        <PageHeader
-          title={t("currencies.title")}
-          description={t("currencies.subtitle")}
-        />
+        <PageHeader title={t("currencies.title")} />
         <ErrorState
           title={t("currencies.error")}
           onRetry={() => {
@@ -197,10 +204,7 @@ export default function CurrenciesPage() {
   if (statusQuery.isLoading || ratesQuery.isLoading) {
     return (
       <div className="space-y-5">
-        <PageHeader
-          title={t("currencies.title")}
-          description={t("currencies.subtitle")}
-        />
+        <PageHeader title={t("currencies.title")} />
         <CurrenciesPageSkeleton />
       </div>
     );
@@ -217,10 +221,7 @@ export default function CurrenciesPage() {
 
   return (
     <div className="space-y-5">
-      <PageHeader
-        title={t("currencies.title")}
-        description={t("currencies.subtitle")}
-      />
+      <PageHeader title={t("currencies.title")} />
 
       {missing.length > 0 ? (
         <section className="rounded-lg border border-warning/35 bg-warning/5 p-4">
@@ -267,7 +268,14 @@ export default function CurrenciesPage() {
               >
                 <span className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">
                   <span className="font-medium">
-                    {row.currency} → {row.base_currency}
+                    <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+                      <span>{row.currency}</span>
+                      <ArrowRight
+                        className="h-3 w-3 shrink-0 text-muted-foreground"
+                        aria-hidden
+                      />
+                      <span>{row.base_currency}</span>
+                    </span>
                   </span>
                   <span className="text-muted-foreground">
                     {formatDate(row.rate_date)}

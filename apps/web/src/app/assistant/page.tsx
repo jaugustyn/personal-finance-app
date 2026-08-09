@@ -99,7 +99,6 @@ export default function AssistantPage() {
     <div className="flex h-[calc(100vh-7rem)] flex-col gap-4">
       <PageHeader
         title={t("assistant.title")}
-        description={t("assistant.subtitle")}
         actions={
           messages.length > 0 ? (
             <Button

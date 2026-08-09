@@ -6,6 +6,7 @@ import { Loader2, Plus } from "lucide-react";
 import type { MerchantAliasGroup } from "@/lib/api";
 import { useT } from "@/lib/i18n";
 import { FilterSelect } from "@/components/filter-select";
+import { HelpTooltip } from "@/components/help-tooltip";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -62,13 +63,17 @@ export function ManualAliasDialog({
           }}
         >
           <DialogHeader>
-            <DialogTitle>{t("merchants.manualTitle")}</DialogTitle>
-            <DialogDescription>
+            <DialogTitle>
+              <HelpTooltip content={t("merchants.manualDescription")}>
+                <span>{t("merchants.manualTitle")}</span>
+              </HelpTooltip>
+            </DialogTitle>
+            <DialogDescription className="sr-only">
               {t("merchants.manualDescription")}
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-2">
+          <div className="grid gap-2">
             <Label htmlFor="merchant-alias">{t("merchants.aliasLabel")}</Label>
             <AliasSuggestionInput
               id="merchant-alias"
@@ -81,7 +86,7 @@ export function ManualAliasDialog({
             />
           </div>
 
-          <div className="space-y-2">
+          <div className="grid gap-2">
             <Label htmlFor="merchant-group">{t("merchants.groupLabel")}</Label>
             <FilterSelect
               id="merchant-group"
@@ -99,7 +104,7 @@ export function ManualAliasDialog({
           </div>
 
           {!selectedGroup ? (
-            <div className="space-y-2">
+            <div className="grid gap-2">
               <Label htmlFor="merchant-display-label">
                 {t("merchants.displayLabel")}
               </Label>

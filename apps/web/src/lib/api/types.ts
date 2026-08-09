@@ -337,6 +337,15 @@ export interface CategoryDef {
   usage_count: number;
 }
 
+export interface AttentionSummary {
+  transaction_reviews: number;
+  transaction_category_reviews: number;
+  transaction_type_reviews: number;
+  anomaly_reviews: number;
+  subscription_reviews: number;
+  asset_reviews: number;
+}
+
 export interface MerchantGroup {
   merchant: string;
   merchant_display: string;
@@ -347,6 +356,11 @@ export interface MerchantGroup {
   common_category: string | null;
   sample_merchants: string[];
   sample_titles: string[];
+}
+
+export interface MerchantGroupPage {
+  items: MerchantGroup[];
+  total: number;
 }
 
 export interface ReviewSummary {

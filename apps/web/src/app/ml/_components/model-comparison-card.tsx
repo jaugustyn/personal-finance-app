@@ -1,9 +1,6 @@
-import { Sparkles } from "lucide-react";
-
 import type { MlModelComparison } from "@/lib/api";
 import { useFormatters, useT } from "@/lib/i18n";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DataTable, type DataTableColumn } from "@/components/data-table";
 import { estimatorName, percent } from "../_lib/ml-format";
 
@@ -80,30 +77,27 @@ export function ModelComparisonCard({ rows }: { rows: MlModelComparison[] }) {
   ];
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base text-foreground">
-          <Sparkles className="h-4 w-4 text-primary" />
+    <section className="space-y-3">
+      <div className="flex min-h-9 items-center">
+        <h2 className="text-base font-semibold text-foreground">
           {t("ml.comparison.rankingTitle")}
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <DataTable
-          columns={columns}
-          data={rows}
-          rowKey={(row) => row.model_id}
-          initialSort={{ id: "model", dir: "asc" }}
-          tableClassName="min-w-[720px]"
-          getRowClassName={(row) =>
-            row.is_recommended ? "bg-primary/5" : undefined
-          }
-        />
-        <p className="text-xs text-muted-foreground">
-          {recommended
-            ? t("ml.comparison.recommendationExplanation")
-            : t("ml.comparison.noRecommendationExplanation")}
-        </p>
-      </CardContent>
-    </Card>
+        </h2>
+      </div>
+      <DataTable
+        columns={columns}
+        data={rows}
+        rowKey={(row) => row.model_id}
+        initialSort={{ id: "model", dir: "asc" }}
+        tableClassName="min-w-[720px]"
+        getRowClassName={(row) =>
+          row.is_recommended ? "bg-primary/5" : undefined
+        }
+      />
+      <p className="text-xs text-muted-foreground">
+        {recommended
+          ? t("ml.comparison.recommendationExplanation")
+          : t("ml.comparison.noRecommendationExplanation")}
+      </p>
+    </section>
   );
 }

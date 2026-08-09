@@ -1,8 +1,17 @@
-import { ChevronDown, MessageSquareCheck } from "lucide-react";
+import { ChevronDown } from "lucide-react";
 
+import { DataTable, type DataTableColumn } from "@/components/data-table";
 import { tCategory, useFormatters, useT } from "@/lib/i18n";
 import { Badge } from "@/components/ui/badge";
 import { numberFromRecord, percent } from "../_lib/ml-format";
+
+interface FeedbackHotspotRow {
+  id: string;
+  predicted: string;
+  final: string | null;
+  merchant: string;
+  count: number;
+}
 
 export function FeedbackQualityCard({
   quality,
@@ -17,16 +26,67 @@ export function FeedbackQualityCard({
   const { formatNumber, formatPercent } = useFormatters();
   const accepted = numberFromRecord(quality, "accepted_suggestions") ?? 0;
   const rejected = numberFromRecord(quality, "rejected_suggestions") ?? 0;
-  const suggestionTotal = numberFromRecord(quality, "suggestion_feedback_total") ?? 0;
+  const suggestionTotal =
+    numberFromRecord(quality, "suggestion_feedback_total") ?? 0;
   const acceptanceRate = numberFromRecord(quality, "acceptance_rate");
   const sinceTraining = quality.scope === "since_last_training";
+  const hotspotRows: FeedbackHotspotRow[] = hotspots
+    .slice(0, 5)
+    .map((row, index) => {
+      const predicted = String(row.predicted_category ?? "—");
+      const final = row.final_category ? String(row.final_category) : null;
+      const merchant = row.merchant ? String(row.merchant) : "—";
+      const count =
+        typeof row.count === "number" ? row.count : Number(row.count ?? 0);
+      return {
+        id: `${predicted}-${final}-${merchant}-${index}`,
+        predicted,
+        final,
+        merchant,
+        count,
+      };
+    });
+  const columns: DataTableColumn<FeedbackHotspotRow>[] = [
+    {
+      id: "suggestion",
+      header: t("ml.feedback.suggestion"),
+      sortValue: (row) => row.predicted,
+      className: "font-medium",
+      cell: (row) => tCategory(t, row.predicted),
+    },
+    {
+      id: "decision",
+      header: t("ml.feedback.userDecision"),
+      sortValue: (row) => row.final ?? "",
+      cell: (row) =>
+        row.final
+          ? tCategory(t, row.final)
+          : t("ml.feedback.rejectedLabel"),
+    },
+    {
+      id: "count",
+      header: t("ml.feedback.count"),
+      align: "right",
+      sortValue: (row) => row.count,
+      className: "tabular-nums",
+      cell: (row) => formatNumber(row.count),
+    },
+    {
+      id: "example",
+      header: t("ml.feedback.example"),
+      sortValue: (row) => row.merchant,
+      className: "text-muted-foreground",
+      cell: (row) => (
+        <span className="block max-w-[280px] truncate">{row.merchant}</span>
+      ),
+    },
+  ];
 
   return (
-    <details className="group overflow-hidden rounded-lg border bg-card shadow-sm">
+    <details className="group overflow-hidden rounded-lg border bg-card">
       <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-4 py-3.5 [&::-webkit-details-marker]:hidden">
         <div className="min-w-0">
-          <div className="flex items-center gap-2 font-medium text-foreground">
-            <MessageSquareCheck className="h-4 w-4 text-muted-foreground" />
+          <div className="font-medium text-foreground">
             {t("ml.feedback.title")}
           </div>
           <div className="mt-1 flex flex-wrap gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
@@ -89,57 +149,13 @@ export function FeedbackQualityCard({
             {t("ml.feedback.noHotspots")}
           </p>
         ) : (
-          <div className="overflow-x-auto rounded-md border">
-            <table className="w-full min-w-[620px] text-sm">
-              <thead className="border-b bg-muted/30 text-left text-xs text-muted-foreground">
-                <tr>
-                  <th className="px-3 py-2 font-medium">
-                    {t("ml.feedback.suggestion")}
-                  </th>
-                  <th className="px-3 py-2 font-medium">
-                    {t("ml.feedback.userDecision")}
-                  </th>
-                  <th className="px-3 py-2 text-right font-medium">
-                    {t("ml.feedback.count")}
-                  </th>
-                  <th className="px-3 py-2 font-medium">
-                    {t("ml.feedback.example")}
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y">
-                {hotspots.slice(0, 5).map((row, index) => {
-                  const predicted = String(row.predicted_category ?? "—");
-                  const final = row.final_category
-                    ? String(row.final_category)
-                    : null;
-                  const merchant = row.merchant ? String(row.merchant) : "—";
-                  const count =
-                    typeof row.count === "number"
-                      ? row.count
-                      : Number(row.count ?? 0);
-                  return (
-                    <tr key={`${predicted}-${final}-${merchant}-${index}`}>
-                      <td className="px-3 py-2.5 font-medium text-foreground">
-                        {tCategory(t, predicted)}
-                      </td>
-                      <td className="px-3 py-2.5 text-foreground">
-                        {final
-                          ? tCategory(t, final)
-                          : t("ml.feedback.rejectedLabel")}
-                      </td>
-                      <td className="px-3 py-2.5 text-right tabular-nums text-foreground">
-                        {formatNumber(count)}
-                      </td>
-                      <td className="max-w-[280px] truncate px-3 py-2.5 text-muted-foreground">
-                        {merchant}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+          <DataTable
+            columns={columns}
+            data={hotspotRows}
+            rowKey={(row) => row.id}
+            initialSort={{ id: "count", dir: "desc" }}
+            tableClassName="min-w-[620px]"
+          />
         )}
 
         <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-3 text-sm">

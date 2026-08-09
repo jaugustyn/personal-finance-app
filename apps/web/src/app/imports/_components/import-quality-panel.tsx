@@ -15,7 +15,7 @@ export function ImportQualityPanel({ report }: { report: ImportQualityReport }) 
     report.issues.some((issue) => issue.sample_rows.length > 0);
 
   return (
-    <div className="h-full rounded-lg border p-4">
+    <div className="min-w-0 border-t pt-4 lg:border-l lg:border-t-0 lg:pl-6 lg:pt-0">
       <div className="flex items-center justify-between gap-3">
         <h3 className="text-sm font-semibold">{t("imports.quality.title")}</h3>
         {hasBlockingIssues ? (

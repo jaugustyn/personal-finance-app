@@ -20,14 +20,10 @@ interface ViewSwitcherProps {
 export function ViewSwitcher({ value, onChange }: ViewSwitcherProps) {
   const { t } = useT();
   const summary = useQuery({
-    queryKey: queryKeys.transactions.reviewSummary,
-    queryFn: () => api.reviewSummary(),
+    queryKey: queryKeys.attention.summary,
+    queryFn: api.attentionSummary,
+    staleTime: 60_000,
   });
-  const categoryReviewCount = summary.data
-    ? summary.data.counts.no_suggestion +
-      summary.data.counts.low_confidence +
-      summary.data.counts.ready_to_accept
-    : undefined;
   const items: {
     value: TransactionsMode;
     label: string;
@@ -37,12 +33,12 @@ export function ViewSwitcher({ value, onChange }: ViewSwitcherProps) {
     {
       value: "transaction_type_review",
       label: t("transactions.viewTypeReview"),
-      count: summary.data?.transaction_type_quality.needs_review,
+      count: summary.data?.transaction_type_reviews,
     },
     {
       value: "category_review",
       label: t("transactions.viewCategoryReview"),
-      count: categoryReviewCount,
+      count: summary.data?.transaction_category_reviews,
     },
     { value: "groups", label: t("transactions.viewGroups") },
   ];

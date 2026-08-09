@@ -2,6 +2,7 @@
 
 import type { ReactNode } from "react";
 
+import { HelpTooltip } from "@/components/help-tooltip";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import { useT } from "@/lib/i18n";
@@ -37,7 +38,7 @@ export function DashboardToolbar({
   };
 
   return (
-    <section className="sticky -top-4 z-40 -mx-4 border-b border-border/70 bg-background/95 px-4 py-4 backdrop-blur sm:-top-6 sm:-mx-6 sm:px-6">
+    <section className="sticky top-0 z-40 -mx-4 border-b border-border/70 bg-background/95 px-4 pb-4 pt-2 backdrop-blur sm:-mx-6 sm:px-6">
       <div className="flex flex-wrap items-end gap-x-4 gap-y-2">
         <ToolbarGroup label={t("dashboard.toolbar.period")}>
           {RANGE_OPTIONS.map((value) => (
@@ -50,7 +51,10 @@ export function DashboardToolbar({
             </ToolbarButton>
           ))}
         </ToolbarGroup>
-        <ToolbarGroup label={t("dashboard.toolbar.limit")}>
+        <ToolbarGroup
+          label={t("dashboard.toolbar.limit")}
+          hint={t("dashboard.toolbar.limitHint")}
+        >
           {LIMIT_OPTIONS.map((value) => (
             <ToolbarButton
               key={value}
@@ -62,9 +66,11 @@ export function DashboardToolbar({
           ))}
         </ToolbarGroup>
         <div className="min-w-0">
-          <div className="mb-1 flex h-4 items-center px-0.5 text-xs font-medium text-muted-foreground">
-            {t("dashboard.transfers.include")}
-          </div>
+          <HelpTooltip content={t("dashboard.transfers.includeHint")}>
+            <div className="mb-1 flex h-4 w-fit items-center px-0.5 text-xs font-medium text-muted-foreground">
+              {t("dashboard.transfers.include")}
+            </div>
+          </HelpTooltip>
           <div className="flex h-9 items-center px-1">
             <Switch
               checked={includeTransfers}
@@ -80,16 +86,26 @@ export function DashboardToolbar({
 
 export function ToolbarGroup({
   label,
+  hint,
   children,
 }: {
   label: string;
+  hint?: string;
   children: ReactNode;
 }) {
   return (
     <div className="min-w-0">
-      <div className="mb-1 flex h-4 items-center px-0.5 text-xs font-medium text-muted-foreground">
-        {label}
-      </div>
+      {hint ? (
+        <HelpTooltip content={hint}>
+          <div className="mb-1 flex h-4 w-fit items-center px-0.5 text-xs font-medium text-muted-foreground">
+            {label}
+          </div>
+        </HelpTooltip>
+      ) : (
+        <div className="mb-1 flex h-4 items-center px-0.5 text-xs font-medium text-muted-foreground">
+          {label}
+        </div>
+      )}
       <div className="inline-flex h-9 max-w-full items-stretch divide-x divide-border/60 overflow-hidden rounded-md border border-input bg-card">
         {children}
       </div>

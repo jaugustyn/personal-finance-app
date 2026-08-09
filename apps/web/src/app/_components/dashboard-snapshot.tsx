@@ -9,6 +9,7 @@ import {
   Percent,
 } from "lucide-react";
 
+import { HelpTooltip } from "@/components/help-tooltip";
 import { Card, CardContent } from "@/components/ui/card";
 import { useT } from "@/lib/i18n";
 import { useFormatters } from "@/lib/i18n";
@@ -43,24 +44,28 @@ export function FinancialSnapshot({
     <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
       <SnapshotCard
         label={t("dashboard.kpi.income")}
+        hint={t("dashboard.kpi.incomeHint")}
         value={isLoading ? "..." : formatCurrency(income, currency)}
         icon={ArrowUpCircle}
         tone="positive"
       />
       <SnapshotCard
         label={t("dashboard.kpi.expenses")}
+        hint={t("dashboard.kpi.expensesHint")}
         value={isLoading ? "..." : formatCurrency(expenses, currency)}
         icon={ArrowDownCircle}
         tone="negative"
       />
       <SnapshotCard
         label={t("dashboard.kpi.net")}
+        hint={t("dashboard.kpi.netHint")}
         value={isLoading ? "..." : formatCurrency(net, currency)}
         icon={PiggyBank}
         tone={stableNetTone}
       />
       <SnapshotCard
         label={t("dashboard.kpi.savings")}
+        hint={t("dashboard.kpi.savingsHint")}
         value={isLoading ? "..." : formatPercent(savingsRate)}
         icon={Percent}
         tone={stableSavingsTone}
@@ -71,11 +76,13 @@ export function FinancialSnapshot({
 
 function SnapshotCard({
   label,
+  hint,
   value,
   icon: Icon,
   tone,
 }: {
   label: string;
+  hint: string;
   value: string;
   icon: ComponentType<{ className?: string }>;
   tone: SnapshotTone;
@@ -84,7 +91,11 @@ function SnapshotCard({
     <Card>
       <CardContent className="p-4">
         <div className="flex items-center justify-between gap-3">
-          <div className="text-sm font-medium text-muted-foreground">{label}</div>
+          <HelpTooltip content={hint}>
+            <div className="w-fit text-sm font-medium text-muted-foreground">
+              {label}
+            </div>
+          </HelpTooltip>
           <div
             className={cn(
               "flex h-8 w-8 items-center justify-center rounded-md border transition-colors duration-200 ease-out",

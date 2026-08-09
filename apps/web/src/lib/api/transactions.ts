@@ -3,7 +3,7 @@ import { buildQuery, withQuery, type QueryValue } from "./query";
 import type {
   CategoryState,
   FilterSummary,
-  MerchantGroup,
+  MerchantGroupPage,
   ReviewSummary,
   Transaction,
   TransactionTypeState,
@@ -208,7 +208,7 @@ export const transactionsApi = {
       sort_direction?: TransactionSortDirection;
     } = {},
   ) => {
-    return request<MerchantGroup[]>(
+    return request<MerchantGroupPage>(
       withQuery("/transactions/groups", {
         only_uncategorized: params.only_uncategorized,
         min_count: params.min_count,

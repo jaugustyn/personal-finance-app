@@ -103,7 +103,7 @@ export function CategoryTrendChart({
               colorByCategory.get(cat)?.fill || PIE_COLORS[i % PIE_COLORS.length]
             }
             strokeWidth={2}
-            dot={false}
+            dot={rows.length <= 2 ? { r: 3 } : false}
             connectNulls
           />
         ))}

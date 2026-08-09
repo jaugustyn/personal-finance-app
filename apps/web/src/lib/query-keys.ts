@@ -16,6 +16,10 @@ interface DashboardRankingKey extends DashboardRangeKey {
 }
 
 export const queryKeys = {
+  attention: {
+    all: ["attention"] as const,
+    summary: ["attention", "summary"] as const,
+  },
   accounts: {
     all: ["accounts"] as const,
     list: (includeArchived = false) =>
@@ -53,22 +57,12 @@ export const queryKeys = {
       ["dashboard", "transaction-type-breakdown", params] as const,
     categoryTrend: (params: DashboardRankingKey) =>
       ["dashboard", "category-trend", params] as const,
-    categoryDeltaTrend: (params: DashboardRankingKey) =>
-      ["dashboard", "category-delta-trend", params] as const,
     cumulativeCashflow: (params: DashboardRangeKey) =>
       ["dashboard", "cumulative-cashflow", params] as const,
     topMerchants: (params: DashboardRankingKey) =>
       ["dashboard", "top-merchants", params] as const,
     incomeSources: (params: DashboardRankingKey) =>
       ["dashboard", "income-sources", params] as const,
-    reviewQueue: (limit: number) =>
-      ["dashboard", "review-queue", { limit }] as const,
-    anomalies: (params: {
-      direction: "all";
-      reviewState: "pending" | "reviewed";
-      limit: number;
-    }) => ["dashboard", "anomalies", params] as const,
-    subscriptionsOverview: ["dashboard", "subscriptions-overview"] as const,
   },
   fixedCharges: {
     all: ["fixed-charges"] as const,
@@ -129,7 +123,6 @@ export const queryKeys = {
   },
   transactions: {
     all: ["transactions"] as const,
-    reviewSummary: ["transactions", "review-summary"] as const,
     list: (params: TransactionListParams) =>
       ["transactions", "list", params] as const,
     filterSummary: (filters: TransactionFilterParams) =>
@@ -152,6 +145,7 @@ function invalidateRoots(queryClient: QueryClient, roots: readonly QueryKey[]) {
 }
 
 const transactionDerivedRoots: readonly QueryKey[] = [
+  queryKeys.attention.all,
   queryKeys.accounts.all,
   queryKeys.categories.all,
   queryKeys.transactions.all,
@@ -184,11 +178,15 @@ export function invalidateCurrencyData(queryClient: QueryClient) {
 }
 
 export function invalidateAssetData(queryClient: QueryClient) {
-  return invalidateRoots(queryClient, [queryKeys.assets.all]);
+  return invalidateRoots(queryClient, [
+    queryKeys.attention.all,
+    queryKeys.assets.all,
+  ]);
 }
 
 export function invalidateMerchantData(queryClient: QueryClient) {
   return invalidateRoots(queryClient, [
+    queryKeys.attention.all,
     queryKeys.merchants.all,
     queryKeys.transactions.all,
     queryKeys.dashboard.all,
@@ -202,6 +200,7 @@ export function invalidateMerchantData(queryClient: QueryClient) {
 
 export function invalidateAnomalyData(queryClient: QueryClient) {
   return invalidateRoots(queryClient, [
+    queryKeys.attention.all,
     queryKeys.anomalies.all,
     queryKeys.dashboard.all,
     queryKeys.ml.all,
@@ -210,6 +209,7 @@ export function invalidateAnomalyData(queryClient: QueryClient) {
 
 export function invalidateSubscriptionData(queryClient: QueryClient) {
   return invalidateRoots(queryClient, [
+    queryKeys.attention.all,
     queryKeys.subscriptions.all,
     queryKeys.fixedCharges.all,
     queryKeys.dashboard.all,

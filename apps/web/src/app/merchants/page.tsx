@@ -91,10 +91,7 @@ export default function MerchantsPage() {
   }, [groups, normalizedSearch]);
   return (
     <div className="space-y-5">
-      <PageHeader
-        title={t("merchants.title")}
-        description={t("merchants.subtitle")}
-      />
+      <PageHeader title={t("merchants.title")} />
 
       <FilterPanel gridClassName="md:grid-cols-[minmax(18rem,30rem)] xl:grid-cols-[minmax(18rem,30rem)]">
         <FilterField label={t("common.search")}>
@@ -115,7 +112,6 @@ export default function MerchantsPage() {
         <ErrorState onRetry={() => candidatesQuery.refetch()} />
       ) : (
         <CandidateTable
-          key={candidateSearch}
           candidates={candidatesQuery.data ?? []}
           isLoading={candidatesQuery.isLoading}
           isUpdating={candidatesQuery.isFetching && !candidatesQuery.isLoading}

@@ -1,15 +1,16 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   keepPreviousData,
   useMutation,
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
+import { Check } from "lucide-react";
+import { CategoryCompactAccent } from "@/components/category-accent";
 import { CategoryCombobox } from "@/components/category-combobox";
-import { FilterField } from "@/components/filter-panel";
-import { FilterSelect } from "@/components/filter-select";
+import { SegmentedControl } from "@/components/segmented-control";
 import { DEFAULT_TABLE_PAGE_SIZE } from "@/components/table-pagination";
 import {
   DataTable,
@@ -17,20 +18,28 @@ import {
   type DataTableSortState,
 } from "@/components/data-table";
 import { Button } from "@/components/ui/button";
-import { TableSkeleton } from "@/components/ui/skeleton";
+import { useCategories } from "@/hooks/use-categories";
 import {
   api,
   type MerchantGroup,
+  type MerchantGroupPage,
   type MerchantGroupSortBy,
   type TransactionSortDirection,
 } from "@/lib/api";
-import { useFormatters, useT } from "@/lib/i18n";
+import { tCategory, useFormatters, useT } from "@/lib/i18n";
 import { invalidateTransactionData, queryKeys } from "@/lib/query-keys";
 import { showErrorToast } from "@/lib/toasts";
+import { AssignmentValue } from "./assignment-value";
+import { EmptyCategoryValue } from "./transaction-category-cell";
 
 export function GroupsView() {
   const { t } = useT();
   const { formatCurrency } = useFormatters();
+  const { data: categories = [] } = useCategories();
+  const categoryColors = useMemo(
+    () => new Map(categories.map((category) => [category.name, category.color])),
+    [categories],
+  );
   const qc = useQueryClient();
   const [onlyUncat, setOnlyUncat] = useState(true);
   const [page, setPage] = useState(0);
@@ -41,7 +50,7 @@ export function GroupsView() {
   });
   const [pickers, setPickers] = useState<Record<string, string | null>>({});
 
-  const query = useQuery<MerchantGroup[]>({
+  const query = useQuery<MerchantGroupPage>({
     queryKey: queryKeys.transactions.groups({
       onlyUncategorized: onlyUncat,
       minCount: 2,
@@ -54,7 +63,7 @@ export function GroupsView() {
       api.merchantGroups({
         only_uncategorized: onlyUncat,
         min_count: 2,
-        limit: pageSize + 1,
+        limit: pageSize,
         offset: page * pageSize,
         sort_by: sort.id as MerchantGroupSortBy,
         sort_direction: sort.dir as TransactionSortDirection,
@@ -86,14 +95,17 @@ export function GroupsView() {
     const credit = Math.abs(Number(g.total_credit) || 0);
     return credit - debit;
   };
-  const rows = (query.data ?? []).slice(0, pageSize);
-  const hasNextPage = (query.data?.length ?? 0) > pageSize;
+  const rows = query.data?.items ?? [];
+  const total = query.data?.total;
+  const hasNextPage =
+    total !== undefined && (page + 1) * pageSize < total;
   const columns: DataTableColumn<MerchantGroup>[] = [
     {
       id: "merchant",
       header: t("transactions.column.merchant"),
       sortable: true,
-      className: "font-medium",
+      headerClassName: "border-r border-border/50",
+      className: "border-r border-border/50 font-medium",
       cell: (g) => {
         const merchantDisplay = g.merchant_display || g.merchant;
         const rawMerchants = (g.sample_merchants ?? []).filter(
@@ -125,8 +137,8 @@ export function GroupsView() {
       header: t("transactions.column.amount"),
       sortable: true,
       align: "right",
-      headerClassName: "w-36",
-      className: "w-36 tabular-nums",
+      headerClassName: "w-52 border-r border-border/50",
+      className: "w-52 border-r border-border/50 tabular-nums",
       cell: (g) => {
         const net = groupNet(g);
         return (
@@ -146,34 +158,69 @@ export function GroupsView() {
       id: "count",
       header: "#",
       sortable: true,
-      align: "right",
-      headerClassName: "w-16",
-      className: "w-16 tabular-nums text-muted-foreground",
+      align: "center",
+      headerClassName: "w-16 border-r border-border/50",
+      className:
+        "w-16 border-r border-border/50 tabular-nums text-muted-foreground",
       cell: (g) => g.count,
     },
     {
       id: "category",
       header: t("transactions.column.category"),
       sortable: true,
-      headerClassName: "w-64",
-      className: "w-64",
+      headerClassName: "w-52 border-r border-border/50",
+      className: "w-52 border-r border-border/50",
       cell: (g) => {
+        const hasPendingChoice = g.merchant_canonical_key in pickers;
         const picked =
-          g.merchant_canonical_key in pickers
+          hasPendingChoice
             ? pickers[g.merchant_canonical_key]
             : (g.common_category ?? null);
+        if (hasPendingChoice) {
+          return (
+            <CategoryCombobox
+              value={picked}
+              onChange={(sel) =>
+                setPickers((p) => ({
+                  ...p,
+                  [g.merchant_canonical_key]: sel.category,
+                }))
+              }
+              groupsOnly
+              autoFocus
+              size="sm"
+              className="mx-auto"
+            />
+          );
+        }
+        if (g.common_category) {
+          return (
+            <AssignmentValue
+              label={tCategory(t, g.common_category)}
+              icon={
+                <CategoryCompactAccent
+                  color={categoryColors.get(g.common_category) ?? null}
+                />
+              }
+              onEdit={() =>
+                setPickers((current) => ({
+                  ...current,
+                  [g.merchant_canonical_key]: g.common_category,
+                }))
+              }
+              title={t("transactions.editCategory")}
+            />
+          );
+        }
         return (
-          <CategoryCombobox
-            value={picked}
-            onChange={(sel) =>
-              setPickers((p) => ({
-                ...p,
-                [g.merchant_canonical_key]: sel.category,
+          <EmptyCategoryValue
+            applicable
+            onAssign={() =>
+              setPickers((current) => ({
+                ...current,
+                [g.merchant_canonical_key]: null,
               }))
             }
-            groupsOnly
-            size="md"
-            className="w-60"
           />
         );
       },
@@ -182,26 +229,32 @@ export function GroupsView() {
       id: "actions",
       header: "",
       align: "center",
-      headerClassName: "w-28",
-      className: "w-28",
+      headerClassName: "w-12",
+      className: "w-12 px-1",
       cell: (g) => {
+        const hasPendingChoice = g.merchant_canonical_key in pickers;
         const picked =
-          g.merchant_canonical_key in pickers
+          hasPendingChoice
             ? pickers[g.merchant_canonical_key]
             : (g.common_category ?? null);
         return (
           <div className="flex justify-center">
             <Button
-              size="sm"
-              disabled={apply.isPending || !picked}
+              type="button"
+              size="icon"
+              variant="ghost"
+              className="h-8 w-8 text-positive hover:text-positive"
+              disabled={apply.isPending || !hasPendingChoice || !picked}
               onClick={() =>
                 apply.mutate({
                   merchantCanonicalKey: g.merchant_canonical_key,
                   category: picked,
                 })
               }
+              title={t("transactions.groups.assignHint", { n: g.count })}
+              aria-label={t("transactions.groups.assignHint", { n: g.count })}
             >
-              {t("transactions.groups.apply")}
+              <Check className="h-4 w-4" />
             </Button>
           </div>
         );
@@ -211,80 +264,59 @@ export function GroupsView() {
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-wrap items-end gap-3 rounded-lg border bg-card p-3 shadow-sm">
-        <FilterField
-          label={t("transactions.groups.scopeLabel")}
-          className="w-[14rem] shrink-0"
-        >
-          <FilterSelect
-            value={onlyUncat ? "unassigned" : "all"}
-            onValueChange={(value) => {
-              setOnlyUncat(value === "unassigned");
-              setPage(0);
-            }}
-            ariaLabel={t("transactions.groups.scopeLabel")}
-            options={[
-              {
-                value: "all",
-                label: t("transactions.groups.scopeAll"),
-                muted: true,
-              },
-              {
-                value: "unassigned",
-                label: t("transactions.groups.scopeUnassigned"),
-              },
-            ]}
-          />
-        </FilterField>
-      </div>
-
-      {query.isLoading ? (
-        <div className="rounded-lg border bg-card p-3">
-          <TableSkeleton rows={6} />
-        </div>
-      ) : query.isError ? (
-        <DataTable
-          key={onlyUncat ? "unassigned" : "all"}
-          columns={columns}
-          data={undefined}
-          rowKey={(g) => g.merchant_canonical_key}
-          isError
-          onRetry={() => void query.refetch()}
-        />
-      ) : rows.length === 0 && page === 0 ? (
-        <div className="flex h-40 items-center justify-center rounded-lg border bg-card text-sm text-muted-foreground">
-          <p>
-            {t(
-              onlyUncat
-                ? "transactions.groups.empty"
-                : "transactions.groups.emptyAll",
-            )}
-          </p>
-        </div>
-      ) : (
-        <DataTable
-          columns={columns}
-          data={rows}
-          rowKey={(g) => g.merchant_canonical_key}
-          tableClassName="min-w-[760px] table-fixed"
-          sort={sort}
-          onSortChange={(nextSort) => {
-            setSort(nextSort);
+      <div className="flex min-h-12 flex-wrap items-center gap-4 px-1 py-2">
+        <SegmentedControl
+          value={onlyUncat ? "unassigned" : "all"}
+          onValueChange={(value) => {
+            setOnlyUncat(value === "unassigned");
             setPage(0);
           }}
-          pagination={{
-            mode: "server",
-            page,
-            pageSize,
-            hasNext: hasNextPage,
-            onPageChange: setPage,
-            onPageSizeChange: (nextPageSize) => {
-              setPageSize(nextPageSize);
-              setPage(0);
+          ariaLabel={t("transactions.groups.scopeLabel")}
+          options={[
+            {
+              value: "unassigned",
+              label: t("transactions.groups.scopeUnassigned"),
             },
-          }}
+            {
+              value: "all",
+              label: t("transactions.groups.scopeAll"),
+            },
+          ]}
         />
-      )}
+      </div>
+
+      <DataTable
+        columns={columns}
+        data={query.isLoading ? undefined : rows}
+        rowKey={(g) => g.merchant_canonical_key}
+        isLoading={query.isLoading}
+        isError={query.isError}
+        onRetry={() => void query.refetch()}
+        emptyTitle={t(
+          onlyUncat
+            ? "transactions.groups.empty"
+            : "transactions.groups.emptyAll",
+        )}
+        tableClassName="min-w-[760px] table-fixed"
+        sort={sort}
+        onSortChange={(nextSort) => {
+          setSort(nextSort);
+          setPage(0);
+        }}
+        pagination={{
+          mode: "server",
+          page,
+          pageSize,
+          total,
+          hasNext: hasNextPage,
+          onPageChange: setPage,
+          onPageSizeChange: (nextPageSize) => {
+            setPageSize(nextPageSize);
+            setPage(0);
+          },
+          alwaysVisible: true,
+        }}
+      />
     </div>
   );
 }

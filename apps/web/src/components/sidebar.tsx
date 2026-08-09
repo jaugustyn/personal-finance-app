@@ -2,15 +2,23 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useQuery } from "@tanstack/react-query";
 import { Wallet } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useT } from "@/lib/i18n";
 import { NAV_SECTIONS } from "@/lib/nav";
+import { api, type AttentionSummary } from "@/lib/api";
+import { queryKeys } from "@/lib/query-keys";
 
 /** Shared nav body used by both the desktop sidebar and the mobile sheet. */
 export function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname();
   const { t } = useT();
+  const attention = useQuery({
+    queryKey: queryKeys.attention.summary,
+    queryFn: api.attentionSummary,
+    staleTime: 60_000,
+  });
   return (
     <nav className="flex-1 space-y-5 overflow-y-auto p-3">
       {NAV_SECTIONS.map((section) => (
@@ -23,6 +31,9 @@ export function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
               pathname === it.href ||
               (it.href !== "/" && pathname.startsWith(`${it.href}/`));
             const Icon = it.icon;
+            const count = attention.data
+              ? attentionCount(attention.data, it.href)
+              : 0;
             return (
               <Link
                 key={it.href}
@@ -40,7 +51,21 @@ export function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
                   <span className="absolute left-0 top-1/2 h-5 w-0.5 -translate-y-1/2 rounded-full bg-primary" />
                 )}
                 <Icon className="h-4 w-4 shrink-0" />
-                {t(it.labelKey)}
+                <span className="min-w-0 flex-1 truncate">{t(it.labelKey)}</span>
+                {count > 0 ? (
+                  <span
+                    className={cn(
+                      "inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-md px-1.5 text-[10px] font-semibold tabular-nums",
+                      active
+                        ? "bg-background/75 text-foreground"
+                        : "bg-primary/10 text-primary",
+                    )}
+                    title={t("nav.pendingItems", { count })}
+                    aria-label={t("nav.pendingItems", { count })}
+                  >
+                    {count > 99 ? "99+" : count}
+                  </span>
+                ) : null}
               </Link>
             );
           })}
@@ -69,4 +94,12 @@ export function Sidebar() {
       <SidebarNav />
     </aside>
   );
+}
+
+function attentionCount(summary: AttentionSummary, href: string) {
+  if (href === "/transactions") return summary.transaction_reviews;
+  if (href === "/subscriptions") return summary.subscription_reviews;
+  if (href === "/anomalies") return summary.anomaly_reviews;
+  if (href === "/assets") return summary.asset_reviews;
+  return 0;
 }

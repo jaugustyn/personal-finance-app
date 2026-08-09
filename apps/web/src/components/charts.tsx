@@ -3,7 +3,6 @@
 export {
   CashflowChart,
   CategoryDonut,
-  CategoryMoMChart,
   CategoryTrendChart,
   CumulativeCashflowChart,
   ForecastChart,

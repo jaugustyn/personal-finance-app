@@ -3,7 +3,6 @@ import { Check } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
 
 interface AssignmentValueProps {
   label: string | null;
@@ -34,17 +33,19 @@ export function AssignmentValue({
     return <span className="text-muted-foreground">—</span>;
   }
 
-  const value = (
+  const value = suggested ? (
     <Badge
-      variant={suggested ? "outline" : "secondary"}
-      className={cn(
-        "max-w-full truncate",
-        suggested && "border-dashed bg-background",
-      )}
+      variant="outline"
+      className="max-w-full gap-1.5 truncate border-dashed bg-background"
     >
       {icon}
       {label}
     </Badge>
+  ) : (
+    <span className="inline-flex max-w-full items-center gap-1.5 text-sm font-medium text-foreground">
+      {icon}
+      <span className="truncate">{label}</span>
+    </span>
   );
 
   return (
@@ -54,7 +55,7 @@ export function AssignmentValue({
           <button
             type="button"
             onClick={onEdit}
-            className="min-w-0 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="-mx-1.5 -my-1 min-w-0 rounded-md px-1.5 py-1 text-left transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             title={title}
           >
             {value}

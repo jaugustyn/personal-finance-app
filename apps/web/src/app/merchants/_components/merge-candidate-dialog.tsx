@@ -117,7 +117,7 @@ function MergeCandidateForm({
         });
       }}
     >
-      <div className="space-y-2">
+      <div className="grid gap-2">
         <Label htmlFor="merchant-merge-label">
           {t("merchants.displayLabel")}
         </Label>
@@ -128,7 +128,7 @@ function MergeCandidateForm({
         />
       </div>
 
-      <div className="space-y-2">
+      <div className="grid gap-2">
         <Label id="merchant-merge-variants">
           {t("merchants.mergeVariantsLabel")}
         </Label>
@@ -180,7 +180,7 @@ function MergeCandidateForm({
         </div>
       </div>
 
-      <div className="space-y-2">
+      <div className="grid gap-2">
         <Label htmlFor="merchant-extra-alias">
           {t("merchants.addVariant")}
         </Label>

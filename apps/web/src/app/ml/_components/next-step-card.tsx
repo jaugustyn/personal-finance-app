@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 
 import type { MlDashboard } from "@/lib/api";
-import { tCategory, useFormatters, useT } from "@/lib/i18n";
+import { useFormatters, useT } from "@/lib/i18n";
 import { transactionsHref } from "@/lib/transaction-links";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -23,6 +23,7 @@ import {
   recommendationReason,
   retrainReasonLabel,
 } from "../_lib/ml-format";
+import { ClassCoverageGrid } from "./class-coverage-grid";
 
 type NextStepKind =
   | "training"
@@ -91,13 +92,13 @@ export function NextStepCard({
 
   return (
     <Card>
-      <CardHeader>
+      <CardHeader className="p-4 pb-0">
         <CardTitle className="flex items-center gap-2 text-base text-foreground">
           <NextStepIcon kind={kind} />
           {t("ml.operations.title")}
         </CardTitle>
       </CardHeader>
-      <CardContent className="space-y-4">
+      <CardContent className="space-y-4 p-4">
         <div className="flex flex-col gap-4 rounded-md border bg-muted/20 p-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="min-w-0">
             <div className="font-medium text-foreground">{title}</div>
@@ -159,14 +160,14 @@ export function NextStepCard({
             ) : null}
 
             <div className="grid gap-4 lg:grid-cols-2">
-              <ClassCoverage
+              <ClassCoverageGrid
                 title={t("ml.next.supportedClasses")}
                 values={readiness.supported_classes.map((category) => ({
                   category,
                   count: readiness.category_counts[category] ?? 0,
                 }))}
               />
-              <ClassCoverage
+              <ClassCoverageGrid
                 title={t("ml.next.unsupportedClasses")}
                 values={unsupportedClasses.map(([category, count]) => ({
                   category,
@@ -344,32 +345,6 @@ function SummaryMetric({ label, value }: { label: string; value: string }) {
         {value}
       </div>
     </div>
-  );
-}
-
-function ClassCoverage({
-  title,
-  values,
-}: {
-  title: string;
-  values: { category: string; count: number }[];
-}) {
-  const { t } = useT();
-  return (
-    <section>
-      <div className="text-xs font-medium text-muted-foreground">{title}</div>
-      <div className="mt-2 flex flex-wrap gap-1.5">
-        {values.length ? (
-          values.map(({ category, count }) => (
-            <Badge key={category} variant="outline" className="font-normal">
-              {tCategory(t, category)} · {count}
-            </Badge>
-          ))
-        ) : (
-          <span className="text-xs text-muted-foreground">—</span>
-        )}
-      </div>
-    </section>
   );
 }
 

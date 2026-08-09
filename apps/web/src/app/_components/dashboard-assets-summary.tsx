@@ -9,6 +9,7 @@ import {
   RefreshCw,
 } from "lucide-react";
 
+import { HelpTooltip } from "@/components/help-tooltip";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -28,7 +29,8 @@ export function DashboardAssetsSummary({
   onRetry: () => void;
 }) {
   const { t } = useT();
-  const { formatCurrency, formatDate, formatPercent } = useFormatters();
+  const { formatCurrency, formatDate, formatNumber, formatPercent } =
+    useFormatters();
   const leadingAsset = data?.breakdown[0];
   const hasValuationIssues = Boolean(
     data &&
@@ -47,23 +49,46 @@ export function DashboardAssetsSummary({
             <h3 className="font-semibold text-foreground">
               {t("dashboard.assets.title")}
             </h3>
-            {data?.account_count ? (
-              <span className="text-xs text-muted-foreground">
-                {t("assets.asOf", { date: formatDate(data.as_of) })}
-              </span>
-            ) : null}
           </div>
-          <Button asChild variant="ghost" size="sm" className="h-8">
-            <Link href="/assets">
-              {t("dashboard.assets.open")}
-              <ArrowUpRight className="h-3.5 w-3.5" />
-            </Link>
-          </Button>
+          <div className="flex flex-wrap items-center justify-end gap-3">
+            {!isLoading && !isError && data?.account_count ? (
+              <HelpTooltip
+                content={
+                  hasValuationIssues
+                    ? t("dashboard.assets.needsReviewHint", {
+                        stale: formatNumber(data.stale_count),
+                        matured: formatNumber(data.matured_count),
+                        unconverted: formatNumber(data.unconverted_count),
+                        missing: formatNumber(data.missing_valuation_count),
+                      })
+                    : t("dashboard.assets.upToDateHint")
+                }
+              >
+                <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  {hasValuationIssues ? (
+                    <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-warning" />
+                  ) : (
+                    <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-positive" />
+                  )}
+                  <span>
+                    {hasValuationIssues
+                      ? t("dashboard.assets.needsReview")
+                      : t("dashboard.assets.upToDate")}
+                  </span>
+                </div>
+              </HelpTooltip>
+            ) : null}
+            <Button asChild variant="ghost" size="sm" className="h-8">
+              <Link href="/assets">
+                {t("dashboard.assets.open")}
+                <ArrowUpRight className="h-3.5 w-3.5" />
+              </Link>
+            </Button>
+          </div>
         </div>
 
         {isLoading ? (
-          <div className="mt-4 grid gap-4 md:grid-cols-3">
-            <Skeleton className="h-12 w-full" />
+          <div className="mt-4 grid gap-5 md:grid-cols-2">
             <Skeleton className="h-12 w-full" />
             <Skeleton className="h-12 w-full" />
           </div>
@@ -80,18 +105,24 @@ export function DashboardAssetsSummary({
             {t("dashboard.assets.empty")}
           </p>
         ) : (
-          <div className="mt-4 grid gap-x-7 gap-y-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] md:items-center">
+          <div className="mt-4 grid gap-x-10 gap-y-5 md:grid-cols-[minmax(14rem,0.8fr)_minmax(18rem,1.2fr)] md:items-end">
             <div>
-              <p className="text-xs text-muted-foreground">
-                {t("dashboard.assets.estimatedValue")}
-              </p>
-              <p className="mt-1 text-xl font-semibold tabular-nums text-foreground">
+              <HelpTooltip content={t("dashboard.assets.estimatedValueHint")}>
+                <p className="w-fit text-xs text-muted-foreground">
+                  {t("dashboard.assets.estimatedValue")}
+                </p>
+              </HelpTooltip>
+              <p className="mt-1 text-2xl font-semibold tabular-nums text-foreground">
                 {formatCurrency(Number(data.total_pln), data.base_currency)}
               </p>
-              <p className="mt-0.5 text-xs text-muted-foreground">
-                {t("dashboard.assets.counts", {
-                  items: data.item_count,
-                })}
+              <p className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-muted-foreground">
+                <span>
+                  {t("dashboard.assets.counts", {
+                    items: data.item_count,
+                  })}
+                </span>
+                <span aria-hidden>·</span>
+                <span>{t("assets.asOf", { date: formatDate(data.as_of) })}</span>
               </p>
             </div>
 
@@ -120,20 +151,6 @@ export function DashboardAssetsSummary({
                 </>
               ) : (
                 <p className="mt-1 text-sm text-muted-foreground">—</p>
-              )}
-            </div>
-
-            <div className="flex items-center gap-2 text-sm md:max-w-56">
-              {hasValuationIssues ? (
-                <>
-                  <AlertTriangle className="h-4 w-4 shrink-0 text-warning" />
-                  <span>{t("dashboard.assets.needsReview")}</span>
-                </>
-              ) : (
-                <>
-                  <CheckCircle2 className="h-4 w-4 shrink-0 text-positive" />
-                  <span>{t("dashboard.assets.upToDate")}</span>
-                </>
               )}
             </div>
           </div>

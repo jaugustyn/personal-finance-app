@@ -239,10 +239,7 @@ export default function SettingsPage() {
 
   return (
     <div className="space-y-5">
-      <PageHeader
-        title={t("settings.title")}
-        description={t("settings.subtitle")}
-      />
+      <PageHeader title={t("settings.title")} />
 
       <Tabs defaultValue="security" className="space-y-5">
         <TabsList className={pageTabsListClassName}>

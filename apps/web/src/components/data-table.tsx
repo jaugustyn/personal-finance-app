@@ -28,7 +28,7 @@ export interface DataTableColumn<T> {
   sortValue?: (row: T) => string | number | null | undefined;
   /** Marks a column as sortable when sorting is handled by the caller. */
   sortable?: boolean;
-  /** Text and dates use left; numbers right; actions and compact controls center. */
+  /** Body alignment: text and dates left, numbers right, compact controls center. */
   align?: "left" | "right" | "center";
   className?: string;
   headerClassName?: string;
@@ -64,6 +64,7 @@ export type DataTablePagination =
       mode: "client";
       defaultPageSize?: number;
       pageSizeOptions?: readonly number[];
+      alwaysVisible?: boolean;
     }
   | {
       mode: "server";
@@ -74,6 +75,7 @@ export type DataTablePagination =
       onPageChange: (page: number) => void;
       onPageSizeChange: (pageSize: number) => void;
       pageSizeOptions?: readonly number[];
+      alwaysVisible?: boolean;
     };
 
 export type DataTableSortState = {
@@ -176,6 +178,7 @@ export function DataTable<T>({
         currentCount={visibleRows?.length ?? 0}
         total={clientTotal}
         pageSizeOptions={pagination.pageSizeOptions}
+        alwaysVisible={pagination.alwaysVisible}
         onPageChange={setClientPage}
         onPageSizeChange={(nextPageSize) => {
           setClientPageSize(nextPageSize);
@@ -190,6 +193,7 @@ export function DataTable<T>({
         total={pagination.total}
         hasNext={pagination.hasNext}
         pageSizeOptions={pagination.pageSizeOptions}
+        alwaysVisible={pagination.alwaysVisible}
         onPageChange={pagination.onPageChange}
         onPageSizeChange={pagination.onPageSizeChange}
       />
@@ -278,7 +282,6 @@ export function DataTable<T>({
                     id={col.id}
                     sort={activeSort}
                     onSort={toggleSort}
-                    align={col.align}
                     className={col.headerClassName}
                   >
                     {col.header}
@@ -286,10 +289,7 @@ export function DataTable<T>({
                 ) : (
                   <TableHead
                     key={col.id}
-                    className={cn(
-                      alignClass[col.align ?? "left"],
-                      col.headerClassName,
-                    )}
+                    className={col.headerClassName}
                   >
                     {col.header}
                   </TableHead>

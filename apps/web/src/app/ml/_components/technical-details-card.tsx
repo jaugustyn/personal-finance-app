@@ -1,13 +1,13 @@
-import { ChevronDown, Settings2 } from "lucide-react";
+import { ChevronDown } from "lucide-react";
 
 import type { MlDashboard } from "@/lib/api";
-import { tCategory, useFormatters, useT } from "@/lib/i18n";
-import { Badge } from "@/components/ui/badge";
+import { useFormatters, useT } from "@/lib/i18n";
 import {
   estimatorName,
   numberFromRecord,
   percent,
 } from "../_lib/ml-format";
+import { ClassCoverageGrid } from "./class-coverage-grid";
 
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
@@ -35,14 +35,11 @@ export function TechnicalDetailsCard({ data }: { data: MlDashboard }) {
   const unsupported = Object.entries(training.unsupported_classes);
 
   return (
-    <details className="group overflow-hidden rounded-lg border bg-card shadow-sm">
+    <details className="group overflow-hidden rounded-lg border bg-card">
       <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3.5 [&::-webkit-details-marker]:hidden">
-        <div className="flex items-center gap-2">
-          <Settings2 className="h-4 w-4 text-muted-foreground" />
-          <span className="font-medium text-foreground">
-            {t("ml.details.title")}
-          </span>
-        </div>
+        <span className="font-medium text-foreground">
+          {t("ml.details.title")}
+        </span>
         <ChevronDown className="h-4 w-4 text-muted-foreground transition-transform group-open:rotate-180" />
       </summary>
 
@@ -88,34 +85,17 @@ export function TechnicalDetailsCard({ data }: { data: MlDashboard }) {
         </section>
 
         <section className="grid gap-4 border-t pt-4 lg:grid-cols-2">
-          <div>
-            <div className="text-xs text-muted-foreground">
-              {t("ml.details.supportedClasses")}
-            </div>
-            <div className="mt-2 flex flex-wrap gap-1.5">
-              {training.supported_classes.map((category) => (
-                <Badge key={category} variant="secondary">
-                  {tCategory(t, category)}
-                </Badge>
-              ))}
-            </div>
-          </div>
-          <div>
-            <div className="text-xs text-muted-foreground">
-              {t("ml.details.unsupportedClasses")}
-            </div>
-            <div className="mt-2 flex flex-wrap gap-1.5">
-              {unsupported.length > 0 ? (
-                unsupported.map(([category, count]) => (
-                  <Badge key={category} variant="outline">
-                    {tCategory(t, category)}: {formatNumber(count)}
-                  </Badge>
-                ))
-              ) : (
-                <span className="text-sm text-muted-foreground">—</span>
-              )}
-            </div>
-          </div>
+          <ClassCoverageGrid
+            title={t("ml.details.supportedClasses")}
+            values={training.supported_classes.map((category) => ({ category }))}
+          />
+          <ClassCoverageGrid
+            title={t("ml.details.unsupportedClasses")}
+            values={unsupported.map(([category, count]) => ({
+              category,
+              count,
+            }))}
+          />
         </section>
 
         <section className="flex flex-wrap gap-x-5 gap-y-2 border-t pt-4 text-xs text-muted-foreground">

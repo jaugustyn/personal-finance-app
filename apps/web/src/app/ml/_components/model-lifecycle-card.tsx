@@ -1,16 +1,21 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArchiveRestore, CheckCircle2, FlaskConical, Loader2 } from "lucide-react";
+import {
+  ArchiveRestore,
+  CheckCircle2,
+  ChevronDown,
+  Loader2,
+} from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
-import { useT } from "@/lib/i18n";
+import { useFormatters, useT } from "@/lib/i18n";
 import { showErrorToast } from "@/lib/toasts";
 import { queryKeys } from "@/lib/query-keys";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ErrorState } from "@/components/error-state";
+import { estimatorName } from "../_lib/ml-format";
 
 function gateLevel(
   gates: Record<string, unknown>,
@@ -36,6 +41,7 @@ function modelStatus(
 
 export function ModelLifecycleCard() {
   const { t } = useT();
+  const { formatDateTime } = useFormatters();
   const qc = useQueryClient();
   const versions = useQuery({
     queryKey: queryKeys.ml.modelVersions,
@@ -50,14 +56,20 @@ export function ModelLifecycleCard() {
     onError: (error) => showErrorToast(error, t("ml.lifecycle.activateFailed")),
   });
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base">
-          <FlaskConical className="h-4 w-4 text-primary" />
+    <details className="group overflow-hidden rounded-lg border bg-card">
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3.5 [&::-webkit-details-marker]:hidden">
+        <span className="font-medium text-foreground">
           {t("ml.lifecycle.title")}
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-3">
+        </span>
+        <span className="flex items-center gap-2">
+          {versions.data?.length ? (
+            <Badge variant="muted">{versions.data.length}</Badge>
+          ) : null}
+          <ChevronDown className="h-4 w-4 text-muted-foreground transition-transform group-open:rotate-180" />
+        </span>
+      </summary>
+
+      <div className="border-t p-4">
         {versions.isLoading ? (
           <Loader2 className="h-4 w-4 animate-spin" />
         ) : versions.isError ? (
@@ -66,48 +78,58 @@ export function ModelLifecycleCard() {
             onRetry={() => void versions.refetch()}
           />
         ) : versions.data?.length ? (
-          versions.data.map((version) => (
-            <div
-              key={version.id}
-              className="flex flex-col gap-2 rounded-md border p-3 sm:flex-row sm:items-center sm:justify-between"
-            >
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2 text-sm font-medium">
-                  <span>{version.estimator} · {version.feature_set}</span>
-                  <Badge variant={version.status === "active" ? "default" : "outline"}>
-                    {modelStatus(version.status, t)}
-                  </Badge>
-                  <Badge variant="secondary">{gateLevel(version.gates, t)}</Badge>
+          <div className="divide-y overflow-hidden rounded-md border">
+            {versions.data.map((version) => (
+              <div
+                key={version.id}
+                className="flex flex-col gap-3 px-3 py-3 sm:flex-row sm:items-center sm:justify-between"
+              >
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2 text-sm font-medium">
+                    <span>
+                      {estimatorName(version.estimator)} · {version.feature_set}
+                    </span>
+                    <Badge
+                      variant={
+                        version.status === "active" ? "default" : "outline"
+                      }
+                    >
+                      {modelStatus(version.status, t)}
+                    </Badge>
+                    <Badge variant="secondary">
+                      {gateLevel(version.gates, t)}
+                    </Badge>
+                  </div>
+                  <p className="mt-1 truncate text-xs text-muted-foreground">
+                    {formatDateTime(version.created_at)} · {version.id.slice(0, 8)}
+                  </p>
                 </div>
-                <p className="mt-1 truncate text-xs text-muted-foreground">
-                  {version.id}
-                </p>
+                {version.promotable && version.status !== "active" ? (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => activate.mutate(version.id)}
+                    disabled={activate.isPending}
+                  >
+                    {version.status === "archived" ? (
+                      <ArchiveRestore className="h-4 w-4" />
+                    ) : (
+                      <CheckCircle2 className="h-4 w-4" />
+                    )}
+                    {version.status === "archived"
+                      ? t("ml.lifecycle.restore")
+                      : t("ml.lifecycle.activate")}
+                  </Button>
+                ) : null}
               </div>
-              {version.promotable && version.status !== "active" ? (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => activate.mutate(version.id)}
-                  disabled={activate.isPending}
-                >
-                  {version.status === "archived" ? (
-                    <ArchiveRestore className="h-4 w-4" />
-                  ) : (
-                    <CheckCircle2 className="h-4 w-4" />
-                  )}
-                  {version.status === "archived"
-                    ? t("ml.lifecycle.restore")
-                    : t("ml.lifecycle.activate")}
-                </Button>
-              ) : null}
-            </div>
-          ))
+            ))}
+          </div>
         ) : (
           <p className="text-sm text-muted-foreground">
             {t("ml.lifecycle.empty")}
           </p>
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </details>
   );
 }
