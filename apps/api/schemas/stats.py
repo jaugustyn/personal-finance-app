@@ -21,6 +21,15 @@ MerchantSort = Literal["amount", "count"]
 RecapPeriod = Literal["week", "month"]
 
 
+class AttentionSummary(BaseModel):
+    transaction_reviews: int
+    transaction_category_reviews: int
+    transaction_type_reviews: int
+    anomaly_reviews: int
+    subscription_reviews: int
+    asset_reviews: int
+
+
 class RecapCashflow(BaseModel):
     income: Decimal
     gross_expenses: Decimal
@@ -74,6 +83,7 @@ class Recap(BaseModel):
 
 
 __all__ = [
+    "AttentionSummary",
     "CashflowBucket",
     "CategorySpend",
     "CategoryTrendPoint",

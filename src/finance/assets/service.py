@@ -985,6 +985,31 @@ def _summary_item(account: AssetAccount, item_id: int) -> bool:
     return any(item.id == item_id and item.is_aggregate_summary for item in account.items)
 
 
+def count_items_needing_review(
+    session: Session,
+    *,
+    as_of: date | None = None,
+) -> int:
+    """Count active asset items with at least one actionable valuation issue."""
+    target = as_of or date.today()
+    count = 0
+    for account in _load_accounts(session, include_archived=False):
+        if not _account_is_active(account, target):
+            continue
+        for item in account.items:
+            if not _item_is_active(item, target):
+                continue
+            current = value_at(item, list(item.valuations), as_of=target)
+            if (
+                current.valuation_id is None
+                or current.stale
+                or current.matured
+                or current.unconverted
+            ):
+                count += 1
+    return count
+
+
 def overview(session: Session, *, as_of: date | None = None) -> AssetOverviewView:
     target = as_of or date.today()
     accounts = _load_accounts(session, include_archived=False)

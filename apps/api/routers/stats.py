@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from apps.api.errors import validation_error
 from apps.api.schemas.stats import (
+    AttentionSummary,
     CashflowBucket,
     CategorySpend,
     CategoryTrendPoint,
@@ -19,6 +20,7 @@ from apps.api.schemas.stats import (
     RecapPeriod,
     SpendDistribution,
 )
+from finance.attention import attention_summary as build_attention_summary
 from finance.db import get_session
 from finance.domain.enums import TransactionDirection
 from finance.stats import service as stats_service
@@ -27,6 +29,19 @@ router = APIRouter(prefix="/stats", tags=["stats"])
 
 
 # --- Endpoints -------------------------------------------------------------
+
+
+@router.get("/attention-summary", response_model=AttentionSummary)
+def attention_summary(session: Session = Depends(get_session)) -> AttentionSummary:
+    summary = build_attention_summary(session)
+    return AttentionSummary(
+        transaction_reviews=summary.transaction_reviews,
+        transaction_category_reviews=summary.transaction_category_reviews,
+        transaction_type_reviews=summary.transaction_type_reviews,
+        anomaly_reviews=summary.anomaly_reviews,
+        subscription_reviews=summary.subscription_reviews,
+        asset_reviews=summary.asset_reviews,
+    )
 
 
 @router.get("/overview", response_model=Overview)

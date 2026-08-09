@@ -550,6 +550,7 @@ def test_open_ended_fixed_rate_uses_review_interval(client) -> None:
     assert response.status_code == 201, response.text
     assert response.json()["stale_count"] == 1
     assert response.json()["amount_pln"] > "10000.00"
+    assert client.get("/stats/attention-summary").json()["asset_reviews"] == 1
 
 
 def test_archived_items_and_accounts_can_be_restored(client) -> None:
