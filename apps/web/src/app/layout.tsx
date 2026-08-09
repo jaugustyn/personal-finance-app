@@ -10,6 +10,7 @@ import { ErrorBoundary } from "@/components/error-boundary";
 import { I18nProvider } from "@/lib/i18n";
 import { AppHeader } from "@/components/app-header";
 import { ConfirmProvider } from "@/components/confirm-dialog";
+import { DocumentTitle } from "@/components/document-title";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AppLockProvider } from "@/components/app-lock-provider";
@@ -49,6 +50,7 @@ export default async function RootLayout({
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
           <AccentProvider>
             <I18nProvider initialLocale={initialLocale}>
+              <DocumentTitle />
               <QueryProvider>
                 <TooltipProvider delayDuration={200}>
                   <ConfirmProvider>

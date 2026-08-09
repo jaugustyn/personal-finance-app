@@ -3,12 +3,14 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
-import { Wallet } from "lucide-react";
-import { cn } from "@/lib/utils";
+
+import { AppUtilities } from "@/components/app-utilities";
+import { LogoMark } from "@/components/logo-mark";
+import { api, type AttentionSummary } from "@/lib/api";
 import { useT } from "@/lib/i18n";
 import { NAV_SECTIONS } from "@/lib/nav";
-import { api, type AttentionSummary } from "@/lib/api";
 import { queryKeys } from "@/lib/query-keys";
+import { cn } from "@/lib/utils";
 
 /** Shared nav body used by both the desktop sidebar and the mobile sheet. */
 export function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
@@ -19,11 +21,12 @@ export function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
     queryFn: api.attentionSummary,
     staleTime: 60_000,
   });
+
   return (
-    <nav className="flex-1 space-y-5 overflow-y-auto p-3">
+    <nav className="flex-1 space-y-6 overflow-y-auto p-3">
       {NAV_SECTIONS.map((section) => (
-        <div key={section.titleKey} className="space-y-1">
-          <p className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+        <div key={section.titleKey} className="space-y-0.5">
+          <p className="px-3 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/85">
             {t(section.titleKey)}
           </p>
           {section.items.map((it) => {
@@ -34,6 +37,7 @@ export function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
             const count = attention.data
               ? attentionCount(attention.data, it.href)
               : 0;
+
             return (
               <Link
                 key={it.href}
@@ -41,24 +45,31 @@ export function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
                 onClick={onNavigate}
                 aria-current={active ? "page" : undefined}
                 className={cn(
-                  "group relative flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors",
+                  "group relative flex min-h-10 items-center gap-3 overflow-hidden rounded-lg px-3 py-2 text-sm transition-colors",
                   active
-                    ? "bg-accent-soft font-medium text-accent-soft-foreground"
+                    ? "bg-primary/[0.09] font-medium text-foreground dark:bg-primary/[0.12]"
                     : "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
                 )}
               >
                 {active && (
-                  <span className="absolute left-0 top-1/2 h-5 w-0.5 -translate-y-1/2 rounded-full bg-primary" />
+                  <span className="absolute inset-y-0 left-0 w-[3px] bg-primary/65" />
                 )}
-                <Icon className="h-4 w-4 shrink-0" />
-                <span className="min-w-0 flex-1 truncate">{t(it.labelKey)}</span>
+                <Icon
+                  className={cn(
+                    "h-4 w-4 shrink-0 transition-colors",
+                    active ? "text-primary" : "group-hover:text-foreground",
+                  )}
+                />
+                <span className="min-w-0 flex-1 truncate">
+                  {t(it.labelKey)}
+                </span>
                 {count > 0 ? (
                   <span
                     className={cn(
                       "inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-md px-1.5 text-[10px] font-semibold tabular-nums",
                       active
-                        ? "bg-background/75 text-foreground"
-                        : "bg-primary/10 text-primary",
+                        ? "bg-primary/15 text-primary"
+                        : "bg-muted text-muted-foreground",
                     )}
                     title={t("nav.pendingItems", { count })}
                     aria-label={t("nav.pendingItems", { count })}
@@ -77,21 +88,28 @@ export function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
 
 export function SidebarBrand() {
   const { t } = useT();
+
   return (
-    <div className="flex h-14 items-center gap-2 border-b px-4 font-semibold">
-      <span className="flex h-7 w-7 items-center justify-center rounded-md bg-primary text-primary-foreground">
-        <Wallet className="h-4 w-4" />
+    <Link
+      href="/"
+      className="flex h-14 shrink-0 items-center gap-2.5 border-b border-border/70 px-5 outline-none transition-colors hover:bg-accent/50 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+    >
+      <LogoMark className="h-8 w-8 text-primary" />
+      <span className="text-base font-semibold tracking-tight text-foreground">
+        {t("app.title")}
       </span>
-      <span className="tracking-tight">{t("app.title")}</span>
-    </div>
+    </Link>
   );
 }
 
 export function Sidebar() {
   return (
-    <aside className="hidden w-60 shrink-0 flex-col border-r bg-sidebar text-sidebar-foreground md:flex">
+    <aside className="hidden w-60 shrink-0 flex-col border-r border-border/70 bg-sidebar text-sidebar-foreground md:flex">
       <SidebarBrand />
       <SidebarNav />
+      <div className="flex shrink-0 items-center justify-center border-t border-border/70 px-4 py-3">
+        <AppUtilities variant="sidebar" className="w-full justify-center" />
+      </div>
     </aside>
   );
 }
