@@ -6,7 +6,6 @@ import { toast } from "sonner";
 import {
   Bot,
   ListChecks,
-  MoreHorizontal,
   Plus,
   ShieldCheck,
   Trash2,
@@ -14,13 +13,7 @@ import {
 import { api, type PersonalRule } from "@/lib/api";
 import { useT, tCategory, tTransactionType } from "@/lib/i18n";
 import { showErrorToast } from "@/lib/toasts";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { DataTable, type DataTableColumn } from "@/components/data-table";
@@ -29,12 +22,6 @@ import { PageHeader } from "@/components/page-header";
 import { CategorySelect } from "@/components/category-select";
 import { TransactionTypeFilterSelect } from "@/components/transaction-type-filter-select";
 import { Badge } from "@/components/ui/badge";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -46,6 +33,8 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { AppLockSettings } from "@/components/app-lock-settings";
 import { AssistantSettingsCard } from "@/components/assistant-settings";
+import { useConfirm } from "@/components/confirm-dialog";
+import { HelpTooltip } from "@/components/help-tooltip";
 import {
   pageTabsListClassName,
   pageTabTriggerClassName,
@@ -56,6 +45,7 @@ import { queryKeys } from "@/lib/query-keys";
 export default function SettingsPage() {
   const { t } = useT();
   const qc = useQueryClient();
+  const confirm = useConfirm();
   const rulesQuery = useQuery<PersonalRule[]>({
     queryKey: queryKeys.profile.rules,
     queryFn: () => api.personalRules(),
@@ -109,6 +99,22 @@ export default function SettingsPage() {
     },
     onError: (error) => showErrorToast(error, t("toast.error")),
   });
+
+  const confirmRuleDeletion = async (rule: PersonalRule) => {
+    const accepted = await confirm({
+      title: t("settings.deleteRuleTitle"),
+      description: t("settings.deleteRuleDescription"),
+      details: [
+        {
+          label: t("settings.rulePatternLabel"),
+          value: rule.pattern,
+        },
+      ],
+      confirmLabel: t("settings.deleteRule"),
+      destructive: true,
+    });
+    if (accepted) deleteRule.mutate(rule.id);
+  };
 
   const targetLabel = (target: PersonalRule["pattern_target"]) => {
     if (target === "merchant") return t("settings.targetMerchant");
@@ -211,28 +217,17 @@ export default function SettingsPage() {
       headerClassName: "w-14",
       className: "w-14",
       cell: (rule) => (
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8"
-              disabled={deleteRule.isPending}
-              aria-label={t("settings.ruleActions", { pattern: rule.pattern })}
-            >
-              <MoreHorizontal className="h-4 w-4" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem
-              onSelect={() => deleteRule.mutate(rule.id)}
-              className="text-destructive focus:text-destructive"
-            >
-              <Trash2 className="h-4 w-4" />
-              {t("settings.deleteRule")}
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8 text-muted-foreground hover:text-destructive"
+          disabled={deleteRule.isPending}
+          onClick={() => void confirmRuleDeletion(rule)}
+          aria-label={`${t("settings.deleteRule")}: ${rule.pattern}`}
+          title={t("settings.deleteRule")}
+        >
+          <Trash2 className="h-4 w-4" />
+        </Button>
       ),
     },
   ];
@@ -274,27 +269,23 @@ export default function SettingsPage() {
           <AssistantSettingsCard />
         </TabsContent>
 
-        <TabsContent value="rules">
-          <Card>
-            <CardHeader className="pb-5">
-              <CardTitle className="flex items-center gap-2 text-base text-foreground">
-                <ListChecks className="h-4 w-4 text-primary" />
-                {t("settings.rules")}
-              </CardTitle>
-              <CardDescription>{t("settings.rulesHelp")}</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
+        <TabsContent value="rules" className="space-y-5">
+          <Card className="w-full max-w-6xl">
+            <CardContent className="p-5">
+              <HelpTooltip content={t("settings.rulesHelp")}>
+                <h2 className="inline-flex items-center gap-2 text-base font-semibold text-foreground">
+                  <ListChecks className="h-4 w-4 text-primary" />
+                  {t("settings.addRule")}
+                </h2>
+              </HelpTooltip>
               <form
-                className="rounded-lg border bg-muted/20 p-4"
+                className="mt-5"
                 onSubmit={(event) => {
                   event.preventDefault();
                   createRule.mutate();
                 }}
               >
-                <h3 className="text-sm font-semibold">
-                  {t("settings.addRule")}
-                </h3>
-                <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-12">
+                <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-12">
                   <div className="space-y-2 md:col-span-2 xl:col-span-4">
                     <Label htmlFor="rule-pattern">
                       {t("settings.rulePatternLabel")}
@@ -359,7 +350,9 @@ export default function SettingsPage() {
                     />
                   </div>
                   <div className="space-y-2 xl:col-span-2">
-                    <Label htmlFor="rule-mode">{t("settings.mode")}</Label>
+                    <HelpTooltip content={t("settings.modeHelp")}>
+                      <Label htmlFor="rule-mode">{t("settings.mode")}</Label>
+                    </HelpTooltip>
                     <Select
                       value={ruleMode}
                       onValueChange={(v) =>
@@ -396,36 +389,34 @@ export default function SettingsPage() {
                   </Button>
                 </div>
               </form>
-
-              <section className="space-y-3">
-                <div className="flex items-center gap-2">
-                  <h3 className="text-sm font-semibold">
-                    {t("settings.savedRules")}
-                  </h3>
-                  <Badge variant="muted">
-                    {rulesQuery.data?.length ?? 0}
-                  </Badge>
-                </div>
-                {rulesQuery.isError ? (
-                  <ErrorState
-                    description={t("settings.rulesLoadError")}
-                    onRetry={() => rulesQuery.refetch()}
-                  />
-                ) : (
-                  <DataTable
-                    columns={ruleColumns}
-                    data={rulesQuery.data ?? []}
-                    rowKey={(rule) => rule.id}
-                    isLoading={rulesQuery.isLoading}
-                    initialSort={{ id: "pattern", dir: "asc" }}
-                    pagination={{ mode: "client" }}
-                    emptyTitle={t("settings.rulesEmpty")}
-                    emptyDescription={t("settings.rulesEmptyHelp")}
-                  />
-                )}
-              </section>
             </CardContent>
           </Card>
+
+          <section className="space-y-3">
+            <div className="flex items-center gap-2">
+              <h2 className="text-base font-semibold">
+                {t("settings.savedRules")}
+              </h2>
+              <Badge variant="muted">{rulesQuery.data?.length ?? 0}</Badge>
+            </div>
+            {rulesQuery.isError ? (
+              <ErrorState
+                description={t("settings.rulesLoadError")}
+                onRetry={() => rulesQuery.refetch()}
+              />
+            ) : (
+              <DataTable
+                columns={ruleColumns}
+                data={rulesQuery.data ?? []}
+                rowKey={(rule) => rule.id}
+                isLoading={rulesQuery.isLoading}
+                initialSort={{ id: "pattern", dir: "asc" }}
+                pagination={{ mode: "client" }}
+                emptyTitle={t("settings.rulesEmpty")}
+                emptyDescription={t("settings.rulesEmptyHelp")}
+              />
+            )}
+          </section>
         </TabsContent>
       </Tabs>
     </div>

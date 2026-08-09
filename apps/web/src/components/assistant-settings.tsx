@@ -77,7 +77,7 @@ export function AssistantSettingsCard() {
 
   if (query.isLoading) {
     return (
-      <Card className="max-w-3xl">
+      <Card className="w-full max-w-2xl">
         <CardContent className="flex min-h-16 items-center justify-between gap-4 p-5">
           <Skeleton className="h-5 w-48" />
           <Skeleton className="h-5 w-9 rounded-full" />
@@ -88,7 +88,7 @@ export function AssistantSettingsCard() {
 
   if (query.isError || !query.data) {
     return (
-      <Card className="max-w-3xl">
+      <Card className="w-full max-w-2xl">
         <CardContent className="flex items-center justify-between gap-4 p-5">
           <p className="text-sm text-destructive">
             {t("settings.assistantLoadError")}
@@ -113,7 +113,7 @@ export function AssistantSettingsCard() {
     settings.model,
   );
   return (
-    <Card className="max-w-3xl">
+    <Card className="w-full max-w-2xl">
       <CardContent className="p-0">
         <div className="flex min-h-16 items-center justify-between gap-4 p-5">
           <div className="flex min-w-0 flex-wrap items-center gap-2">
@@ -139,7 +139,7 @@ export function AssistantSettingsCard() {
         </div>
 
         {modelEnabled && (
-          <div className="grid gap-2 border-t p-5 sm:grid-cols-[8rem_minmax(0,1fr)] sm:items-center">
+          <div className="space-y-2 border-t p-5">
             <HelpTooltip content={t("settings.assistantModelHelp")}>
               <Label htmlFor="assistant-llm-model">
                 {t("settings.assistantModel")}
@@ -154,7 +154,10 @@ export function AssistantSettingsCard() {
                 update.isPending || settings.available_models.length === 0
               }
             >
-              <SelectTrigger id="assistant-llm-model" className="w-full sm:max-w-md">
+              <SelectTrigger
+                id="assistant-llm-model"
+                className="w-full sm:max-w-md"
+              >
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
