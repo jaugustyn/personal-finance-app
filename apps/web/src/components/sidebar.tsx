@@ -8,7 +8,7 @@ import { AppUtilities } from "@/components/app-utilities";
 import { LogoMark } from "@/components/logo-mark";
 import { api, type AttentionSummary } from "@/lib/api";
 import { useT } from "@/lib/i18n";
-import { NAV_SECTIONS } from "@/lib/nav";
+import { NAV_SECTIONS, SETTINGS_NAV_ITEM } from "@/lib/nav";
 import { queryKeys } from "@/lib/query-keys";
 import { cn } from "@/lib/utils";
 
@@ -23,10 +23,13 @@ export function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
   });
 
   return (
-    <nav className="flex-1 space-y-6 overflow-y-auto p-3">
+    <nav className="flex-1 space-y-4 overflow-y-auto px-3 py-2 [@media(max-height:850px)]:space-y-3">
       {NAV_SECTIONS.map((section) => (
-        <div key={section.titleKey} className="space-y-0.5">
-          <p className="px-3 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/85">
+        <div
+          key={section.titleKey}
+          className="space-y-0.5 [@media(max-height:850px)]:space-y-0"
+        >
+          <p className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/85 [@media(max-height:850px)]:pb-0.5">
             {t(section.titleKey)}
           </p>
           {section.items.map((it) => {
@@ -45,7 +48,7 @@ export function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
                 onClick={onNavigate}
                 aria-current={active ? "page" : undefined}
                 className={cn(
-                  "group relative flex min-h-10 items-center gap-3 overflow-hidden rounded-lg px-3 py-2 text-sm transition-colors",
+                  "group relative flex min-h-9 items-center gap-3 overflow-hidden rounded-lg px-3 py-1.5 text-sm transition-colors [@media(max-height:850px)]:min-h-8 [@media(max-height:850px)]:py-1",
                   active
                     ? "bg-primary/[0.09] font-medium text-foreground dark:bg-primary/[0.12]"
                     : "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
@@ -102,13 +105,53 @@ export function SidebarBrand() {
   );
 }
 
+export function SidebarSettingsLink({
+  onNavigate,
+}: {
+  onNavigate?: () => void;
+}) {
+  const pathname = usePathname();
+  const { t } = useT();
+  const active =
+    pathname === SETTINGS_NAV_ITEM.href ||
+    pathname.startsWith(`${SETTINGS_NAV_ITEM.href}/`);
+  const Icon = SETTINGS_NAV_ITEM.icon;
+
+  return (
+    <Link
+      href={SETTINGS_NAV_ITEM.href}
+      onClick={onNavigate}
+      aria-current={active ? "page" : undefined}
+      className={cn(
+        "group flex h-9 items-center gap-2.5 rounded-md px-2 text-xs font-medium transition-colors hover:bg-background/40 hover:text-foreground",
+        active
+          ? "font-semibold text-foreground"
+          : "text-muted-foreground",
+      )}
+    >
+      <span
+        className={cn(
+          "flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-border/70 bg-background/65 text-muted-foreground transition-colors group-hover:border-foreground/15 group-hover:text-foreground",
+          active && "border-foreground/10 bg-foreground/[0.06] text-foreground",
+        )}
+      >
+        <Icon className="h-3.5 w-3.5" />
+      </span>
+      <span className="min-w-0 flex-1 truncate">
+        {t(SETTINGS_NAV_ITEM.labelKey)}
+      </span>
+    </Link>
+  );
+}
+
 export function Sidebar() {
   return (
     <aside className="hidden w-60 shrink-0 flex-col border-r border-border/70 bg-sidebar text-sidebar-foreground md:flex">
       <SidebarBrand />
       <SidebarNav />
-      <div className="flex shrink-0 items-center justify-center border-t border-border/70 px-4 py-3">
-        <AppUtilities variant="sidebar" className="w-full justify-center" />
+      <div className="relative shrink-0 border-t border-border/80 bg-muted/30 px-3 py-2.5">
+        <AppUtilities variant="sidebar" className="w-full" />
+        <SidebarSettingsLink />
       </div>
     </aside>
   );

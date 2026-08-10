@@ -5,7 +5,11 @@ import { Menu } from "lucide-react";
 import { AppUtilities } from "@/components/app-utilities";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
-import { SidebarBrand, SidebarNav } from "@/components/sidebar";
+import {
+  SidebarBrand,
+  SidebarNav,
+  SidebarSettingsLink,
+} from "@/components/sidebar";
 import { useT } from "@/lib/i18n";
 
 export function AppHeader() {
@@ -28,6 +32,9 @@ export function AppHeader() {
         <SheetContent side="left" className="flex w-72 flex-col p-0">
           <SidebarBrand />
           <SidebarNav onNavigate={() => setMobileOpen(false)} />
+          <div className="shrink-0 border-t border-border/80 bg-muted/30 p-3">
+            <SidebarSettingsLink onNavigate={() => setMobileOpen(false)} />
+          </div>
         </SheetContent>
       </Sheet>
 

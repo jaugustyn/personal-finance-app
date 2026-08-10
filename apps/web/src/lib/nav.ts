@@ -1,7 +1,6 @@
 import {
   LayoutDashboard,
   Receipt,
-  TrendingUp,
   AlertTriangle,
   Repeat,
   PiggyBank,
@@ -29,6 +28,12 @@ export interface NavSection {
   items: NavItem[];
 }
 
+export const SETTINGS_NAV_ITEM: NavItem = {
+  href: "/settings",
+  labelKey: "nav.settings",
+  icon: Settings,
+};
+
 /** Single source of truth for desktop and mobile navigation. */
 export const NAV_SECTIONS: NavSection[] = [
   {
@@ -55,7 +60,6 @@ export const NAV_SECTIONS: NavSection[] = [
       { href: "/recap", labelKey: "nav.recap", icon: CalendarRange },
       { href: "/subscriptions", labelKey: "nav.subscriptions", icon: Repeat },
       { href: "/anomalies", labelKey: "nav.anomalies", icon: AlertTriangle },
-      { href: "/forecast", labelKey: "nav.forecast", icon: TrendingUp },
     ],
   },
   {
@@ -63,9 +67,11 @@ export const NAV_SECTIONS: NavSection[] = [
     items: [
       { href: "/assistant", labelKey: "nav.assistant", icon: Sparkles },
       { href: "/ml", labelKey: "nav.ml", icon: BrainCircuit },
-      { href: "/settings", labelKey: "nav.settings", icon: Settings },
     ],
   },
 ];
 
-export const NAV_ITEMS: NavItem[] = NAV_SECTIONS.flatMap((section) => section.items);
+export const NAV_ITEMS: NavItem[] = [
+  ...NAV_SECTIONS.flatMap((section) => section.items),
+  SETTINGS_NAV_ITEM,
+];
