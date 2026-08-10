@@ -839,9 +839,44 @@ export const en = {
       "Top-level groups are the ML target. Subcategories refine spending without affecting classification.",
     "settings.title": "Settings",
     "settings.subtitle": "Application security, assistant, and rules.",
+    "help.open": "Open quick guide",
+    "help.title": "Quick guide",
+    "help.start.title": "Recommended order",
+    "help.start.account.title": "Create an account",
+    "help.start.account.description":
+      "Add e.g. Pekao, Revolut, or a cash account.",
+    "help.start.transactions.title": "Add transactions",
+    "help.start.transactions.description":
+      "Import account history or add a single transaction.",
+    "help.start.types.title": "Review transaction types",
+    "help.start.types.description":
+      "A type describes the role of a transaction, such as an expense, income, or own transfer.",
+    "help.start.categories.title": "Review categories",
+    "help.start.categories.description":
+      "Accept or correct suggestions for expenses and refunds.",
+    "help.tips.title": "Good to know",
+    "help.tip.order.title": "Type first, category second",
+    "help.tip.order.description":
+      "Not every transaction should have a spending category.",
+    "help.tip.suggestions.title": "A suggestion is not a decision",
+    "help.tip.suggestions.description":
+      "An assignment is confirmed only after acceptance or a manual change.",
+    "help.tip.import.title": "One import, one account",
+    "help.tip.import.description":
+      "Duplicates are checked separately within the selected account.",
+    "help.tip.transfers.title": "Own transfers are neutral",
+    "help.tip.transfers.description":
+      "They do not increase income or expenses in analyses.",
+    "help.tip.currencies.title": "A missing rate is not treated as PLN",
+    "help.tip.currencies.description":
+      "The transaction stays visible but is excluded from PLN totals.",
+    "help.tip.assets.title": "Assets are optional",
+    "help.tip.assets.description":
+      "You can add assets independently to track their estimated value.",
     "settings.tabSecurity": "Security",
     "settings.tabAssistant": "Assistant",
     "settings.tabRules": "Rules",
+    "settings.tabHelp": "Help",
     "settings.assistantLocalModel": "Local AI model",
     "settings.assistantUseOllama": "Use Ollama in the Assistant",
     "settings.assistantLocalModelHelp":

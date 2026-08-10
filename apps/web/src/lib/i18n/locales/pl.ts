@@ -838,9 +838,44 @@ export const pl = {
       "Grupy główne są celem modelu ML. Podkategorie doprecyzowują wydatki bez wpływu na klasyfikację.",
     "settings.title": "Ustawienia",
     "settings.subtitle": "Bezpieczeństwo, asystent i reguły aplikacji.",
+    "help.open": "Otwórz skróconą instrukcję",
+    "help.title": "Skrócona instrukcja",
+    "help.start.title": "Zalecana kolejność",
+    "help.start.account.title": "Utwórz rachunek",
+    "help.start.account.description":
+      "Dodaj np. Pekao, Revolut albo rachunek gotówkowy.",
+    "help.start.transactions.title": "Dodaj transakcje",
+    "help.start.transactions.description":
+      "Zaimportuj historię rachunku lub dodaj pojedynczą operację.",
+    "help.start.types.title": "Sprawdź typy",
+    "help.start.types.description":
+      "Typ określa rolę operacji, np. wydatek, wpływ albo przelew własny.",
+    "help.start.categories.title": "Sprawdź kategorie",
+    "help.start.categories.description":
+      "Zaakceptuj albo popraw sugestie dla wydatków i zwrotów.",
+    "help.tips.title": "Warto wiedzieć",
+    "help.tip.order.title": "Najpierw typ, potem kategoria",
+    "help.tip.order.description":
+      "Nie każda operacja powinna mieć kategorię wydatku.",
+    "help.tip.suggestions.title": "Sugestia nie jest decyzją",
+    "help.tip.suggestions.description":
+      "Dopiero akceptacja lub ręczna zmiana potwierdza przypisanie.",
+    "help.tip.import.title": "Jeden import, jeden rachunek",
+    "help.tip.import.description":
+      "Duplikaty są sprawdzane osobno w obrębie wybranego rachunku.",
+    "help.tip.transfers.title": "Przelewy własne są neutralne",
+    "help.tip.transfers.description":
+      "Nie zwiększają przychodów ani wydatków w analizach.",
+    "help.tip.currencies.title": "Brak kursu nie udaje PLN",
+    "help.tip.currencies.description":
+      "Operacja pozostaje widoczna, ale nie trafia do sum w PLN.",
+    "help.tip.assets.title": "Majątek jest opcjonalny",
+    "help.tip.assets.description":
+      "Aktywa możesz uzupełnić niezależnie, aby śledzić ich szacunkową wartość.",
     "settings.tabSecurity": "Bezpieczeństwo",
     "settings.tabAssistant": "Asystent",
     "settings.tabRules": "Reguły",
+    "settings.tabHelp": "Pomoc",
     "settings.assistantLocalModel": "Lokalny model AI",
     "settings.assistantUseOllama": "Używaj Ollamy w Asystencie",
     "settings.assistantLocalModelHelp":

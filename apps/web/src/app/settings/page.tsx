@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   Bot,
+  BookOpenText,
   ListChecks,
   Plus,
   ShieldCheck,
@@ -31,6 +32,7 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { AppLockSettings } from "@/components/app-lock-settings";
+import { AppHelpDialog } from "@/components/app-help-dialog";
 import { AssistantSettings } from "@/components/assistant-settings";
 import { useConfirm } from "@/components/confirm-dialog";
 import { HelpTooltip } from "@/components/help-tooltip";
@@ -62,6 +64,7 @@ export default function SettingsPage() {
     "suggest_only",
   );
   const [ruleDialogOpen, setRuleDialogOpen] = useState(false);
+  const [helpDialogOpen, setHelpDialogOpen] = useState(false);
 
   const createRule = useMutation({
     mutationFn: () =>
@@ -242,14 +245,14 @@ export default function SettingsPage() {
       <div className="w-full divide-y divide-border/70 overflow-hidden rounded-xl border border-border/70 bg-card">
         <SettingsSection
           title={t("settings.tabSecurity")}
-          icon={<ShieldCheck className="h-4 w-4" />}
+          icon={<ShieldCheck className="h-5 w-5" />}
         >
           <AppLockSettings />
         </SettingsSection>
 
         <SettingsSection
           title={t("settings.tabAssistant")}
-          icon={<Bot className="h-4 w-4" />}
+          icon={<Bot className="h-5 w-5" />}
         >
           <AssistantSettings />
         </SettingsSection>
@@ -257,7 +260,7 @@ export default function SettingsPage() {
         <SettingsSection
           title={t("settings.tabRules")}
           help={t("settings.rulesHelp")}
-          icon={<ListChecks className="h-4 w-4" />}
+          icon={<ListChecks className="h-5 w-5" />}
         >
           <div className="max-w-6xl space-y-3">
             <div className="flex min-h-9 flex-wrap items-center justify-between gap-3">
@@ -294,6 +297,19 @@ export default function SettingsPage() {
               />
             )}
           </div>
+        </SettingsSection>
+
+        <SettingsSection
+          title={t("settings.tabHelp")}
+          icon={<BookOpenText className="h-5 w-5" />}
+        >
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setHelpDialogOpen(true)}
+          >
+            {t("help.open")}
+          </Button>
         </SettingsSection>
       </div>
 
@@ -413,6 +429,8 @@ export default function SettingsPage() {
           </form>
         </DialogContent>
       </Dialog>
+
+      <AppHelpDialog open={helpDialogOpen} onOpenChange={setHelpDialogOpen} />
     </div>
   );
 }
@@ -429,8 +447,10 @@ function SettingsSection({
   children: ReactNode;
 }) {
   const heading = (
-    <h2 className="inline-flex items-center gap-2 text-sm font-medium text-muted-foreground">
-      <span className="text-primary">{icon}</span>
+    <h2 className="inline-flex items-center gap-2.5 text-sm font-medium leading-5 text-muted-foreground">
+      <span className="flex h-5 w-5 shrink-0 items-center justify-center text-primary">
+        {icon}
+      </span>
       {title}
     </h2>
   );

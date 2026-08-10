@@ -49,26 +49,24 @@ export function DashboardSection({
   description,
   children,
   className,
-  separated = false,
 }: {
   title: string;
   description?: string;
   children: ReactNode;
   className?: string;
-  separated?: boolean;
 }) {
   return (
     <section className={cn("space-y-4", className)}>
-      <div className={cn("mb-4", separated && "border-t pt-5")}>
+      <div className="mb-4">
         <div>
           {description ? (
             <HelpTooltip content={description}>
-              <h2 className="w-fit text-lg font-semibold tracking-normal text-foreground">
+              <h2 className="w-fit text-xl font-semibold tracking-normal text-foreground">
                 {title}
               </h2>
             </HelpTooltip>
           ) : (
-            <h2 className="text-lg font-semibold tracking-normal text-foreground">
+            <h2 className="text-xl font-semibold tracking-normal text-foreground">
               {title}
             </h2>
           )}

@@ -14,6 +14,7 @@ import { DocumentTitle } from "@/components/document-title";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AppLockProvider } from "@/components/app-lock-provider";
+import { FirstRunGuide } from "@/components/first-run-guide";
 import { SkipLink } from "@/components/skip-link";
 import type { Locale } from "@/lib/i18n";
 import { DICT } from "@/lib/i18n/locales";
@@ -56,12 +57,13 @@ export default async function RootLayout({
                 <TooltipProvider delayDuration={200}>
                   <ConfirmProvider>
                     <AppLockProvider>
+                      <FirstRunGuide />
                       <SkipLink />
                       <div className="flex h-screen">
                         <Sidebar />
                         <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
                           <AppHeader />
-                          <main id="main-content" tabIndex={-1} className="min-w-0 flex-1 overflow-y-auto [scrollbar-gutter:stable] p-4 sm:p-6">
+                          <main id="main-content" tabIndex={-1} className="min-w-0 flex-1 overflow-y-auto [scrollbar-gutter:stable] p-4 has-[.dashboard-page]:pt-0 sm:p-6 sm:has-[.dashboard-page]:pt-0">
                             <ErrorBoundary>{children}</ErrorBoundary>
                           </main>
                         </div>

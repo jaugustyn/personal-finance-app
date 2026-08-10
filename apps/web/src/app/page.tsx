@@ -153,7 +153,7 @@ export default function DashboardPage() {
   const unconvertedCount = currencyStatus.data?.missing_rate_count ?? 0;
   const cashflowData = normalizeCashflowMonths(cashflow.data ?? [], range, months);
   return (
-    <div className="space-y-5">
+    <div className="dashboard-page space-y-5 pt-4 sm:pt-6">
       <PageHeader title={t("nav.dashboard")} />
 
       <DashboardToolbar
@@ -183,7 +183,7 @@ export default function DashboardPage() {
         </div>
       )}
 
-      <div className="min-w-0 space-y-6">
+      <div className="min-w-0 space-y-10">
         <DashboardSection
           title={t("dashboard.overviewSectionTitle")}
           description={t("dashboard.overviewSectionDescription")}
@@ -253,7 +253,6 @@ export default function DashboardPage() {
         <DashboardSection
           title={t("dashboard.incomeSectionTitle")}
           description={t("dashboard.incomeSectionDescription")}
-          separated
         >
           <div className="grid gap-4 2xl:grid-cols-2">
             <SpendingBreakdownCard
@@ -278,7 +277,6 @@ export default function DashboardPage() {
         <DashboardSection
           title={t("dashboard.trends.title")}
           description={t("dashboard.trends.description")}
-          separated
         >
           <div className="grid gap-4 2xl:grid-cols-2">
             <ChartCard title={t("dashboard.categoryTrendTitle")}>

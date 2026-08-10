@@ -38,8 +38,8 @@ export function DashboardToolbar({
   };
 
   return (
-    <section className="sticky top-0 z-40 -mx-4 border-b border-border/70 bg-background/95 px-4 pb-4 pt-2 backdrop-blur sm:-mx-6 sm:px-6">
-      <div className="flex flex-wrap items-end gap-x-4 gap-y-2">
+    <section className="sticky top-0 z-40 -mx-4 border-b border-border/70 bg-background/95 px-4 py-6 backdrop-blur sm:-mx-6 sm:px-6">
+      <div className="flex flex-wrap items-end gap-x-4 gap-y-3">
         <ToolbarGroup label={t("dashboard.toolbar.period")}>
           {RANGE_OPTIONS.map((value) => (
             <ToolbarButton
