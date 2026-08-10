@@ -53,6 +53,9 @@
   --chart-4: 280 65% 55%;
   --chart-5: 199 89% 42%;
   --chart-6: 340 75% 52%;
+  --chart-7: 142 55% 40%;
+  --chart-8: 20 82% 52%;
+  --chart-9: 245 72% 60%;
   --chart-positive: 152 60% 36%;
   --chart-negative: 0 72% 48%;
 
@@ -62,9 +65,9 @@
   --radius: 0.65rem;
 
   /* Default accent: emerald (light). */
-  --primary: 160 84% 30%;
+  --primary: 160 84% 28%;
   --primary-foreground: 0 0% 100%;
-  --ring: 160 84% 30%;
+  --ring: 160 84% 28%;
   --accent-soft: 160 70% 95%;
   --accent-soft-foreground: 161 84% 24%;
 }
@@ -109,6 +112,9 @@
   --chart-4: 280 70% 70%;
   --chart-5: 199 89% 58%;
   --chart-6: 340 80% 66%;
+  --chart-7: 142 58% 62%;
+  --chart-8: 20 86% 66%;
+  --chart-9: 245 80% 72%;
   --chart-positive: 152 56% 45%;
   --chart-negative: 0 72% 62%;
 
@@ -118,15 +124,15 @@
 
 /* ── Accent themes ────────────────────────────── */
 [data-accent="emerald"] {
-  --primary: 160 84% 30%;
-  --ring: 160 84% 30%;
+  --primary: 160 84% 28%;
+  --ring: 160 84% 28%;
   --accent-soft: 160 70% 95%;
   --accent-soft-foreground: 161 84% 24%;
   --chart-1: 160 84% 32%;
 }
 [data-accent="teal"] {
-  --primary: 174 80% 30%;
-  --ring: 174 80% 30%;
+  --primary: 174 80% 28%;
+  --ring: 174 80% 28%;
   --accent-soft: 174 65% 94%;
   --accent-soft-foreground: 175 84% 22%;
   --chart-1: 174 80% 34%;
@@ -138,12 +144,26 @@
   --accent-soft-foreground: 221 83% 42%;
   --chart-1: 221 83% 53%;
 }
+[data-accent="indigo"] {
+  --primary: 243 75% 59%;
+  --ring: 243 75% 59%;
+  --accent-soft: 240 90% 96%;
+  --accent-soft-foreground: 243 60% 45%;
+  --chart-1: 243 75% 59%;
+}
 [data-accent="violet"] {
   --primary: 262 83% 58%;
   --ring: 262 83% 58%;
   --accent-soft: 262 90% 96%;
   --accent-soft-foreground: 262 70% 48%;
   --chart-1: 262 83% 58%;
+}
+[data-accent="pink"] {
+  --primary: 333 71% 51%;
+  --ring: 333 71% 51%;
+  --accent-soft: 330 85% 96%;
+  --accent-soft-foreground: 333 65% 42%;
+  --chart-1: 333 71% 51%;
 }
 .dark[data-accent="emerald"] {
   --primary: 158 64% 47%;
@@ -169,6 +189,14 @@
   --accent-soft-foreground: 213 90% 78%;
   --chart-1: 213 90% 62%;
 }
+.dark[data-accent="indigo"] {
+  --primary: 234 89% 74%;
+  --primary-foreground: 222 32% 9%;
+  --ring: 234 89% 74%;
+  --accent-soft: 240 45% 20%;
+  --accent-soft-foreground: 234 89% 82%;
+  --chart-1: 234 89% 74%;
+}
 .dark[data-accent="violet"] {
   --primary: 263 85% 70%;
   --primary-foreground: 222 32% 9%;
@@ -176,6 +204,14 @@
   --accent-soft: 263 45% 22%;
   --accent-soft-foreground: 263 85% 84%;
   --chart-1: 263 85% 70%;
+}
+.dark[data-accent="pink"] {
+  --primary: 329 86% 70%;
+  --primary-foreground: 222 32% 9%;
+  --ring: 329 86% 70%;
+  --accent-soft: 330 45% 20%;
+  --accent-soft-foreground: 329 86% 82%;
+  --chart-1: 329 86% 70%;
 }
 
 @theme inline {
@@ -214,6 +250,9 @@
   --color-chart-4: hsl(var(--chart-4));
   --color-chart-5: hsl(var(--chart-5));
   --color-chart-6: hsl(var(--chart-6));
+  --color-chart-7: hsl(var(--chart-7));
+  --color-chart-8: hsl(var(--chart-8));
+  --color-chart-9: hsl(var(--chart-9));
   --color-chart-positive: hsl(var(--chart-positive));
   --color-chart-negative: hsl(var(--chart-negative));
   --color-sidebar: hsl(var(--sidebar));
@@ -256,31 +295,6 @@
   .select-scrollbar::-webkit-scrollbar-thumb {
     border-radius: 999px;
     background: hsl(var(--muted-foreground) / 0.35);
-  }
-  :root.theme-transitioning,
-  :root.theme-transitioning *,
-  :root.theme-transitioning *::before,
-  :root.theme-transitioning *::after {
-    transition: none !important;
-  }
-  @media (prefers-reduced-motion: no-preference) {
-    :root.theme-overlaying body::before {
-      content: "";
-      position: fixed;
-      inset: 0;
-      z-index: 2147483647;
-      pointer-events: none;
-      background: hsl(var(--background));
-      animation: theme-overlay-fade 180ms ease-out both;
-    }
-  }
-  @keyframes theme-overlay-fade {
-    from {
-      opacity: 0.18;
-    }
-    to {
-      opacity: 0;
-    }
   }
 }
 

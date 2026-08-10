@@ -22,7 +22,9 @@ const SWATCH: Record<Accent, string> = {
   emerald: "bg-[hsl(160_84%_36%)]",
   teal: "bg-[hsl(174_80%_36%)]",
   blue: "bg-[hsl(221_83%_53%)]",
+  indigo: "bg-[hsl(243_75%_59%)]",
   violet: "bg-[hsl(262_83%_58%)]",
+  pink: "bg-[hsl(333_71%_51%)]",
 };
 
 export function AccentToggle() {

@@ -29,7 +29,8 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 // Set the saved accent before paint to avoid a flash of the default theme.
-const accentScript = `(function(){try{var a=localStorage.getItem('finance-accent');document.documentElement.setAttribute('data-accent',(a==='teal'||a==='blue'||a==='violet')?a:'emerald');}catch(e){document.documentElement.setAttribute('data-accent','emerald');}})();`;
+// useLocalStorageState serializes values as JSON; tolerate legacy raw values too.
+const accentScript = `(function(){try{var raw=localStorage.getItem('finance-accent');var accent=raw;if(raw){try{accent=JSON.parse(raw);}catch(_){}}var allowed=['emerald','teal','blue','indigo','violet','pink'];document.documentElement.setAttribute('data-accent',allowed.indexOf(accent)!==-1?accent:'emerald');}catch(_){document.documentElement.setAttribute('data-accent','emerald');}})();`;
 
 export default async function RootLayout({
   children,

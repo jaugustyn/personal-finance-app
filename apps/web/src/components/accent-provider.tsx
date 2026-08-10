@@ -10,7 +10,14 @@ import {
   LOGO_MARK_VIEW_BOX,
 } from "@/components/logo-mark";
 
-export const ACCENTS = ["emerald", "teal", "blue", "violet"] as const;
+export const ACCENTS = [
+  "emerald",
+  "teal",
+  "blue",
+  "indigo",
+  "violet",
+  "pink",
+] as const;
 export type Accent = (typeof ACCENTS)[number];
 
 const STORAGE_KEY = "finance-accent";
@@ -47,7 +54,9 @@ function syncFavicon() {
   if (links.length) {
     links.forEach((link) => {
       link.type = "image/svg+xml";
-      link.href = href;
+      if (link.getAttribute("href") !== href) {
+        link.setAttribute("href", href);
+      }
     });
     return;
   }
@@ -74,7 +83,22 @@ export function AccentProvider({ children }: { children: React.ReactNode }) {
       attributes: true,
       attributeFilter: ["class"],
     });
-    return () => themeObserver.disconnect();
+
+    // Next.js can reconcile metadata after client effects and restore the
+    // static app/icon.svg. Keep the dynamic icon authoritative after reloads
+    // and client-side navigations as well as after direct theme changes.
+    const headObserver = new MutationObserver(syncFavicon);
+    headObserver.observe(document.head, {
+      attributes: true,
+      attributeFilter: ["href", "rel"],
+      childList: true,
+      subtree: true,
+    });
+
+    return () => {
+      themeObserver.disconnect();
+      headObserver.disconnect();
+    };
   }, [accent]);
 
   const setAccent = React.useCallback((next: Accent) => {
