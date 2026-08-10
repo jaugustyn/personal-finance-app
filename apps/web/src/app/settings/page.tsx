@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
@@ -13,7 +13,6 @@ import {
 import { api, type PersonalRule } from "@/lib/api";
 import { useT, tCategory, tTransactionType } from "@/lib/i18n";
 import { showErrorToast } from "@/lib/toasts";
-import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { DataTable, type DataTableColumn } from "@/components/data-table";
@@ -32,14 +31,16 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { AppLockSettings } from "@/components/app-lock-settings";
-import { AssistantSettingsCard } from "@/components/assistant-settings";
+import { AssistantSettings } from "@/components/assistant-settings";
 import { useConfirm } from "@/components/confirm-dialog";
 import { HelpTooltip } from "@/components/help-tooltip";
 import {
-  pageTabsListClassName,
-  pageTabTriggerClassName,
-} from "@/components/page-tabs";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { queryKeys } from "@/lib/query-keys";
 
 export default function SettingsPage() {
@@ -60,6 +61,7 @@ export default function SettingsPage() {
   const [ruleMode, setRuleMode] = useState<"suggest_only" | "auto_apply">(
     "suggest_only",
   );
+  const [ruleDialogOpen, setRuleDialogOpen] = useState(false);
 
   const createRule = useMutation({
     mutationFn: () =>
@@ -78,6 +80,7 @@ export default function SettingsPage() {
       setRuleCategory("");
       setRuleType("");
       setRuleMode("suggest_only");
+      setRuleDialogOpen(false);
       toast.success(t("toast.ruleAdded"));
     },
     onError: (error) => showErrorToast(error, t("toast.error")),
@@ -233,171 +236,45 @@ export default function SettingsPage() {
   ];
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-8">
       <PageHeader title={t("settings.title")} />
 
-      <Tabs defaultValue="security" className="space-y-5">
-        <TabsList className={pageTabsListClassName}>
-          <TabsTrigger
-            value="security"
-            className={pageTabTriggerClassName}
-          >
-            <ShieldCheck className="h-4 w-4" />
-            {t("settings.tabSecurity")}
-          </TabsTrigger>
-          <TabsTrigger
-            value="assistant"
-            className={pageTabTriggerClassName}
-          >
-            <Bot className="h-4 w-4" />
-            {t("settings.tabAssistant")}
-          </TabsTrigger>
-          <TabsTrigger
-            value="rules"
-            className={pageTabTriggerClassName}
-          >
-            <ListChecks className="h-4 w-4" />
-            {t("settings.tabRules")}
-          </TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="security">
+      <div className="w-full divide-y divide-border/70 overflow-hidden rounded-xl border border-border/70 bg-card">
+        <SettingsSection
+          title={t("settings.tabSecurity")}
+          icon={<ShieldCheck className="h-4 w-4" />}
+        >
           <AppLockSettings />
-        </TabsContent>
+        </SettingsSection>
 
-        <TabsContent value="assistant">
-          <AssistantSettingsCard />
-        </TabsContent>
+        <SettingsSection
+          title={t("settings.tabAssistant")}
+          icon={<Bot className="h-4 w-4" />}
+        >
+          <AssistantSettings />
+        </SettingsSection>
 
-        <TabsContent value="rules" className="space-y-5">
-          <Card className="w-full max-w-6xl">
-            <CardContent className="p-5">
-              <HelpTooltip content={t("settings.rulesHelp")}>
-                <h2 className="inline-flex items-center gap-2 text-base font-semibold text-foreground">
-                  <ListChecks className="h-4 w-4 text-primary" />
-                  {t("settings.addRule")}
-                </h2>
-              </HelpTooltip>
-              <form
-                className="mt-5"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  createRule.mutate();
-                }}
+        <SettingsSection
+          title={t("settings.tabRules")}
+          help={t("settings.rulesHelp")}
+          icon={<ListChecks className="h-4 w-4" />}
+        >
+          <div className="max-w-6xl space-y-3">
+            <div className="flex min-h-9 flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-semibold">
+                  {t("settings.savedRules")}
+                </h3>
+                <Badge variant="muted">{rulesQuery.data?.length ?? 0}</Badge>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setRuleDialogOpen(true)}
               >
-                <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-12">
-                  <div className="space-y-2 md:col-span-2 xl:col-span-4">
-                    <Label htmlFor="rule-pattern">
-                      {t("settings.rulePatternLabel")}
-                    </Label>
-                    <Input
-                      id="rule-pattern"
-                      value={pattern}
-                      onChange={(event) => setPattern(event.target.value)}
-                      placeholder={t("settings.rulePattern")}
-                    />
-                  </div>
-                  <div className="space-y-2 xl:col-span-2">
-                    <Label htmlFor="rule-target">
-                      {t("settings.ruleTarget")}
-                    </Label>
-                    <Select
-                      value={patternTarget}
-                      onValueChange={(v) =>
-                        setPatternTarget(v as "merchant" | "title" | "both")
-                      }
-                    >
-                      <SelectTrigger id="rule-target">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="merchant" indicatorPosition="right">
-                          {t("settings.targetMerchant")}
-                        </SelectItem>
-                        <SelectItem value="title" indicatorPosition="right">
-                          {t("settings.targetTitle")}
-                        </SelectItem>
-                        <SelectItem value="both" indicatorPosition="right">
-                          {t("settings.targetBoth")}
-                        </SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2 xl:col-span-2">
-                    <Label htmlFor="rule-category">
-                      {t("transactions.column.category")}
-                    </Label>
-                    <CategorySelect
-                      id="rule-category"
-                      value={ruleCategory}
-                      onChange={setRuleCategory}
-                      allLabel={t("settings.noCategory")}
-                      ariaLabel={t("transactions.column.category")}
-                      className="w-full"
-                    />
-                  </div>
-                  <div className="space-y-2 xl:col-span-2">
-                    <Label htmlFor="rule-transaction-type">
-                      {t("transactions.filterType")}
-                    </Label>
-                    <TransactionTypeFilterSelect
-                      id="rule-transaction-type"
-                      value={ruleType}
-                      onChange={setRuleType}
-                      allLabel={t("settings.noType")}
-                      ariaLabel={t("transactions.filterType")}
-                      className="w-full"
-                    />
-                  </div>
-                  <div className="space-y-2 xl:col-span-2">
-                    <HelpTooltip content={t("settings.modeHelp")}>
-                      <Label htmlFor="rule-mode">{t("settings.mode")}</Label>
-                    </HelpTooltip>
-                    <Select
-                      value={ruleMode}
-                      onValueChange={(v) =>
-                        setRuleMode(v as "suggest_only" | "auto_apply")
-                      }
-                    >
-                      <SelectTrigger id="rule-mode">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem
-                          value="suggest_only"
-                          indicatorPosition="right"
-                        >
-                          {t("settings.modeSuggest")}
-                        </SelectItem>
-                        <SelectItem
-                          value="auto_apply"
-                          indicatorPosition="right"
-                        >
-                          {t("settings.modeAuto")}
-                        </SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-                <div className="mt-4 flex justify-end">
-                  <Button
-                    type="submit"
-                    disabled={!pattern.trim() || createRule.isPending}
-                  >
-                    <Plus className="mr-2 h-4 w-4" />
-                    {t("settings.addRule")}
-                  </Button>
-                </div>
-              </form>
-            </CardContent>
-          </Card>
-
-          <section className="space-y-3">
-            <div className="flex items-center gap-2">
-              <h2 className="text-base font-semibold">
-                {t("settings.savedRules")}
-              </h2>
-              <Badge variant="muted">{rulesQuery.data?.length ?? 0}</Badge>
+                <Plus className="h-4 w-4" />
+                {t("settings.addRule")}
+              </Button>
             </div>
             {rulesQuery.isError ? (
               <ErrorState
@@ -416,9 +293,154 @@ export default function SettingsPage() {
                 emptyDescription={t("settings.rulesEmptyHelp")}
               />
             )}
-          </section>
-        </TabsContent>
-      </Tabs>
+          </div>
+        </SettingsSection>
+      </div>
+
+      <Dialog open={ruleDialogOpen} onOpenChange={setRuleDialogOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>{t("settings.addRule")}</DialogTitle>
+          </DialogHeader>
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              createRule.mutate();
+            }}
+          >
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2 md:col-span-2">
+                <Label htmlFor="rule-pattern">
+                  {t("settings.rulePatternLabel")}
+                </Label>
+                <Input
+                  id="rule-pattern"
+                  value={pattern}
+                  onChange={(event) => setPattern(event.target.value)}
+                  placeholder={t("settings.rulePattern")}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="rule-target">{t("settings.ruleTarget")}</Label>
+                <Select
+                  value={patternTarget}
+                  onValueChange={(v) =>
+                    setPatternTarget(v as "merchant" | "title" | "both")
+                  }
+                >
+                  <SelectTrigger id="rule-target">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="merchant" indicatorPosition="right">
+                      {t("settings.targetMerchant")}
+                    </SelectItem>
+                    <SelectItem value="title" indicatorPosition="right">
+                      {t("settings.targetTitle")}
+                    </SelectItem>
+                    <SelectItem value="both" indicatorPosition="right">
+                      {t("settings.targetBoth")}
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="rule-category">
+                  {t("transactions.column.category")}
+                </Label>
+                <CategorySelect
+                  id="rule-category"
+                  value={ruleCategory}
+                  onChange={setRuleCategory}
+                  allLabel={t("settings.noCategory")}
+                  ariaLabel={t("transactions.column.category")}
+                  className="w-full"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="rule-transaction-type">
+                  {t("transactions.filterType")}
+                </Label>
+                <TransactionTypeFilterSelect
+                  id="rule-transaction-type"
+                  value={ruleType}
+                  onChange={setRuleType}
+                  allLabel={t("settings.noType")}
+                  ariaLabel={t("transactions.filterType")}
+                  className="w-full"
+                />
+              </div>
+              <div className="space-y-2">
+                <HelpTooltip content={t("settings.modeHelp")}>
+                  <Label htmlFor="rule-mode">{t("settings.mode")}</Label>
+                </HelpTooltip>
+                <Select
+                  value={ruleMode}
+                  onValueChange={(v) =>
+                    setRuleMode(v as "suggest_only" | "auto_apply")
+                  }
+                >
+                  <SelectTrigger id="rule-mode">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="suggest_only" indicatorPosition="right">
+                      {t("settings.modeSuggest")}
+                    </SelectItem>
+                    <SelectItem value="auto_apply" indicatorPosition="right">
+                      {t("settings.modeAuto")}
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <DialogFooter className="mt-5">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setRuleDialogOpen(false)}
+              >
+                {t("common.cancel")}
+              </Button>
+              <Button
+                type="submit"
+                disabled={!pattern.trim() || createRule.isPending}
+              >
+                <Plus className="h-4 w-4" />
+                {t("settings.addRule")}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
+  );
+}
+
+function SettingsSection({
+  title,
+  icon,
+  help,
+  children,
+}: {
+  title: string;
+  icon: ReactNode;
+  help?: string;
+  children: ReactNode;
+}) {
+  const heading = (
+    <h2 className="inline-flex items-center gap-2 text-sm font-medium text-muted-foreground">
+      <span className="text-primary">{icon}</span>
+      {title}
+    </h2>
+  );
+
+  return (
+    <section className="px-6 py-8 sm:px-7">
+      <div>
+        {help ? <HelpTooltip content={help}>{heading}</HelpTooltip> : heading}
+      </div>
+      <div className="mt-6 min-w-0">{children}</div>
+    </section>
   );
 }

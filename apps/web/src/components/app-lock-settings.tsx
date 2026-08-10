@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Loader2, LockKeyhole } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { api, type AppLockStatus } from "@/lib/api";
 import { useT } from "@/lib/i18n";
@@ -12,7 +12,6 @@ import {
 } from "@/components/app-lock-provider";
 import { HelpTooltip } from "@/components/help-tooltip";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -223,82 +222,79 @@ export function AppLockSettings() {
   );
 
   return (
-    <Card className="w-full max-w-2xl">
-      <CardContent className="p-0">
-        <div className="flex min-h-16 items-center justify-between gap-4 p-5">
-          <HelpTooltip content={t("settings.appLockHelp")}>
-            <Label
-              htmlFor="app-lock-enabled"
-              className="flex items-center gap-2 text-base text-foreground"
-            >
-              <LockKeyhole className="h-4 w-4 text-primary" />
-              {t("settings.appLock")}
-            </Label>
-          </HelpTooltip>
-          <Switch
-            id="app-lock-enabled"
-            checked={enabled}
-            onCheckedChange={(checked) => {
-              setDesiredEnabled(checked);
-              resetSecrets();
-            }}
-            disabled={pending}
-          />
+    <section className="w-full max-w-2xl">
+      <div className="grid min-h-10 w-full max-w-md grid-cols-[minmax(0,1fr)_auto] items-center gap-4">
+        <HelpTooltip content={t("settings.appLockHelp")}>
+          <Label
+            htmlFor="app-lock-enabled"
+            className="text-base text-foreground"
+          >
+            {t("settings.appLock")}
+          </Label>
+        </HelpTooltip>
+        <Switch
+          id="app-lock-enabled"
+          checked={enabled}
+          onCheckedChange={(checked) => {
+            setDesiredEnabled(checked);
+            resetSecrets();
+          }}
+          disabled={pending}
+        />
+      </div>
+
+      {enabled && (
+        <div className="mt-5">
+          <div className="grid gap-4 md:grid-cols-2">
+            {appLock.status.enabled ? (
+              <>
+                {currentCodeField}
+                {timeoutField}
+                {newCodeField}
+                {repeatCodeField}
+              </>
+            ) : (
+              <>
+                {newCodeField}
+                {repeatCodeField}
+                {timeoutField}
+              </>
+            )}
+          </div>
+
+          {error && (
+            <p className="mt-4 text-sm text-destructive">{error}</p>
+          )}
+
+          <div className="mt-5 flex justify-end">
+            <Button onClick={() => void save()} disabled={pending}>
+              {pending && <Loader2 className="h-4 w-4 animate-spin" />}
+              {appLock.status.enabled
+                ? t("settings.appLockSave")
+                : t("settings.appLockEnable")}
+            </Button>
+          </div>
         </div>
+      )}
 
-        {enabled && (
-          <div className="border-t p-5">
-            <div className="grid gap-4 md:grid-cols-2">
-              {appLock.status.enabled ? (
-                <>
-                  {currentCodeField}
-                  {timeoutField}
-                  {newCodeField}
-                  {repeatCodeField}
-                </>
-              ) : (
-                <>
-                  {newCodeField}
-                  {repeatCodeField}
-                  {timeoutField}
-                </>
-              )}
-            </div>
-
-            {error && (
-              <p className="mt-4 text-sm text-destructive">{error}</p>
-            )}
-
-            <div className="mt-5 flex justify-end">
-              <Button onClick={() => void save()} disabled={pending}>
-                {pending && <Loader2 className="h-4 w-4 animate-spin" />}
-                {appLock.status.enabled
-                  ? t("settings.appLockSave")
-                  : t("settings.appLockEnable")}
-              </Button>
-            </div>
+      {isDisabling && (
+        <div className="mt-5">
+          <div className="max-w-sm">{currentCodeField}</div>
+          {error && (
+            <p className="mt-4 text-sm text-destructive">{error}</p>
+          )}
+          <div className="mt-5 flex justify-end">
+            <Button
+              variant="outline"
+              onClick={() => void disable()}
+              disabled={pending}
+            >
+              {pending && <Loader2 className="h-4 w-4 animate-spin" />}
+              {t("settings.appLockDisable")}
+            </Button>
           </div>
-        )}
-
-        {isDisabling && (
-          <div className="border-t p-5">
-            <div className="max-w-sm">{currentCodeField}</div>
-            {error && (
-              <p className="mt-4 text-sm text-destructive">{error}</p>
-            )}
-            <div className="mt-5 flex justify-end">
-              <Button
-                variant="outline"
-                onClick={() => void disable()}
-                disabled={pending}
-              >
-                {pending && <Loader2 className="h-4 w-4 animate-spin" />}
-                {t("settings.appLockDisable")}
-              </Button>
-            </div>
-          </div>
-        )}
-      </CardContent>
-    </Card>
+        </div>
+      )}
+    </section>
   );
 }

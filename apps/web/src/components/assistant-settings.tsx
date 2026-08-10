@@ -1,12 +1,10 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Bot } from "lucide-react";
 import { toast } from "sonner";
 
 import { HelpTooltip } from "@/components/help-tooltip";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -58,7 +56,7 @@ function statusFor(
   };
 }
 
-export function AssistantSettingsCard() {
+export function AssistantSettings() {
   const { t } = useT();
   const queryClient = useQueryClient();
   const query = useQuery({
@@ -77,31 +75,27 @@ export function AssistantSettingsCard() {
 
   if (query.isLoading) {
     return (
-      <Card className="w-full max-w-2xl">
-        <CardContent className="flex min-h-16 items-center justify-between gap-4 p-5">
-          <Skeleton className="h-5 w-48" />
-          <Skeleton className="h-5 w-9 rounded-full" />
-        </CardContent>
-      </Card>
+      <section className="flex min-h-10 w-full max-w-sm items-center gap-4">
+        <Skeleton className="h-5 w-48" />
+        <Skeleton className="h-5 w-9 rounded-full" />
+      </section>
     );
   }
 
   if (query.isError || !query.data) {
     return (
-      <Card className="w-full max-w-2xl">
-        <CardContent className="flex items-center justify-between gap-4 p-5">
-          <p className="text-sm text-destructive">
-            {t("settings.assistantLoadError")}
-          </p>
-          <button
-            type="button"
-            className="text-sm font-medium text-primary underline-offset-4 hover:underline"
-            onClick={() => void query.refetch()}
-          >
-            {t("common.retry")}
-          </button>
-        </CardContent>
-      </Card>
+      <section className="flex min-h-10 w-full max-w-xl items-center gap-4">
+        <p className="text-sm text-destructive">
+          {t("settings.assistantLoadError")}
+        </p>
+        <button
+          type="button"
+          className="text-sm font-medium text-primary underline-offset-4 hover:underline"
+          onClick={() => void query.refetch()}
+        >
+          {t("common.retry")}
+        </button>
+      </section>
     );
   }
 
@@ -113,69 +107,66 @@ export function AssistantSettingsCard() {
     settings.model,
   );
   return (
-    <Card className="w-full max-w-2xl">
-      <CardContent className="p-0">
-        <div className="flex min-h-16 items-center justify-between gap-4 p-5">
-          <div className="flex min-w-0 flex-wrap items-center gap-2">
-            <HelpTooltip content={t("settings.assistantLocalModelHelp")}>
-              <Label
-                htmlFor="assistant-llm-enabled"
-                className="flex items-center gap-2 text-base text-foreground"
-              >
-                <Bot className="h-4 w-4 text-primary" />
-                {t("settings.assistantLocalModel")}
-              </Label>
-            </HelpTooltip>
-            <HelpTooltip content={status.help}>
-              <Badge variant={status.variant}>{status.label}</Badge>
-            </HelpTooltip>
-          </div>
-          <Switch
-            id="assistant-llm-enabled"
-            checked={modelEnabled}
-            onCheckedChange={(enabled) => update.mutate({ enabled })}
-            disabled={!settings.configuration_enabled || update.isPending}
-          />
-        </div>
-
-        {modelEnabled && (
-          <div className="space-y-2 border-t p-5">
-            <HelpTooltip content={t("settings.assistantModelHelp")}>
-              <Label htmlFor="assistant-llm-model">
-                {t("settings.assistantModel")}
-              </Label>
-            </HelpTooltip>
-            <Select
-              value={settings.model}
-              onValueChange={(model) =>
-                update.mutate({ enabled: true, model })
-              }
-              disabled={
-                update.isPending || settings.available_models.length === 0
-              }
+    <section className="w-full max-w-2xl">
+      <div className="grid min-h-10 w-full max-w-md grid-cols-[minmax(0,1fr)_auto] items-center gap-4">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
+          <HelpTooltip content={t("settings.assistantLocalModelHelp")}>
+            <Label
+              htmlFor="assistant-llm-enabled"
+              className="text-base text-foreground"
             >
-              <SelectTrigger
-                id="assistant-llm-model"
-                className="w-full sm:max-w-md"
-              >
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {!selectedModelAvailable && (
-                  <SelectItem value={settings.model} disabled>
-                    {settings.model}
-                  </SelectItem>
-                )}
-                {settings.available_models.map((model) => (
-                  <SelectItem key={model} value={model} indicatorPosition="right">
-                    {model}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        )}
-      </CardContent>
-    </Card>
+              {t("settings.assistantLocalModel")}
+            </Label>
+          </HelpTooltip>
+          <HelpTooltip content={status.help}>
+            <Badge variant={status.variant}>{status.label}</Badge>
+          </HelpTooltip>
+        </div>
+        <Switch
+          id="assistant-llm-enabled"
+          checked={modelEnabled}
+          onCheckedChange={(enabled) => update.mutate({ enabled })}
+          disabled={!settings.configuration_enabled || update.isPending}
+        />
+      </div>
+
+      {modelEnabled && (
+        <div className="mt-5 space-y-2">
+          <HelpTooltip content={t("settings.assistantModelHelp")}>
+            <Label htmlFor="assistant-llm-model">
+              {t("settings.assistantModel")}
+            </Label>
+          </HelpTooltip>
+          <Select
+            value={settings.model}
+            onValueChange={(model) =>
+              update.mutate({ enabled: true, model })
+            }
+            disabled={
+              update.isPending || settings.available_models.length === 0
+            }
+          >
+            <SelectTrigger
+              id="assistant-llm-model"
+              className="w-full sm:max-w-md"
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {!selectedModelAvailable && (
+                <SelectItem value={settings.model} disabled>
+                  {settings.model}
+                </SelectItem>
+              )}
+              {settings.available_models.map((model) => (
+                <SelectItem key={model} value={model} indicatorPosition="right">
+                  {model}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
+    </section>
   );
 }
