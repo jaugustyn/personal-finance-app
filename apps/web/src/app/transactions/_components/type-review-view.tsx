@@ -128,7 +128,7 @@ export function TypeReviewView() {
     reset();
   };
   return (
-    <div className="space-y-5">
+    <div className="space-y-5 pt-2">
       {selected.size > 0 ? (
         <div className="pointer-events-none fixed inset-x-0 bottom-4 z-40 flex justify-center px-4">
           <div className="pointer-events-auto w-full max-w-4xl rounded-lg border border-transparent bg-popover p-3 shadow-[0_18px_60px_rgba(15,23,42,0.24),0_6px_18px_rgba(15,23,42,0.16)] ring-1 ring-black/10 dark:shadow-[0_20px_70px_rgba(0,0,0,0.65),0_0_0_1px_rgba(255,255,255,0.04)] dark:ring-white/12">
