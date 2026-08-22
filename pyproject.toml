@@ -13,12 +13,12 @@ dependencies = [
     "pydantic>=2.9",
     "pydantic-settings>=2.6",
     # db
-    "sqlalchemy>=2.0.51",
+    "sqlalchemy>=2.0.52",
     "alembic>=1.18.4",
     "psycopg[binary]>=3.3.4",
     # data / ml
     "pandas>=3.0.5",
-    "numpy>=2.4.6",
+    "numpy>=2.5.2",
     "scikit-learn>=1.9.0",
     "statsmodels>=0.14",
     "joblib>=1.4",
@@ -34,8 +34,8 @@ augment = [
 dev = [
     "pytest>=8.3",
     "pytest-cov>=5.0",
-    "ruff>=0.16.0",
-    "mypy>=2.3.0",
+    "ruff>=0.16.3",
+    "mypy>=2.3.1",
     "hypothesis>=6.161.2",
 ]
 
