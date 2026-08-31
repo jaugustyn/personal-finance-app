@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils";
 export type LogoMarkProps = Omit<SVGProps<SVGSVGElement>, "children">;
 
 export const LOGO_MARK_VIEW_BOX = "4.65 3.25 24 27";
+export const LOGO_MARK_FAVICON_VIEW_BOX = "5.9 5.3 21.5 21.5";
 export const LOGO_MARK_LAYERS = [
   {
     d: "M8.15 25.8V14.15c0-4.1 3.33-7.43 7.43-7.43h9.37a3.98 3.98 0 0 1-3.98 3.98h-5.52c-3.2 0-5.5 2.05-6.2 5-.2.85-.3 1.65-.3 2.55v2.4c0 2 1.25 3.5 3.1 3.65-1.9.1-3.35.65-3.9 1.5Z",

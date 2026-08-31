@@ -6,8 +6,8 @@ import {
   useLocalStorageState,
 } from "@/hooks/use-local-storage-state";
 import {
+  LOGO_MARK_FAVICON_VIEW_BOX,
   LOGO_MARK_LAYERS,
-  LOGO_MARK_VIEW_BOX,
 } from "@/components/logo-mark";
 
 export const ACCENTS = [
@@ -47,7 +47,7 @@ function syncFavicon() {
     ({ d, opacity }) =>
       `<path d="${d}" fill="${color}" opacity="${opacity}"/>`,
   ).join("");
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${LOGO_MARK_VIEW_BOX}" fill="none">${paths}</svg>`;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${LOGO_MARK_FAVICON_VIEW_BOX}" fill="none">${paths}</svg>`;
   const href = `data:image/svg+xml,${encodeURIComponent(svg)}`;
   const links = document.querySelectorAll<HTMLLinkElement>('link[rel~="icon"]');
 

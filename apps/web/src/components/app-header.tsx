@@ -32,7 +32,7 @@ export function AppHeader() {
         <SheetContent side="left" className="flex w-72 flex-col p-0">
           <SidebarBrand />
           <SidebarNav onNavigate={() => setMobileOpen(false)} />
-          <div className="shrink-0 border-t border-border/80 bg-muted/30 p-3">
+          <div className="shrink-0 border-t border-border/80 bg-sidebar px-2 py-2.5">
             <SidebarSettingsLink onNavigate={() => setMobileOpen(false)} />
           </div>
         </SheetContent>

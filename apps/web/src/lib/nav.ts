@@ -24,7 +24,7 @@ export interface NavItem {
 }
 
 export interface NavSection {
-  titleKey: TranslationKey;
+  titleKey?: TranslationKey;
   items: NavItem[];
 }
 
@@ -37,17 +37,16 @@ export const SETTINGS_NAV_ITEM: NavItem = {
 /** Single source of truth for desktop and mobile navigation. */
 export const NAV_SECTIONS: NavSection[] = [
   {
-    titleKey: "nav.section.overview",
     items: [
       { href: "/", labelKey: "nav.dashboard", icon: LayoutDashboard },
       { href: "/transactions", labelKey: "nav.transactions", icon: Receipt },
+      { href: "/accounts", labelKey: "nav.accounts", icon: Landmark },
       { href: "/assets", labelKey: "nav.assets", icon: PiggyBank },
     ],
   },
   {
     titleKey: "nav.section.money",
     items: [
-      { href: "/accounts", labelKey: "nav.accounts", icon: Landmark },
       { href: "/imports", labelKey: "nav.imports", icon: Upload },
       { href: "/categories", labelKey: "nav.categories", icon: Tag },
       { href: "/merchants", labelKey: "nav.merchants", icon: Store },

@@ -60,11 +60,11 @@ export function AppPreferencesMenu() {
           className="absolute bottom-full left-0 z-30 w-full space-y-5 border-t border-border/80 bg-sidebar px-5 py-4 animate-in fade-in slide-in-from-bottom-1 duration-150"
         >
           <div className="space-y-2">
-            <p className="text-xs font-medium text-foreground">
+            <p className="text-[13px] font-medium text-foreground">
               {t("header.theme")}
             </p>
             <div
-              className="grid grid-cols-3 divide-x divide-border/60 overflow-hidden rounded-md border border-input bg-card"
+              className="overflow-hidden rounded-[6px] border border-border/80 bg-card"
               role="group"
               aria-label={t("header.theme")}
             >
@@ -78,16 +78,19 @@ export function AppPreferencesMenu() {
                     onClick={() => setTheme(option.value)}
                     aria-pressed={selected}
                     className={cn(
-                      "relative flex h-10 min-w-0 flex-col items-center justify-center gap-0.5 px-1 text-[11px] font-medium transition-colors focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+                      "relative flex h-9 w-full items-center gap-2.5 border-b border-border/60 px-3 text-[13px] font-normal transition-colors last:border-b-0 focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
                       selected
-                        ? "bg-accent-soft text-accent-soft-foreground"
-                        : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
+                        ? "bg-primary/[0.055] font-medium text-foreground dark:bg-primary/[0.09]"
+                        : "text-foreground/[0.68] hover:bg-foreground/[0.02] hover:text-foreground dark:text-foreground/70 dark:hover:bg-foreground/[0.035]",
                     )}
                   >
-                    <Icon className="h-3.5 w-3.5 shrink-0" />
-                    <span className="truncate">
+                    <Icon className="h-4 w-4 shrink-0" />
+                    <span className="min-w-0 flex-1 truncate text-left">
                       {t(option.label as TranslationKey)}
                     </span>
+                    {selected ? (
+                      <Check className="h-3.5 w-3.5 shrink-0 text-primary" />
+                    ) : null}
                   </button>
                 );
               })}
@@ -95,10 +98,14 @@ export function AppPreferencesMenu() {
           </div>
 
           <div className="space-y-2.5">
-            <p className="text-xs font-medium text-foreground">
+            <p className="text-[13px] font-medium text-foreground">
               {t("header.accentToggle")}
             </p>
-            <div className="grid grid-cols-6 gap-1.5">
+            <div
+              className="grid grid-cols-6 gap-1.5"
+              role="group"
+              aria-label={t("header.accentToggle")}
+            >
               {ACCENTS.map((option) => {
                 const selected = accent === option;
                 const label = t(
@@ -127,10 +134,14 @@ export function AppPreferencesMenu() {
           </div>
 
           <div className="space-y-2">
-            <p className="text-xs font-medium text-foreground">
+            <p className="text-[13px] font-medium text-foreground">
               {t("header.language")}
             </p>
-            <div className="flex items-center gap-3">
+            <div
+              className="grid grid-cols-2 divide-x divide-border/60 overflow-hidden rounded-[6px] border border-border/80 bg-card"
+              role="group"
+              aria-label={t("header.language")}
+            >
               {(["pl", "en"] as const).map((option) => (
                 <button
                   key={option}
@@ -138,8 +149,10 @@ export function AppPreferencesMenu() {
                   onClick={() => setLocale(option)}
                   aria-pressed={locale === option}
                   className={cn(
-                    "text-xs font-semibold uppercase transition-colors hover:text-foreground",
-                    locale === option ? "text-primary" : "text-muted-foreground",
+                    "h-9 text-[13px] font-normal uppercase transition-colors focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+                    locale === option
+                      ? "bg-primary/[0.055] font-medium text-foreground dark:bg-primary/[0.09]"
+                      : "text-foreground/[0.68] hover:bg-foreground/[0.02] hover:text-foreground dark:text-foreground/70 dark:hover:bg-foreground/[0.035]",
                   )}
                 >
                   {option}
@@ -154,21 +167,20 @@ export function AppPreferencesMenu() {
         variant="ghost"
         size="sm"
         className={cn(
-          "group h-9 w-full justify-start gap-2.5 px-2 text-xs font-medium text-muted-foreground hover:bg-background/40 hover:text-foreground",
-          open && "font-semibold text-foreground",
+          "group h-[38px] w-full justify-start gap-3 rounded-[6px] px-4 text-[15px] font-normal tracking-[-0.01em] text-foreground/[0.68] hover:bg-foreground/[0.018] hover:text-foreground dark:text-foreground/70 dark:hover:bg-foreground/[0.03]",
+          open &&
+            "bg-primary/[0.055] font-medium text-foreground hover:bg-primary/[0.07] dark:bg-primary/[0.09] dark:hover:bg-primary/[0.11]",
         )}
         onClick={() => setOpen((value) => !value)}
         aria-expanded={open}
         aria-controls="appearance-options"
       >
-        <span
+        <SlidersHorizontal
           className={cn(
-            "flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-border/70 bg-background/65 text-muted-foreground transition-colors group-hover:border-foreground/15 group-hover:text-foreground",
-            open && "border-foreground/10 bg-foreground/[0.06] text-foreground",
+            "h-[17px] w-[17px] shrink-0 transition-colors",
+            open ? "text-primary" : "group-hover:text-foreground",
           )}
-        >
-          <SlidersHorizontal className="h-3.5 w-3.5" />
-        </span>
+        />
         {t("header.preferences")}
       </Button>
     </div>

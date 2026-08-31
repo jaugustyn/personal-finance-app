@@ -30,19 +30,17 @@ export function AppUtilities({
 
   if (variant === "sidebar") {
     return (
-      <div className={cn("flex flex-col gap-0.5", className)}>
+      <div className={cn("flex flex-col gap-1", className)}>
         <AppPreferencesMenu />
         {appLock.status.enabled ? (
           <Button
             variant="ghost"
             size="sm"
-            className="group h-9 w-full justify-start gap-2.5 px-2 text-xs font-medium text-muted-foreground hover:bg-background/40 hover:text-foreground"
+            className="group h-[38px] w-full justify-start gap-3 rounded-[6px] px-4 text-[15px] font-normal tracking-[-0.01em] text-foreground/[0.68] hover:bg-foreground/[0.018] hover:text-foreground dark:text-foreground/70 dark:hover:bg-foreground/[0.03]"
             onClick={() => void appLock.lock()}
             aria-label={t("appLock.lockNow")}
           >
-            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-border/70 bg-background/65 text-muted-foreground transition-colors group-hover:border-foreground/15 group-hover:text-foreground">
-              <LockKeyhole className="h-3.5 w-3.5" />
-            </span>
+            <LockKeyhole className="h-[17px] w-[17px] shrink-0 transition-colors group-hover:text-foreground" />
             {t("appLock.lockShort")}
           </Button>
         ) : null}
