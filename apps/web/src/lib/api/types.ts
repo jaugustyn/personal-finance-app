@@ -243,6 +243,8 @@ export interface AssetAccount {
   native_value: number | string | null;
   native_currency: string | null;
   valuation_item_id: number | null;
+  valuation_date: string | null;
+  projected: boolean;
   aggregate_asset_type: AssetType | null;
   review_interval_days: number | null;
   stale_count: number;

@@ -12,6 +12,10 @@ import type {
 } from "./types";
 
 export const assetsApi = {
+  deleteAssetAccount: (id: number) =>
+    request<void>(`/assets/accounts/${id}`, { method: "DELETE" }),
+  deleteAssetItem: (id: number) =>
+    request<void>(`/assets/items/${id}`, { method: "DELETE" }),
   assetOverview: () => request<AssetOverview>("/assets/overview"),
   assetAccounts: (includeArchived = false) =>
     request<AssetAccount[]>(
@@ -65,10 +69,7 @@ export const assetsApi = {
       method: "POST",
       body: JSON.stringify(payload),
     }),
-  updateAssetValuation: (
-    id: number,
-    payload: Partial<AssetValuationInput>,
-  ) =>
+  updateAssetValuation: (id: number, payload: Partial<AssetValuationInput>) =>
     request<AssetValuation>(`/assets/valuations/${id}`, {
       method: "PUT",
       body: JSON.stringify(payload),

@@ -686,6 +686,30 @@ def update_valuation(
     return row
 
 
+def delete_account(session: Session, account_id: int) -> bool:
+    row = session.get(AssetAccount, account_id)
+    if row is None:
+        return False
+    if row.archived_at is None:
+        raise AssetConflictError("Archive the account before deleting it permanently.")
+    with command_transaction(session):
+        session.delete(row)
+    return True
+
+
+def delete_item(session: Session, item_id: int) -> bool:
+    row = session.get(AssetItem, item_id)
+    if row is None:
+        return False
+    if row.is_aggregate_summary:
+        raise AssetConflictError("Delete the aggregate account instead of its summary item.")
+    if row.archived_at is None:
+        raise AssetConflictError("Archive the item before deleting it permanently.")
+    with command_transaction(session):
+        session.delete(row)
+    return True
+
+
 def delete_valuation(session: Session, valuation_id: int) -> bool:
     row = session.get(AssetValuation, valuation_id)
     if row is None:
@@ -921,6 +945,8 @@ def _account_view(
         native_value=summary.current_value.native_value if summary else None,
         native_currency=summary.currency if summary else None,
         valuation_item_id=summary.id if summary else None,
+        valuation_date=summary.current_value.valuation_date if summary else None,
+        projected=summary.current_value.projected if summary else False,
         aggregate_asset_type=summary.asset_type if summary else None,
         review_interval_days=(summary.review_interval_days if summary else None),
         stale_count=sum(item.current_value.stale for item in active_item_views),
@@ -1061,15 +1087,6 @@ def _subtract_months(value: date, months: int) -> date:
     return date(year, month, min(value.day, calendar.monthrange(year, month)[1]))
 
 
-def _month_starts(start: date, end: date) -> list[date]:
-    points = [start]
-    cursor = _subtract_months(date(start.year, start.month, 1), -1)
-    while cursor <= end:
-        points.append(cursor)
-        cursor = _subtract_months(cursor, -1)
-    return points
-
-
 def _weekly_samples(start: date, end: date) -> list[date]:
     points = [start]
     cursor = start + timedelta(days=7)
@@ -1127,9 +1144,26 @@ def history(
     elif range_name == "1y":
         samples = _weekly_samples(start, target)
     else:
-        samples = _month_starts(start, target)
-        samples.extend(day for day in valuation_dates if day >= start)
-        samples.append(target)
+        # Sample elapsed time evenly, rather than stretching a few monthly values.
+        span = (target - start).days
+        count = min(span + 1, MAX_HISTORY_POINTS)
+        samples = [
+            start + timedelta(days=round(index * span / max(1, count - 1)))
+            for index in range(count)
+        ]
+        event_dates = set(valuation_dates)
+        for account in accounts:
+            if account.archived_at is not None:
+                event_dates.add(account.archived_at.date())
+            for item in account.items:
+                if item.archived_at is not None:
+                    event_dates.add(item.archived_at.date())
+        samples.extend(
+            sample
+            for event in event_dates
+            for sample in (event - timedelta(days=1), event)
+            if start <= sample <= target
+        )
         samples = sorted(set(samples))
         samples = _downsample_dates(samples, limit=MAX_HISTORY_POINTS)
 

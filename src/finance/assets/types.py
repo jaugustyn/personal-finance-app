@@ -54,6 +54,8 @@ class AssetAccountView:
     native_value: Decimal | None
     native_currency: str | None
     valuation_item_id: int | None
+    valuation_date: date | None
+    projected: bool
     aggregate_asset_type: str | None
     review_interval_days: int | None
     stale_count: int

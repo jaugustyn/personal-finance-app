@@ -278,3 +278,23 @@ def remove_valuation(
         raise conflict(str(exc)) from exc
     if not removed:
         raise not_found("Asset valuation not found.")
+
+
+@router.delete("/accounts/{account_id}", status_code=204, response_model=None)
+def remove_account(account_id: int, session: Session = Depends(get_session)) -> None:
+    try:
+        removed = service.delete_account(session, account_id)
+    except service.AssetConflictError as exc:
+        raise conflict(str(exc)) from exc
+    if not removed:
+        raise not_found("Asset account not found.")
+
+
+@router.delete("/items/{item_id}", status_code=204, response_model=None)
+def remove_item(item_id: int, session: Session = Depends(get_session)) -> None:
+    try:
+        removed = service.delete_item(session, item_id)
+    except service.AssetConflictError as exc:
+        raise conflict(str(exc)) from exc
+    if not removed:
+        raise not_found("Asset item not found.")

@@ -84,6 +84,7 @@ def test_retirement_wrappers_are_supported(client, wrapper: str) -> None:
 
 
 def test_aggregate_account_exposes_one_value_without_public_item(client) -> None:
+    recorded_on = date.today() - timedelta(days=120)
     response = client.post(
         "/assets/accounts",
         json={
@@ -94,7 +95,7 @@ def test_aggregate_account_exposes_one_value_without_public_item(client) -> None
             "tracking_mode": "aggregate",
             "default_currency": "PLN",
             "aggregate_asset_type": "fund",
-            "initial_valuation": _valuation("12500"),
+            "initial_valuation": _valuation("12500", valuation_date=recorded_on),
         },
     )
 
@@ -103,6 +104,9 @@ def test_aggregate_account_exposes_one_value_without_public_item(client) -> None
     assert account["amount_pln"] == "12500.00"
     assert account["native_value"] == "12500.00000000"
     assert account["valuation_item_id"] is not None
+    assert account["projected"] is False
+    assert account["valuation_date"] == recorded_on.isoformat()
+    assert client.get("/assets/accounts").json()[0]["valuation_date"] == recorded_on.isoformat()
     assert account["items"] == []
 
     overview = client.get("/assets/overview").json()
@@ -550,6 +554,8 @@ def test_open_ended_fixed_rate_uses_review_interval(client) -> None:
     assert response.status_code == 201, response.text
     assert response.json()["stale_count"] == 1
     assert response.json()["amount_pln"] > "10000.00"
+    assert response.json()["valuation_date"] == old.isoformat()
+    assert response.json()["projected"] is True
     assert client.get("/stats/attention-summary").json()["asset_reviews"] == 1
 
 
@@ -710,3 +716,93 @@ def test_missing_asset_fx_can_be_recomputed(client, db_session) -> None:
     assert response.status_code == 200
     assert response.json() == {"updated": 1, "missing": 0}
     assert client.get("/assets/overview").json()["total_pln"] == "425.00"
+
+
+def test_permanent_deletion_requires_archive_and_removes_valuations(client, db_session) -> None:
+    account = client.post(
+        "/assets/accounts",
+        json={
+            "name": "Deletion test",
+            "kind": "physical",
+            "tracking_mode": "aggregate",
+            "aggregate_asset_type": "cash",
+            "initial_valuation": _valuation("100"),
+        },
+    ).json()
+    account_id = account["id"]
+    item_id = account["valuation_item_id"]
+    assert client.delete(f"/assets/accounts/{account_id}").status_code == 409
+    assert client.delete(f"/assets/items/{item_id}").status_code == 409
+    assert client.post(f"/assets/accounts/{account_id}/archive").status_code == 200
+    assert client.delete(f"/assets/accounts/{account_id}").status_code == 204
+    assert client.get(f"/assets/items/{item_id}/valuations").status_code == 404
+    assert not db_session.query(AssetValuation).filter_by(item_id=item_id).all()
+    assert client.delete(f"/assets/accounts/{account_id}").status_code == 404
+
+
+def test_permanent_item_deletion_keeps_other_holdings(client, db_session) -> None:
+    account = client.post(
+        "/assets/accounts",
+        json={"name": "Portfolio", "kind": "brokerage", "tracking_mode": "detailed"},
+    ).json()
+    items = [
+        client.post(
+            f"/assets/accounts/{account['id']}/items",
+            json={
+                "name": name,
+                "asset_type": "etf",
+                "currency": "PLN",
+                "initial_valuation": _valuation("100"),
+            },
+        ).json()
+        for name in ("Remove", "Keep")
+    ]
+    item_id = items[0]["id"]
+    assert client.delete(f"/assets/items/{item_id}").status_code == 409
+    assert client.post(f"/assets/items/{item_id}/archive").status_code == 200
+    assert client.delete(f"/assets/items/{item_id}").status_code == 204
+    assert client.delete(f"/assets/items/{item_id}").status_code == 404
+    assert not db_session.query(AssetValuation).filter_by(item_id=item_id).all()
+    assert len(client.get(f"/assets/items/{items[1]['id']}/valuations").json()) == 1
+
+
+def test_all_history_starts_at_first_valuation_not_artificial_zero(client) -> None:
+    first = date.today() - timedelta(days=10)
+    account = client.post(
+        "/assets/accounts",
+        json={
+            "name": "Baseline",
+            "kind": "physical",
+            "tracking_mode": "aggregate",
+            "aggregate_asset_type": "cash",
+            "initial_valuation": _valuation("100", valuation_date=first),
+        },
+    ).json()
+    client.post(f"/assets/items/{account['valuation_item_id']}/valuations", json=_valuation("150"))
+    points = client.get("/assets/history?range=all").json()["points"]
+    assert points[0]["date"] == first.isoformat()
+    assert Decimal(points[-1]["amount_pln"]) - Decimal(points[0]["amount_pln"]) == Decimal("50")
+    assert len(points) == 11
+    assert all(Decimal(point["amount_pln"]) == Decimal("100") for point in points[:-1])
+
+
+def test_all_history_samples_recent_archive_on_its_actual_date(client) -> None:
+    today = date.today()
+    first = today - timedelta(days=45)
+    account = client.post(
+        "/assets/accounts",
+        json={
+            "name": "Archive history",
+            "kind": "physical",
+            "tracking_mode": "aggregate",
+            "aggregate_asset_type": "cash",
+            "initial_valuation": _valuation("100", valuation_date=first),
+        },
+    ).json()
+    assert client.post(f"/assets/accounts/{account['id']}/archive").status_code == 200
+    points = client.get("/assets/history?range=all").json()["points"]
+    assert len(points) == 46
+    assert points[-2]["date"] == (today - timedelta(days=1)).isoformat()
+    assert all(Decimal(point["amount_pln"]) == Decimal("100") for point in points[:-1])
+    assert points[-1]["date"] == today.isoformat()
+    assert Decimal(points[-1]["amount_pln"]) == 0
