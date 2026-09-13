@@ -4,7 +4,7 @@ import Link from "next/link";
 import {
   AlertTriangle,
   ArrowUpRight,
-  CheckCircle2,
+  Info,
   PiggyBank,
   RefreshCw,
 } from "lucide-react";
@@ -29,15 +29,10 @@ export function DashboardAssetsSummary({
   onRetry: () => void;
 }) {
   const { t } = useT();
-  const { formatCurrency, formatDate, formatNumber, formatPercent } =
-    useFormatters();
+  const { formatCurrency, formatNumber, formatPercent } = useFormatters();
   const leadingAsset = data?.breakdown[0];
   const hasValuationIssues = Boolean(
-    data &&
-      (data.stale_count ||
-        data.matured_count ||
-        data.unconverted_count ||
-        data.missing_valuation_count),
+    data && (data.unconverted_count || data.missing_valuation_count),
   );
 
   return (
@@ -68,7 +63,7 @@ export function DashboardAssetsSummary({
                   {hasValuationIssues ? (
                     <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-warning" />
                   ) : (
-                    <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-positive" />
+                    <Info className="h-3.5 w-3.5 shrink-0" />
                   )}
                   <span>
                     {hasValuationIssues
@@ -122,7 +117,7 @@ export function DashboardAssetsSummary({
                   })}
                 </span>
                 <span aria-hidden>·</span>
-                <span>{t("assets.asOf", { date: formatDate(data.as_of) })}</span>
+                <span>{t("assets.estimateBasis")}</span>
               </p>
             </div>
 

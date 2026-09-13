@@ -11,11 +11,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import type {
-  AssetType,
-  AssetValuation,
-  AssetValuationInput,
-} from "@/lib/api";
+import type { AssetType, AssetValuation, AssetValuationInput } from "@/lib/api";
 import { useT } from "@/lib/i18n";
 import { assetTypeCapabilities } from "../_lib/asset-options";
 import {
@@ -94,18 +90,31 @@ export function AssetValuationDialog({
               value={draft}
               onChange={setDraft}
               currency={target?.currency ?? "PLN"}
+              showInputMode={Boolean(
+                target &&
+                assetTypeCapabilities(target.assetType).defaultInputMode ===
+                  "unit_price",
+              )}
               showGrowth={Boolean(
                 target &&
-                  (assetTypeCapabilities(target.assetType).supportsFixedGrowth ||
-                    draft.growthMode !== "none"),
+                (assetTypeCapabilities(target.assetType).supportsFixedGrowth ||
+                  draft.growthMode !== "none"),
               )}
             />
           </div>
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={pending}>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => onOpenChange(false)}
+              disabled={pending}
+            >
               {t("common.cancel")}
             </Button>
-            <Button type="submit" disabled={!target || !isValuationValid(draft) || pending}>
+            <Button
+              type="submit"
+              disabled={!target || !isValuationValid(draft) || pending}
+            >
               {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
               {t("common.save")}
             </Button>

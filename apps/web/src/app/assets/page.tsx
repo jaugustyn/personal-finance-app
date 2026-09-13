@@ -5,8 +5,10 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
   Loader2,
+  Layers3,
   Plus,
   RefreshCw,
+  Search,
   WalletCards,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -14,21 +16,38 @@ import {
   api,
   type AssetAccount,
   type AssetAccountInput,
+  type AssetTrackingMode,
   type AssetItem,
   type AssetItemInput,
   type AssetValuation,
   type AssetValuationInput,
 } from "@/lib/api";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
+import { HelpTooltip } from "@/components/help-tooltip";
 import { EmptyState } from "@/components/empty-state";
 import { ErrorState } from "@/components/error-state";
 import { PageHeader } from "@/components/page-header";
 import { useConfirm } from "@/components/confirm-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from "@/components/ui/dropdown-menu";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useFormatters, useT } from "@/lib/i18n";
 import { invalidateAssetData, queryKeys } from "@/lib/query-keys";
 import { showErrorToast } from "@/lib/toasts";
+import { ASSET_TYPES, assetTypeKey } from "./_lib/asset-options";
 import { AssetAccountCard } from "./_components/asset-account-card";
 import { AssetAccountDialog } from "./_components/asset-account-dialog";
 import { AssetItemDialog } from "./_components/asset-item-dialog";
@@ -48,15 +67,23 @@ export default function AssetsPage() {
   const { formatCurrency, formatDate } = useFormatters();
   const queryClient = useQueryClient();
   const confirm = useConfirm();
+  const [search, setSearch] = useState("");
+  const [currency, setCurrency] = useState("all");
+  const [createMode, setCreateMode] = useState<AssetTrackingMode>("aggregate");
   const [accountDialogOpen, setAccountDialogOpen] = useState(false);
-  const [editingAccount, setEditingAccount] = useState<AssetAccount | null>(null);
+  const [editingAccount, setEditingAccount] = useState<AssetAccount | null>(
+    null,
+  );
   const [itemAccount, setItemAccount] = useState<AssetAccount | null>(null);
   const [editingItem, setEditingItem] = useState<{
     account: AssetAccount;
     item: AssetItem;
   } | null>(null);
-  const [valuationTarget, setValuationTarget] = useState<ValuationTarget | null>(null);
-  const [historyTarget, setHistoryTarget] = useState<HistoryTarget | null>(null);
+  const [valuationTarget, setValuationTarget] =
+    useState<ValuationTarget | null>(null);
+  const [historyTarget, setHistoryTarget] = useState<HistoryTarget | null>(
+    null,
+  );
 
   const overviewQuery = useQuery({
     queryKey: queryKeys.assets.overview,
@@ -69,24 +96,38 @@ export default function AssetsPage() {
   const refresh = () => invalidateAssetData(queryClient);
   const createAccount = useMutation({
     mutationFn: api.createAssetAccount,
-    onSuccess: () => {
+    onSuccess: async () => {
+      setSearch("");
+      setCurrency("all");
+      await refresh();
       toast.success(t("assets.accountAdded"));
-      void refresh();
     },
     onError: (error) => showErrorToast(error, t("assets.saveError")),
   });
   const createItem = useMutation({
-    mutationFn: ({ accountId, payload }: { accountId: number; payload: AssetItemInput }) =>
-      api.createAssetItem(accountId, payload),
-    onSuccess: () => {
+    mutationFn: ({
+      accountId,
+      payload,
+    }: {
+      accountId: number;
+      payload: AssetItemInput;
+    }) => api.createAssetItem(accountId, payload),
+    onSuccess: async () => {
+      setSearch("");
+      setCurrency("all");
+      await refresh();
       toast.success(t("assets.itemAdded"));
-      void refresh();
     },
     onError: (error) => showErrorToast(error, t("assets.saveError")),
   });
   const updateAccount = useMutation({
-    mutationFn: ({ id, payload }: { id: number; payload: Partial<AssetAccountInput> }) =>
-      api.updateAssetAccount(id, payload),
+    mutationFn: ({
+      id,
+      payload,
+    }: {
+      id: number;
+      payload: Partial<AssetAccountInput>;
+    }) => api.updateAssetAccount(id, payload),
     onSuccess: () => {
       toast.success(t("assets.accountUpdated"));
       void refresh();
@@ -94,8 +135,13 @@ export default function AssetsPage() {
     onError: (error) => showErrorToast(error, t("assets.saveError")),
   });
   const updateItem = useMutation({
-    mutationFn: ({ id, payload }: { id: number; payload: Partial<AssetItemInput> }) =>
-      api.updateAssetItem(id, payload),
+    mutationFn: ({
+      id,
+      payload,
+    }: {
+      id: number;
+      payload: Partial<AssetItemInput>;
+    }) => api.updateAssetItem(id, payload),
     onSuccess: () => {
       toast.success(t("assets.itemUpdated"));
       void refresh();
@@ -163,6 +209,124 @@ export default function AssetsPage() {
   const failed = overviewQuery.isError || accountsQuery.isError;
   const overview = overviewQuery.data;
   const accounts = accountsQuery.data ?? [];
+  const query = search.trim().toLocaleLowerCase();
+  const currencies = [
+    ...new Set(
+      accounts.flatMap((account) =>
+        account.tracking_mode === "aggregate"
+          ? [account.native_currency ?? account.default_currency]
+          : account.items.length
+            ? account.items.map((item) => item.currency)
+            : [account.default_currency],
+      ),
+    ),
+  ].sort();
+  const filtered = Boolean(query) || currency !== "all";
+  const matchesCurrency = (account: AssetAccount) =>
+    currency === "all" ||
+    (account.tracking_mode === "aggregate"
+      ? (account.native_currency ?? account.default_currency) === currency
+      : account.items.length
+        ? account.items.some((item) => item.currency === currency)
+        : account.default_currency === currency);
+  const currencyScopedAccounts = accounts.filter(matchesCurrency);
+  const visibleAccounts = accounts.filter((account) => {
+    const matchingItems = account.items.filter(
+      (item) => currency === "all" || item.currency === currency,
+    );
+    return (
+      matchesCurrency(account) &&
+      [
+        account.name,
+        account.institution,
+        ...matchingItems.map((item) => item.name),
+      ].some((value) => value?.toLocaleLowerCase().includes(query))
+    );
+  });
+  const currencyValues = accounts.flatMap((account) => {
+    if (account.tracking_mode === "aggregate") {
+      if ((account.native_currency ?? account.default_currency) !== currency)
+        return [];
+      return [
+        account.unconverted_count || account.missing_valuation_count
+          ? null
+          : account.amount_pln,
+      ];
+    }
+    return account.items
+      .filter((item) => item.currency === currency)
+      .map((item) =>
+        item.current_value.unconverted ? null : item.current_value.amount_pln,
+      );
+  });
+  const convertedValues = currencyValues.filter((value) => value != null);
+  const currencyTotal = convertedValues.reduce<number>(
+    (sum, value) => sum + Number(value),
+    0,
+  );
+  const currencyTotalMissing = convertedValues.length < currencyValues.length;
+  const summaryCounts = [
+    {
+      label: t("assets.individualAssets"),
+      count: currencyScopedAccounts.filter(
+        (account) => account.tracking_mode === "aggregate",
+      ).length,
+    },
+    {
+      label: t("assets.summaryPortfolios"),
+      count: currencyScopedAccounts.filter(
+        (account) => account.tracking_mode === "detailed",
+      ).length,
+    },
+    {
+      label: t("assets.summaryHoldings"),
+      count: currencyScopedAccounts
+        .filter((account) => account.tracking_mode === "detailed")
+        .reduce(
+          (sum, account) =>
+            sum +
+            account.items.filter(
+              (item) => currency === "all" || item.currency === currency,
+            ).length,
+          0,
+        ),
+    },
+  ];
+  const groups = [
+    ...ASSET_TYPES.map((type) => ({
+      key: type,
+      label: t(assetTypeKey(type)),
+      accounts: visibleAccounts.filter(
+        (account) =>
+          account.tracking_mode === "aggregate" &&
+          (account.aggregate_asset_type ?? "other") === type,
+      ),
+    })),
+    {
+      key: "portfolios",
+      label: t("assets.portfolios"),
+      accounts: visibleAccounts.filter(
+        (account) => account.tracking_mode === "detailed",
+      ),
+    },
+  ].filter((group) => group.accounts.length > 0);
+
+  const panels = [
+    {
+      key: "assets",
+      label: t("assets.individualAssets"),
+      icon: WalletCards,
+      groups: groups.filter((group) => group.key !== "portfolios"),
+      empty: t("assets.noIndividualAssets"),
+    },
+    {
+      key: "portfolios",
+      label: t("assets.portfolios"),
+      icon: Layers3,
+      groups: groups.filter((group) => group.key === "portfolios"),
+      empty: t("assets.noPortfolios"),
+    },
+  ];
 
   async function confirmArchiveAccount(account: AssetAccount) {
     const accepted = await confirm({
@@ -214,9 +378,42 @@ export default function AssetsPage() {
     }
   }
 
+  function openCreate(mode: AssetTrackingMode) {
+    setCreateMode(mode);
+    setEditingAccount(null);
+    setAccountDialogOpen(true);
+  }
+
+  const addMenu = (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button size="sm">
+          <Plus className="h-4 w-4" />
+          {t("assets.addAccount")}
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-72">
+        <DropdownMenuItem
+          onSelect={() => openCreate("aggregate")}
+          className="gap-3 px-3 py-2"
+        >
+          <WalletCards className="h-4 w-4 shrink-0" />
+          {t("assets.addHolding")}
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          onSelect={() => openCreate("detailed")}
+          className="gap-3 px-3 py-2"
+        >
+          <Layers3 className="h-4 w-4 shrink-0" />
+          {t("assets.addPortfolio")}
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+
   if (failed) {
     return (
-      <div className="space-y-5">
+      <div className="space-y-6">
         <PageHeader title={t("assets.title")} />
         <AssetSectionTabs />
         <ErrorState
@@ -231,7 +428,7 @@ export default function AssetsPage() {
   }
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-6">
       <PageHeader title={t("assets.title")} />
       <AssetSectionTabs />
 
@@ -239,28 +436,50 @@ export default function AssetsPage() {
         <AssetsSkeleton />
       ) : overview ? (
         <>
-          <section className="rounded-lg border bg-card px-5 py-4">
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">
-                  {t("assets.totalAssetsValue")}
-                </p>
+          <section className="border-b pb-4 pt-1">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:gap-10">
+              <div className="lg:w-72 lg:shrink-0">
+                <HelpTooltip content={t("assets.estimateBasis")}>
+                  <p className="w-fit text-sm text-muted-foreground">
+                    {currency === "all"
+                      ? t("assets.totalAssetsValue")
+                      : t("assets.currencyTotal", { currency })}
+                  </p>
+                </HelpTooltip>
                 <p className="mt-1 text-3xl font-semibold tracking-tight tabular-nums">
-                  {formatCurrency(Number(overview.total_pln), overview.base_currency)}
-                </p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {t("assets.asOf", { date: formatDate(overview.as_of) })}
+                  {currency !== "all" &&
+                  currencyValues.length > 0 &&
+                  !convertedValues.length
+                    ? "—"
+                    : formatCurrency(
+                        currency === "all"
+                          ? Number(overview.total_pln)
+                          : currencyTotal,
+                        overview.base_currency,
+                      )}
+                  {currency !== "all" && currencyTotalMissing ? (
+                    <HelpTooltip content={t("assets.partialGroupTotal")}>
+                      <AlertTriangle
+                        className="ml-2 inline h-4 w-4 text-warning"
+                        aria-label={t("assets.partialGroupTotal")}
+                      />
+                    </HelpTooltip>
+                  ) : null}
                 </p>
               </div>
-              <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm">
-                <SummaryValue label={t("assets.accountCount")} value={overview.account_count} />
-                <SummaryValue label={t("assets.components")} value={overview.item_count} />
-                <SummaryValue
-                  label={t("assets.needReview")}
-                  value={overview.stale_count + overview.matured_count + overview.missing_valuation_count}
-                  warning={overview.stale_count + overview.matured_count + overview.missing_valuation_count > 0}
-                />
-              </div>
+              <dl className="flex gap-6 border-t pt-3 sm:gap-8 lg:border-l lg:border-t-0 lg:pl-8 lg:pt-0">
+                {summaryCounts.map(({ label, count }) => (
+                  <div
+                    key={label}
+                    className="flex min-w-14 flex-col items-center gap-2 text-center"
+                  >
+                    <dt className="text-xs text-muted-foreground">{label}</dt>
+                    <dd className="text-lg font-semibold tabular-nums">
+                      {count}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
             </div>
           </section>
 
@@ -269,55 +488,220 @@ export default function AssetsPage() {
               <div className="flex gap-3">
                 <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-warning" />
                 <div>
-                  <p className="text-sm font-medium">{t("assets.unconvertedAlert", { count: overview.unconverted_count })}</p>
-                  <p className="mt-1 text-xs text-muted-foreground">{t("assets.unconvertedHint")}</p>
+                  <p className="text-sm font-medium">
+                    {t("assets.unconvertedAlert", {
+                      count: overview.unconverted_count,
+                    })}
+                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {t("assets.unconvertedHint")}
+                  </p>
                 </div>
               </div>
-              <Button variant="outline" onClick={() => recomputeFx.mutate()} disabled={recomputeFx.isPending}>
-                {recomputeFx.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+              <Button
+                variant="outline"
+                onClick={() => recomputeFx.mutate()}
+                disabled={recomputeFx.isPending}
+              >
+                {recomputeFx.isPending ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <RefreshCw className="h-4 w-4" />
+                )}
                 {t("assets.retryFx")}
               </Button>
             </section>
           ) : null}
 
-          <section className="space-y-3">
-            <div className="flex min-h-9 flex-wrap items-center justify-between gap-3">
-              <div className="flex items-center gap-2">
-                <h2 className="text-base font-semibold">{t("assets.accounts")}</h2>
-                <Badge variant="secondary">{accounts.length}</Badge>
+          <section className="space-y-5">
+            {accounts.length > 0 ? (
+              <div className="space-y-2">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                  <div className="relative w-full sm:max-w-lg">
+                    <Search
+                      className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+                      aria-hidden="true"
+                    />
+                    <Input
+                      value={search}
+                      onChange={(event) => setSearch(event.target.value)}
+                      placeholder={t("assets.search")}
+                      aria-label={t("assets.search")}
+                      className="pl-9"
+                    />
+                  </div>
+                  <Select value={currency} onValueChange={setCurrency}>
+                    <SelectTrigger
+                      className="w-full sm:w-48 sm:shrink-0"
+                      aria-label={t("assets.filterCurrency")}
+                    >
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">
+                        {t("assets.allCurrencies")}
+                      </SelectItem>
+                      {currencies.map((code) => (
+                        <SelectItem key={code} value={code}>
+                          {code}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {filtered ? (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="shrink-0"
+                      onClick={() => {
+                        setSearch("");
+                        setCurrency("all");
+                      }}
+                    >
+                      {t("assets.clearFilters")}
+                    </Button>
+                  ) : null}
+                </div>
               </div>
-              {accounts.length ? (
-                <Button
-                  size="sm"
-                  onClick={() => {
-                    setEditingAccount(null);
-                    setAccountDialogOpen(true);
-                  }}
-                >
-                  <Plus className="h-4 w-4" />
-                  {t("assets.addAccount")}
-                </Button>
-              ) : null}
-            </div>
+            ) : null}
+
             {accounts.length ? (
-              <div className="grid items-start gap-4 2xl:grid-cols-2">
-                {accounts.map((account) => (
-                  <AssetAccountCard
-                    key={account.id}
-                    account={account}
-                    onAddItem={setItemAccount}
-                    onUpdate={(target) => void openValuationUpdate(target)}
-                    onHistory={setHistoryTarget}
-                    onArchiveAccount={(row) => void confirmArchiveAccount(row)}
-                    onArchiveItem={(row) => void confirmArchiveItem(row)}
-                    onEditAccount={(row) => {
-                      setEditingAccount(row);
-                      setAccountDialogOpen(true);
-                    }}
-                    onEditItem={(accountRow, item) =>
-                      setEditingItem({ account: accountRow, item })
-                    }
-                  />
+              <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+                {panels.map((panel) => (
+                  <section
+                    key={panel.key}
+                    className="min-w-0 overflow-hidden rounded-lg border bg-card"
+                    aria-label={panel.label}
+                  >
+                    <div className="flex flex-wrap items-center gap-2.5 border-b bg-muted/20 px-5 py-4">
+                      <panel.icon className="h-5 w-5 text-muted-foreground" />
+                      <h2 className="text-base font-semibold">{panel.label}</h2>
+                      <Badge variant="secondary">
+                        {panel.groups.reduce(
+                          (count, group) => count + group.accounts.length,
+                          0,
+                        )}
+                      </Badge>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="ml-auto shrink-0"
+                        onClick={() =>
+                          openCreate(
+                            panel.key === "assets" ? "aggregate" : "detailed",
+                          )
+                        }
+                      >
+                        <Plus className="h-4 w-4" />
+                        {t(
+                          panel.key === "assets"
+                            ? "assets.addHolding"
+                            : "assets.createAccount",
+                        )}
+                      </Button>
+                    </div>
+                    <div className="px-5 py-2">
+                      {panel.groups.length ? (
+                        panel.groups.map((group) => {
+                          const valuedAccounts = group.accounts.filter(
+                            (account) =>
+                              account.unconverted_count === 0 &&
+                              account.missing_valuation_count === 0,
+                          );
+                          const partial =
+                            valuedAccounts.length < group.accounts.length;
+                          const groupTotal = valuedAccounts.reduce(
+                            (sum, account) => sum + Number(account.amount_pln),
+                            0,
+                          );
+                          return (
+                            <div
+                              key={group.key}
+                              className={
+                                panel.key === "assets"
+                                  ? "-mx-5 border-t border-border px-5 pb-3 pt-4 first:border-t-0 first:pt-2"
+                                  : "py-2"
+                              }
+                            >
+                              {panel.key === "assets" ? (
+                                <div className="flex min-h-12 flex-wrap items-center justify-between gap-x-4 gap-y-2 pb-3 text-base font-semibold">
+                                  <h3 className="flex min-w-0 items-center gap-2">
+                                    {group.label}
+                                    <Badge
+                                      variant="secondary"
+                                      className="font-medium"
+                                    >
+                                      {group.accounts.length}
+                                    </Badge>
+                                  </h3>
+                                  <div className="ml-auto flex shrink-0 items-center gap-1.5 tabular-nums">
+                                    <span>
+                                      {valuedAccounts.length
+                                        ? formatCurrency(groupTotal, "PLN")
+                                        : "—"}
+                                    </span>
+                                    {partial ? (
+                                      <HelpTooltip
+                                        content={t("assets.partialGroupTotal")}
+                                      >
+                                        <AlertTriangle
+                                          className="h-3.5 w-3.5 text-warning"
+                                          aria-label={t(
+                                            "assets.partialGroupTotal",
+                                          )}
+                                        />
+                                      </HelpTooltip>
+                                    ) : null}
+                                  </div>
+                                </div>
+                              ) : null}
+                              <div
+                                className={
+                                  panel.key === "assets"
+                                    ? "space-y-0.5"
+                                    : "ml-1 space-y-0.5 pl-1"
+                                }
+                              >
+                                {group.accounts.map((account) => (
+                                  <AssetAccountCard
+                                    key={account.id}
+                                    account={account}
+                                    asOf={overview.as_of}
+                                    showAssetType={false}
+                                    onAddItem={setItemAccount}
+                                    onUpdate={(target) =>
+                                      void openValuationUpdate(target)
+                                    }
+                                    onHistory={setHistoryTarget}
+                                    onArchiveAccount={(row) =>
+                                      void confirmArchiveAccount(row)
+                                    }
+                                    onArchiveItem={(row) =>
+                                      void confirmArchiveItem(row)
+                                    }
+                                    onEditAccount={(row) => {
+                                      setEditingAccount(row);
+                                      setAccountDialogOpen(true);
+                                    }}
+                                    onEditItem={(accountRow, item) =>
+                                      setEditingItem({
+                                        account: accountRow,
+                                        item,
+                                      })
+                                    }
+                                  />
+                                ))}
+                              </div>
+                            </div>
+                          );
+                        })
+                      ) : (
+                        <p className="py-8 text-sm text-muted-foreground">
+                          {filtered ? t("assets.noSearchResults") : panel.empty}
+                        </p>
+                      )}
+                    </div>
+                  </section>
                 ))}
               </div>
             ) : (
@@ -325,17 +709,7 @@ export default function AssetsPage() {
                 icon={WalletCards}
                 title={t("assets.emptyTitle")}
                 description={t("assets.emptyDescription")}
-                action={
-                  <Button
-                    onClick={() => {
-                      setEditingAccount(null);
-                      setAccountDialogOpen(true);
-                    }}
-                  >
-                    <Plus className="h-4 w-4" />
-                    {t("assets.addAccount")}
-                  </Button>
-                }
+                action={addMenu}
               />
             )}
           </section>
@@ -343,7 +717,8 @@ export default function AssetsPage() {
       ) : null}
 
       <AssetAccountDialog
-        key={editingAccount?.id ?? "new-account"}
+        key={editingAccount?.id ?? `new-${createMode}`}
+        mode={editingAccount?.tracking_mode ?? createMode}
         account={editingAccount}
         open={accountDialogOpen}
         onOpenChange={(open) => {
@@ -381,7 +756,11 @@ export default function AssetsPage() {
         }}
       />
       <AssetItemDialog
-        key={editingItem ? `edit-${editingItem.item.id}` : `new-${itemAccount?.id ?? "none"}`}
+        key={
+          editingItem
+            ? `edit-${editingItem.item.id}`
+            : `new-${itemAccount?.id ?? "none"}`
+        }
         account={editingItem?.account ?? itemAccount}
         item={editingItem?.item}
         open={Boolean(itemAccount || editingItem)}
@@ -443,28 +822,11 @@ export default function AssetsPage() {
   );
 }
 
-function SummaryValue({
-  label,
-  value,
-  warning = false,
-}: {
-  label: string;
-  value: number;
-  warning?: boolean;
-}) {
-  return (
-    <div>
-      <p className="text-xs text-muted-foreground">{label}</p>
-      <p className={warning ? "font-semibold tabular-nums text-warning" : "font-semibold tabular-nums"}>{value}</p>
-    </div>
-  );
-}
-
 function AssetsSkeleton() {
   return (
-    <div className="space-y-5">
+    <div className="space-y-6">
       <Skeleton className="h-28 w-full" />
-      <div className="grid gap-4 2xl:grid-cols-2">
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
         <Skeleton className="h-32 w-full" />
         <Skeleton className="h-32 w-full" />
       </div>

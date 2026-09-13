@@ -1,13 +1,8 @@
 "use client";
 
 import { FormEvent, useState } from "react";
-import {
-  Check,
-  ChevronDown,
-  Layers3,
-  Loader2,
-  WalletCards,
-} from "lucide-react";
+import { Loader2 } from "lucide-react";
+import { HelpTooltip } from "@/components/help-tooltip";
 import { CurrencyCombobox } from "@/components/currency-combobox";
 import { Button } from "@/components/ui/button";
 import {
@@ -23,6 +18,9 @@ import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
+  SelectGroup,
+  SelectSeparator,
+  SelectLabel,
   SelectItem,
   SelectTrigger,
   SelectValue,
@@ -35,10 +33,15 @@ import type {
   AssetTrackingMode,
   AssetType,
 } from "@/lib/api";
-import { useT, type TranslationKey } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import {
-  ASSET_TYPES,
+  pageTabTriggerClassName,
+  pageTabsListClassName,
+} from "@/components/page-tabs";
+import { useT, type TranslationKey } from "@/lib/i18n";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  ASSET_TYPE_GROUPS,
   REVIEW_INTERVAL_OPTIONS,
   assetTypeCapabilities,
   assetTypeKey,
@@ -49,13 +52,11 @@ import {
   emptyValuationDraft,
   isValuationValid,
   valuationPayload,
-  valuationDraftIsEmpty,
   type ValuationDraft,
 } from "./asset-valuation-fields";
 
 type AccountProfile =
-  | AssetAccountKind
-  | Exclude<AssetAccountWrapper, "standard">;
+  AssetAccountKind | Exclude<AssetAccountWrapper, "standard">;
 
 const ACCOUNT_PROFILES = [
   { value: "bank", key: "assets.profile.bank" },
@@ -78,7 +79,6 @@ interface AccountDraft {
   institution: string;
   kind: AssetAccountKind;
   wrapper: AssetAccountWrapper;
-  trackingMode: AssetTrackingMode;
   currency: string;
   assetType: AssetType;
   reviewInterval: string;
@@ -86,25 +86,25 @@ interface AccountDraft {
   valuation: ValuationDraft;
 }
 
-function initialDraft(account?: AssetAccount | null): AccountDraft {
+function initialDraft(
+  account?: AssetAccount | null,
+  mode: AssetTrackingMode = "aggregate",
+): AccountDraft {
   const assetType = account?.aggregate_asset_type ?? "savings_account";
   return {
     name: account?.name ?? "",
     institution: account?.institution ?? "",
-    kind: account?.kind ?? "bank",
+    kind: account?.kind ?? (mode === "detailed" ? "brokerage" : "bank"),
     wrapper: account?.wrapper ?? "standard",
-    trackingMode: account?.tracking_mode ?? "aggregate",
     currency: account?.default_currency ?? "PLN",
     assetType,
     reviewInterval: account
       ? account.review_interval_days == null
         ? "never"
         : String(account.review_interval_days)
-      : "30",
+      : "never",
     notes: account?.notes ?? "",
-    valuation: emptyValuationDraft(
-      assetTypeCapabilities(assetType).defaultInputMode,
-    ),
+    valuation: emptyValuationDraft(),
   };
 }
 
@@ -129,64 +129,16 @@ function defaultProfileForAsset(type: AssetType): AccountProfile {
   return assetTypeCapabilities(type).defaultAccountKind;
 }
 
-function TrackingModeCard({
-  checked,
-  icon: Icon,
-  title,
-  description,
-  onClick,
-}: {
-  checked: boolean;
-  icon: typeof WalletCards;
-  title: string;
-  description: string;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      role="radio"
-      aria-checked={checked}
-      onClick={onClick}
-      className={cn(
-        "relative flex min-h-[4.5rem] items-start gap-3 rounded-lg border p-3 text-left transition-colors",
-        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
-        checked
-          ? "border-primary bg-primary/5"
-          : "border-border bg-background hover:bg-muted/40",
-      )}
-    >
-      <span
-        className={cn(
-          "mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md",
-          checked
-            ? "bg-primary/10 text-primary"
-            : "bg-muted text-muted-foreground",
-        )}
-      >
-        <Icon className="h-4 w-4" />
-      </span>
-      <span className="min-w-0 pr-5">
-        <span className="block text-sm font-medium text-foreground">{title}</span>
-        <span className="mt-1 block text-xs leading-relaxed text-muted-foreground">
-          {description}
-        </span>
-      </span>
-      {checked ? (
-        <Check className="absolute right-3 top-3 h-4 w-4 text-primary" />
-      ) : null}
-    </button>
-  );
-}
-
 export function AssetAccountDialog({
   account,
+  mode,
   open,
   onOpenChange,
   onSubmit,
   pending,
 }: {
   account?: AssetAccount | null;
+  mode: AssetTrackingMode;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSubmit: (payload: AssetAccountInput) => Promise<void>;
@@ -194,12 +146,14 @@ export function AssetAccountDialog({
 }) {
   const { t } = useT();
   const editing = Boolean(account);
-  const [draft, setDraft] = useState<AccountDraft>(() => initialDraft(account));
-  const [advancedOpen, setAdvancedOpen] = useState(false);
-  const aggregate = draft.trackingMode === "aggregate";
+  const [draft, setDraft] = useState<AccountDraft>(() =>
+    initialDraft(account, mode),
+  );
+  const [tab, setTab] = useState("basic");
+  const aggregate = (account?.tracking_mode ?? mode) === "aggregate";
   const capabilities = assetTypeCapabilities(draft.assetType);
-  const showsAccountProfile =
-    aggregate && capabilities.supportsAccountProfile;
+  const showsAccountProfile = aggregate && capabilities.supportsAccountProfile;
+  const showGrowth = !editing && aggregate;
   const canSave =
     draft.name.trim().length > 0 &&
     (editing || !aggregate || isValuationValid(draft.valuation));
@@ -221,20 +175,9 @@ export function AssetAccountDialog({
       const currentProfile = accountProfile(current.kind, current.wrapper);
       const followsDefault =
         currentProfile === defaultProfileForAsset(current.assetType);
-      const currentCapabilities = assetTypeCapabilities(current.assetType);
-      const nextCapabilities = assetTypeCapabilities(assetType);
-      const followsInputDefault =
-        valuationDraftIsEmpty(current.valuation) &&
-        current.valuation.inputMode === currentCapabilities.defaultInputMode;
       return {
         ...current,
         assetType,
-        valuation: followsInputDefault
-          ? {
-              ...current.valuation,
-              inputMode: nextCapabilities.defaultInputMode,
-            }
-          : current.valuation,
         ...(followsDefault
           ? accountProfileValues(defaultProfileForAsset(assetType))
           : {}),
@@ -244,8 +187,8 @@ export function AssetAccountDialog({
 
   const close = () => {
     if (pending) return;
-    setDraft(initialDraft(account));
-    setAdvancedOpen(false);
+    setDraft(initialDraft(account, mode));
+    setTab("basic");
     onOpenChange(false);
   };
 
@@ -261,7 +204,7 @@ export function AssetAccountDialog({
       institution: draft.institution.trim() || null,
       kind: draft.kind,
       wrapper: draft.wrapper,
-      tracking_mode: draft.trackingMode,
+      tracking_mode: aggregate ? "aggregate" : "detailed",
       default_currency: draft.currency,
       notes: draft.notes.trim() || null,
       aggregate_asset_type: aggregate ? draft.assetType : null,
@@ -269,8 +212,8 @@ export function AssetAccountDialog({
       initial_valuation:
         aggregate && !editing ? valuationPayload(draft.valuation) : null,
     });
-    setDraft(initialDraft(account));
-    setAdvancedOpen(false);
+    setDraft(initialDraft(account, mode));
+    setTab("basic");
     onOpenChange(false);
   }
 
@@ -278,10 +221,12 @@ export function AssetAccountDialog({
     ? aggregate
       ? t("assets.editHolding")
       : t("assets.editAccount")
-    : t("assets.addAccount");
+    : aggregate
+      ? t("assets.addHolding")
+      : t("assets.addPortfolio");
 
   const nameField = (
-    <div className="space-y-2">
+    <div className="flex flex-col gap-2">
       <Label htmlFor="asset-account-name">{t("assets.accountName")}</Label>
       <Input
         id="asset-account-name"
@@ -292,27 +237,30 @@ export function AssetAccountDialog({
             ? t("assets.accountNamePlaceholder")
             : t("assets.detailedAccountNamePlaceholder")
         }
-        autoFocus
       />
     </div>
   );
 
   const assetTypeField = (
-    <div className="space-y-2">
+    <div key="asset-type" className="flex flex-col gap-2">
       <Label>{t("assets.assetType")}</Label>
       <Select value={draft.assetType} onValueChange={updateAssetType}>
         <SelectTrigger>
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
-          {ASSET_TYPES.map((type) => (
-            <SelectItem
-              key={type}
-              value={type}
-              indicatorPosition="right"
-            >
-              {t(assetTypeKey(type))}
-            </SelectItem>
+          {ASSET_TYPE_GROUPS.map((group, index) => (
+            <SelectGroup key={group.label}>
+              {index > 0 ? <SelectSeparator /> : null}
+              <SelectLabel className="px-2 py-2 text-sm font-medium text-muted-foreground">
+                {t(group.label)}
+              </SelectLabel>
+              {group.types.map((type) => (
+                <SelectItem key={type} value={type} indicatorPosition="right">
+                  {t(assetTypeKey(type))}
+                </SelectItem>
+              ))}
+            </SelectGroup>
           ))}
         </SelectContent>
       </Select>
@@ -320,20 +268,26 @@ export function AssetAccountDialog({
   );
 
   const institutionField = (
-    <div className="space-y-2">
+    <div className="flex flex-col gap-2">
       <Label htmlFor="asset-institution">{t("assets.institution")}</Label>
       <Input
         id="asset-institution"
         value={draft.institution}
         onChange={(event) => update("institution", event.target.value)}
-        placeholder={t("common.optional")}
+        placeholder={t("assets.institutionPlaceholder")}
       />
     </div>
   );
 
   const accountProfileField = (
-    <div className="space-y-2">
-      <Label>{t("assets.accountProfile")}</Label>
+    <div key="account-profile" className="flex flex-col gap-2">
+      {aggregate ? (
+        <Label>{t("assets.accountProfile")}</Label>
+      ) : (
+        <HelpTooltip content={t("assets.portfolioSetupHint")}>
+          <Label>{t("assets.accountProfile")}</Label>
+        </HelpTooltip>
+      )}
       <Select
         value={accountProfile(draft.kind, draft.wrapper)}
         onValueChange={(value: AccountProfile) => updateProfile(value)}
@@ -342,22 +296,26 @@ export function AssetAccountDialog({
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
-          {ACCOUNT_PROFILES.map((profile) => (
-            <SelectItem
-              key={profile.value}
-              value={profile.value}
-              indicatorPosition="right"
-            >
-              {t(profile.key)}
-            </SelectItem>
-          ))}
+          {(aggregate ? AGGREGATE_ACCOUNT_PROFILES : ACCOUNT_PROFILES).map(
+            (profile) => (
+              <SelectItem
+                key={profile.value}
+                value={profile.value}
+                indicatorPosition="right"
+              >
+                {aggregate && profile.value === "other"
+                  ? t("assets.profile.none")
+                  : t(profile.key)}
+              </SelectItem>
+            ),
+          )}
         </SelectContent>
       </Select>
     </div>
   );
 
   const currencyField = (
-    <div className="space-y-2">
+    <div className="flex flex-col gap-2">
       <Label>{t("assets.currency")}</Label>
       <CurrencyCombobox
         value={draft.currency}
@@ -367,7 +325,7 @@ export function AssetAccountDialog({
   );
 
   const notesField = (
-    <div className="space-y-2">
+    <div className="flex flex-col gap-2">
       <Label htmlFor="asset-account-notes">{t("assets.notes")}</Label>
       <textarea
         id="asset-account-notes"
@@ -384,9 +342,14 @@ export function AssetAccountDialog({
       open={open}
       onOpenChange={(next) => (next ? onOpenChange(true) : close())}
     >
-      <DialogContent className="max-h-[90vh] max-w-4xl overflow-hidden p-0">
-        <form onSubmit={submit} className="flex max-h-[90vh] min-h-0 flex-col">
-          <DialogHeader className="shrink-0 px-6 pt-6">
+      <DialogContent
+        className={cn(
+          "max-h-[90dvh] overflow-hidden p-0 md:top-[10dvh] md:translate-y-0",
+          aggregate ? "max-w-5xl" : "max-w-3xl",
+        )}
+      >
+        <form onSubmit={submit} className="flex max-h-[80dvh] min-h-0 flex-col">
+          <DialogHeader className="shrink-0 px-6 pt-8 sm:px-8">
             <DialogTitle>{title}</DialogTitle>
             <DialogDescription className="sr-only">
               {editing
@@ -395,150 +358,91 @@ export function AssetAccountDialog({
             </DialogDescription>
           </DialogHeader>
 
-          <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-6 py-5 [&_[role=combobox]]:bg-muted/20 [&_button[aria-label]]:bg-muted/20 [&_input]:bg-muted/20 [&_textarea]:bg-muted/20">
-            {!editing ? (
-              <div className="space-y-2 pb-3">
-                <Label>{t("assets.trackingMode")}</Label>
-                <div
-                  className="grid gap-3 sm:grid-cols-2"
-                  role="radiogroup"
-                  aria-label={t("assets.trackingMode")}
+          {!aggregate ? (
+            <div className="grid min-h-0 gap-6 overflow-y-auto px-6 py-8 sm:px-8 md:grid-cols-2">
+              {nameField}
+              {accountProfileField}
+              {institutionField}
+              {currencyField}
+              <div className="md:col-span-2">{notesField}</div>
+            </div>
+          ) : (
+            <Tabs
+              value={tab}
+              onValueChange={setTab}
+              className="flex min-h-0 flex-1 flex-col"
+            >
+              <div className="shrink-0 px-6 pt-6 sm:px-8">
+                <TabsList
+                  className={cn(
+                    pageTabsListClassName,
+                    "h-auto w-full justify-start rounded-none bg-transparent p-0",
+                  )}
+                  aria-label={t("assets.accountSettings")}
                 >
-                  <TrackingModeCard
-                    checked={aggregate}
-                    icon={WalletCards}
-                    title={t("assets.trackingMode.aggregate")}
-                    description={t("assets.trackingMode.aggregateHint")}
-                    onClick={() => update("trackingMode", "aggregate")}
-                  />
-                  <TrackingModeCard
-                    checked={!aggregate}
-                    icon={Layers3}
-                    title={t("assets.trackingMode.detailed")}
-                    description={t("assets.trackingMode.detailedHint")}
-                    onClick={() => update("trackingMode", "detailed")}
-                  />
-                </div>
-              </div>
-            ) : null}
-
-            {aggregate && !editing ? (
-              <div className="grid lg:grid-cols-[minmax(15rem,0.75fr)_minmax(0,1.25fr)]">
-                <section className="space-y-4 lg:pr-10">
-                  <h3 className="text-base font-semibold">
-                    {t("assets.basicData")}
-                  </h3>
-                  {nameField}
-                  {assetTypeField}
-                </section>
-                <section className="mt-7 space-y-4 border-t pt-7 lg:mt-0 lg:border-l lg:border-t-0 lg:pl-10 lg:pt-0">
-                  <h3 className="text-base font-semibold">
-                    {t("assets.currentValue")}
-                  </h3>
-                  <AssetValuationFields
-                    value={draft.valuation}
-                    onChange={(value) => update("valuation", value)}
-                    currency={draft.currency}
-                    currencyControl={currencyField}
-                    showGrowth={false}
-                  />
-                </section>
-              </div>
-            ) : !aggregate ? (
-              <div className="grid lg:grid-cols-2">
-                <section className="space-y-4 lg:pr-10">
-                  <h3 className="text-base font-semibold">
-                    {t("assets.basicData")}
-                  </h3>
-                  {nameField}
-                  {institutionField}
-                </section>
-                <section className="mt-7 space-y-4 border-t pt-7 lg:mt-0 lg:border-l lg:border-t-0 lg:pl-10 lg:pt-0">
-                  <h3 className="text-base font-semibold">
-                    {t("assets.accountSettings")}
-                  </h3>
-                  <div
-                    className={cn(
-                      "grid gap-4",
-                      !editing && "sm:grid-cols-2",
-                    )}
+                  <TabsTrigger
+                    value="basic"
+                    className={pageTabTriggerClassName}
                   >
-                    {accountProfileField}
-                    {!editing ? currencyField : null}
+                    {t("assets.basicData")}
+                  </TabsTrigger>
+                  <TabsTrigger
+                    value="details"
+                    className={pageTabTriggerClassName}
+                  >
+                    {t("assets.detailsTab")}
+                    {!editing && draft.valuation.growthMode !== "none" ? (
+                      <span
+                        className="h-1.5 w-1.5 rounded-full bg-primary"
+                        aria-label={t("assets.growth.fixedRate")}
+                      />
+                    ) : null}
+                  </TabsTrigger>
+                </TabsList>
+              </div>
+              <div className="grid min-h-0 flex-1 overflow-y-auto px-6 py-8 sm:px-8">
+                <TabsContent value="basic" className="space-y-6">
+                  {editing ? (
+                    <div className="grid gap-6 md:grid-cols-2">
+                      {nameField}
+                      {aggregate ? assetTypeField : accountProfileField}
+                    </div>
+                  ) : (
+                    <div className="grid gap-8 md:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
+                      <div className="space-y-6">
+                        {nameField}
+                        {aggregate ? assetTypeField : accountProfileField}
+                      </div>
+                      <div className="space-y-8 md:border-l md:pl-8">
+                        {aggregate ? (
+                          <AssetValuationFields
+                            value={draft.valuation}
+                            onChange={(value) => update("valuation", value)}
+                            currency={draft.currency}
+                            currencyControl={currencyField}
+                            showInputMode={
+                              capabilities.defaultInputMode === "unit_price"
+                            }
+                            showGrowth={false}
+                          />
+                        ) : (
+                          <>{currencyField}</>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </TabsContent>
+                <TabsContent
+                  value="details"
+                  className="grid content-start gap-6 data-[state=inactive]:hidden md:grid-cols-2"
+                >
+                  <div className="space-y-6">
+                    {institutionField}
+                    {showsAccountProfile ? accountProfileField : null}
                   </div>
-                  {notesField}
-                </section>
-              </div>
-            ) : (
-              <section className="space-y-4">
-                <h3 className="text-base font-semibold">
-                  {t("assets.basicData")}
-                </h3>
-                <div className="grid gap-4 sm:grid-cols-2">
-                  {nameField}
-                  {assetTypeField}
-                </div>
-              </section>
-            )}
-
-            {aggregate ? (
-              <div>
-                <button
-                  type="button"
-                  className="flex w-full items-center justify-between py-2 text-left text-base font-semibold text-foreground transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                  aria-expanded={advancedOpen}
-                  aria-controls="asset-additional-settings"
-                  onClick={() => setAdvancedOpen((current) => !current)}
-                >
-                  <span>{t("assets.moreSettings")}</span>
-                  <ChevronDown
-                    className={cn(
-                      "h-4 w-4 transition-transform",
-                      advancedOpen && "rotate-180",
-                    )}
-                  />
-                </button>
-                {advancedOpen ? (
-                  <div
-                    id="asset-additional-settings"
-                    className="space-y-5 pb-1 pt-2"
-                  >
-                    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                      {showsAccountProfile ? (
-                        <>
-                          <div className="space-y-2">
-                            <Label>{t("assets.accountProfile")}</Label>
-                            <Select
-                              value={accountProfile(
-                                draft.kind,
-                                draft.wrapper,
-                              )}
-                              onValueChange={(value: AccountProfile) =>
-                                updateProfile(value)
-                              }
-                            >
-                              <SelectTrigger>
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {AGGREGATE_ACCOUNT_PROFILES.map((profile) => (
-                                  <SelectItem
-                                    key={profile.value}
-                                    value={profile.value}
-                                    indicatorPosition="right"
-                                  >
-                                    {profile.value === "other"
-                                      ? t("assets.profile.none")
-                                      : t(profile.key)}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          </div>
-                          {institutionField}
-                        </>
-                      ) : null}
-                      <div className="space-y-2">
+                  <div className="space-y-6">
+                    {aggregate ? (
+                      <div className="flex flex-col gap-2">
                         <Label>{t("assets.reviewInterval")}</Label>
                         <Select
                           value={draft.reviewInterval}
@@ -562,23 +466,23 @@ export function AssetAccountDialog({
                           </SelectContent>
                         </Select>
                       </div>
-                    </div>
-                    {!editing &&
-                    (capabilities.supportsFixedGrowth ||
-                      draft.valuation.growthMode !== "none") ? (
+                    ) : null}
+                    {notesField}
+                  </div>
+                  {showGrowth ? (
+                    <div className="border-t pt-6 md:col-span-2">
                       <AssetGrowthFields
                         value={draft.valuation}
                         onChange={(value) => update("valuation", value)}
                       />
-                    ) : null}
-                    {notesField}
-                  </div>
-                ) : null}
+                    </div>
+                  ) : null}
+                </TabsContent>
               </div>
-            ) : null}
-          </div>
+            </Tabs>
+          )}
 
-          <DialogFooter className="shrink-0 border-t px-6 py-4">
+          <DialogFooter className="shrink-0 border-t px-6 py-5 sm:px-8">
             <Button
               type="button"
               variant="outline"

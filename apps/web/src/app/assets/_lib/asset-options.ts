@@ -7,19 +7,27 @@ import type {
 } from "@/lib/api";
 import type { TranslationKey } from "@/lib/i18n";
 
-export const ASSET_TYPES: readonly AssetType[] = [
-  "cash",
-  "savings_account",
-  "deposit",
-  "bond",
-  "loan_receivable",
-  "stock",
-  "etf",
-  "fund",
-  "crypto",
-  "precious_metal",
-  "other",
-];
+export const ASSET_TYPE_GROUPS = [
+  {
+    label: "assets.types.investments",
+    types: ["etf", "stock", "bond", "fund", "crypto"],
+  },
+  {
+    label: "assets.types.money",
+    types: ["cash", "savings_account", "deposit"],
+  },
+  {
+    label: "assets.types.other",
+    types: ["precious_metal", "loan_receivable", "other"],
+  },
+] as const satisfies readonly {
+  label: TranslationKey;
+  types: readonly AssetType[];
+}[];
+
+export const ASSET_TYPES: readonly AssetType[] = ASSET_TYPE_GROUPS.flatMap(
+  (group) => [...group.types],
+);
 
 interface AssetTypeCapabilities {
   defaultAccountKind: AssetAccountKind;

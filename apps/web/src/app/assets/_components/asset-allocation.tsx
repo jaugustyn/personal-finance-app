@@ -1,26 +1,22 @@
 "use client";
 
-import {
-  Cell,
-  Pie,
-  PieChart,
-  ResponsiveContainer,
-  Tooltip,
-} from "recharts";
-import type { AssetOverview } from "@/lib/api";
-import { PIE_COLORS, tooltipStyle } from "@/components/charts/chart-utils";
 import { useFormatters, useT } from "@/lib/i18n";
-import { assetTypeKey } from "../_lib/asset-options";
+import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
+import { PIE_COLORS, tooltipStyle } from "@/components/charts/chart-utils";
 
 export function AssetAllocation({
   data,
 }: {
-  data: AssetOverview["breakdown"];
+  data: { key: string; label: string; value: number; share: number }[];
 }) {
   const { t } = useT();
   const { formatCurrency, formatPercent } = useFormatters();
 
-  if (!data.length) {
+  const rows = [...data]
+    .filter((row) => row.value > 0)
+    .sort((left, right) => right.value - left.value);
+
+  if (!rows.length) {
     return (
       <p className="py-10 text-center text-sm text-muted-foreground">
         {t("assets.noAllocation")}
@@ -28,30 +24,26 @@ export function AssetAllocation({
     );
   }
 
-  const rows = data.map((row, index) => ({
-    assetType: row.asset_type,
-    label: t(assetTypeKey(row.asset_type)),
-    value: Number(row.amount_pln),
-    share: Number(row.share),
-    color: PIE_COLORS[index % PIE_COLORS.length],
-  }));
-
   return (
-    <div className="space-y-4">
-      <div className="h-52 w-full">
+    <div className="flex flex-col gap-5 sm:flex-row sm:items-start">
+      <div className="mx-auto h-36 w-36 shrink-0" aria-hidden="true">
         <ResponsiveContainer width="100%" height="100%">
           <PieChart>
             <Pie
               data={rows}
               dataKey="value"
               nameKey="label"
-              innerRadius={52}
-              outerRadius={82}
+              innerRadius={42}
+              outerRadius={64}
               paddingAngle={2}
               cornerRadius={3}
+              isAnimationActive={false}
             >
-              {rows.map((row) => (
-                <Cell key={row.assetType} fill={row.color} />
+              {rows.map((row, index) => (
+                <Cell
+                  key={row.key}
+                  fill={PIE_COLORS[index % PIE_COLORS.length]}
+                />
               ))}
             </Pie>
             <Tooltip
@@ -61,22 +53,37 @@ export function AssetAllocation({
           </PieChart>
         </ResponsiveContainer>
       </div>
-      <div className="grid grid-cols-[minmax(0,1fr)_max-content_3.25rem] items-center gap-x-2.5 gap-y-2.5 text-sm">
-        {rows.map((row) => (
-          <div key={row.assetType} className="contents">
-            <div className="flex min-w-0 items-center gap-2">
-              <span
-                className="h-2.5 w-2.5 shrink-0 rounded-sm"
-                style={{ backgroundColor: row.color }}
-              />
-              <span className="truncate">{row.label}</span>
+      <div className="min-w-0 flex-1 space-y-4">
+        {rows.map((row, index) => (
+          <div key={row.key} className="space-y-1.5">
+            <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 text-sm">
+              <span className="flex min-w-0 items-center gap-2">
+                <span
+                  className="h-2.5 w-2.5 shrink-0 rounded-sm"
+                  style={{
+                    backgroundColor: PIE_COLORS[index % PIE_COLORS.length],
+                  }}
+                />
+                <span className="break-words">{row.label}</span>
+              </span>
+              <span className="ml-auto font-semibold tabular-nums">
+                {formatCurrency(row.value, "PLN")}
+              </span>
             </div>
-            <span className="text-right tabular-nums">
-              {formatCurrency(row.value, "PLN")}
-            </span>
-            <span className="text-right text-xs tabular-nums text-muted-foreground">
-              {formatPercent(row.share)}
-            </span>
+            <div className="flex items-center gap-3">
+              <div className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-muted">
+                <div
+                  className="h-full rounded-full"
+                  style={{
+                    width: `${Math.max(0, Math.min(100, row.share * 100))}%`,
+                    backgroundColor: PIE_COLORS[index % PIE_COLORS.length],
+                  }}
+                />
+              </div>
+              <span className="w-12 shrink-0 text-right text-xs tabular-nums text-muted-foreground">
+                {formatPercent(row.share)}
+              </span>
+            </div>
           </div>
         ))}
       </div>

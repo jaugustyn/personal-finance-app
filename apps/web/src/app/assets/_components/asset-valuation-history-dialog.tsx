@@ -67,9 +67,13 @@ export function AssetValuationHistoryDialog({
         sortValue: (row) => Number(row.total_value),
         cell: (row) => (
           <div className="space-y-0.5 text-right tabular-nums">
-            <p className="font-medium">{formatCurrency(Number(row.total_value), row.currency)}</p>
+            <p className="font-medium">
+              {formatCurrency(Number(row.total_value), row.currency)}
+            </p>
             {row.amount_pln != null && row.currency !== "PLN" ? (
-              <p className="text-xs text-muted-foreground">{formatCurrency(Number(row.amount_pln), "PLN")}</p>
+              <p className="text-xs text-muted-foreground">
+                {formatCurrency(Number(row.amount_pln), "PLN")}
+              </p>
             ) : null}
           </div>
         ),
@@ -83,7 +87,7 @@ export function AssetValuationHistoryDialog({
           row.growth_mode === "fixed_rate" ? (
             <div className="text-sm">
               <p>
-                {t("assets.growth.fixedRate")} ·{" "}
+                {t("assets.growth.fixedRate")} –{" "}
                 {formatAssetDecimal(
                   row.annual_rate_percent ?? 0,
                   localeTag,
@@ -92,11 +96,15 @@ export function AssetValuationHistoryDialog({
                 %
               </p>
               {row.compounding ? (
-                <p className="text-xs text-muted-foreground">{t(compoundingKey(row.compounding))}</p>
+                <p className="text-xs text-muted-foreground">
+                  {t(compoundingKey(row.compounding))}
+                </p>
               ) : null}
             </div>
           ) : (
-            <span className="text-muted-foreground">{t("assets.growth.none")}</span>
+            <span className="text-muted-foreground">
+              {t("assets.growth.none")}
+            </span>
           ),
       },
       {
@@ -143,7 +151,10 @@ export function AssetValuationHistoryDialog({
         <div>
           {query.isLoading ? <TableSkeleton rows={4} /> : null}
           {query.isError ? (
-            <ErrorState title={t("assets.historyError")} onRetry={() => void query.refetch()} />
+            <ErrorState
+              title={t("assets.historyError")}
+              onRetry={() => void query.refetch()}
+            />
           ) : null}
           {query.data && query.data.length === 0 ? (
             <EmptyState icon={History} title={t("assets.noValuations")} />

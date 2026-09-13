@@ -86,9 +86,7 @@ export function valuationDraft(row: AssetValuation): ValuationDraft {
 }
 
 function displayNumber(value: number): string {
-  return (
-    compactAssetDecimal(value.toFixed(ASSET_VALUE_DECIMAL_PLACES)) || "0"
-  );
+  return compactAssetDecimal(value.toFixed(ASSET_VALUE_DECIMAL_PLACES)) || "0";
 }
 
 /** Start a new valuation from the latest known settings and today's value. */
@@ -99,7 +97,9 @@ export function valuationDraftForUpdate(
   const draft = valuationDraft(row);
   const valuationDate = todayIso();
   const currentValue =
-    currentNativeValue == null ? Number(row.total_value) : Number(currentNativeValue);
+    currentNativeValue == null
+      ? Number(row.total_value)
+      : Number(currentNativeValue);
   const quantity = Number(row.quantity);
   const growthExpired = Boolean(
     row.growth_end_date && row.growth_end_date < valuationDate,
@@ -160,9 +160,7 @@ export function valuationPayload(draft: ValuationDraft): AssetValuationInput {
     valuation_date: draft.valuationDate,
     input_mode: draft.inputMode,
     total_value:
-      draft.inputMode === "total"
-        ? normalizedNumber(draft.totalValue)
-        : null,
+      draft.inputMode === "total" ? normalizedNumber(draft.totalValue) : null,
     quantity:
       draft.inputMode === "unit_price"
         ? normalizedNumber(draft.quantity)
@@ -176,8 +174,7 @@ export function valuationPayload(draft: ValuationDraft): AssetValuationInput {
       draft.growthMode === "fixed_rate"
         ? normalizedNumber(draft.annualRate)
         : null,
-    compounding:
-      draft.growthMode === "fixed_rate" ? draft.compounding : null,
+    compounding: draft.growthMode === "fixed_rate" ? draft.compounding : null,
     growth_end_date:
       draft.growthMode === "fixed_rate" && draft.growthEndDate
         ? draft.growthEndDate
@@ -191,12 +188,14 @@ export function AssetValuationFields({
   currency,
   currencyControl,
   showGrowth = true,
+  showInputMode = true,
 }: {
   value: ValuationDraft;
   onChange: (value: ValuationDraft) => void;
   currency: string;
   currencyControl?: ReactNode;
   showGrowth?: boolean;
+  showInputMode?: boolean;
 }) {
   const { t } = useT();
   const update = <K extends keyof ValuationDraft>(
@@ -205,52 +204,9 @@ export function AssetValuationFields({
   ) => onChange({ ...value, [key]: next });
 
   return (
-    <div className="space-y-4">
-      <div
-        className={cn(
-          "grid gap-4 sm:grid-cols-2",
-          currencyControl &&
-            "md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_8rem]",
-        )}
-      >
-        <div className="space-y-2">
-          <Label htmlFor="asset-valuation-date">{t("assets.valuationDate")}</Label>
-          <DatePicker
-            id="asset-valuation-date"
-            value={value.valuationDate}
-            onChange={(next) => update("valuationDate", next)}
-            ariaLabel={t("assets.valuationDate")}
-            max={todayIso()}
-          />
-        </div>
-        <div className="space-y-2">
-          <HelpTooltip content={t("assets.inputModeHint")}>
-            <Label className={cn(currencyControl && "whitespace-nowrap")}>
-              {t("assets.inputMode")}
-            </Label>
-          </HelpTooltip>
-          <Select
-            value={value.inputMode}
-            onValueChange={(next: AssetInputMode) => update("inputMode", next)}
-          >
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="total" indicatorPosition="right">
-                {t("assets.inputMode.total")}
-              </SelectItem>
-              <SelectItem value="unit_price" indicatorPosition="right">
-                {t("assets.inputMode.unitPrice")}
-              </SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-        {currencyControl}
-      </div>
-
+    <div className="space-y-6">
       {value.inputMode === "total" ? (
-        <div className="space-y-2">
+        <div className="flex flex-col gap-2">
           <Label htmlFor="asset-total-value">{t("assets.totalValue")}</Label>
           <div className="relative">
             <Input
@@ -267,8 +223,8 @@ export function AssetValuationFields({
           </div>
         </div>
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div className="space-y-2">
+        <div className="grid gap-6 sm:grid-cols-2">
+          <div className="flex flex-col gap-2">
             <Label htmlFor="asset-quantity">{t("assets.quantity")}</Label>
             <Input
               id="asset-quantity"
@@ -278,7 +234,7 @@ export function AssetValuationFields({
               placeholder="0"
             />
           </div>
-          <div className="space-y-2">
+          <div className="flex flex-col gap-2">
             <Label htmlFor="asset-unit-price">{t("assets.unitPrice")}</Label>
             <div className="relative">
               <Input
@@ -297,8 +253,66 @@ export function AssetValuationFields({
         </div>
       )}
 
+      <div className="grid gap-6 sm:grid-cols-2">
+        <div className="flex flex-col gap-2">
+          <Label htmlFor="asset-valuation-date">
+            {t("assets.valuationDate")}
+          </Label>
+          <DatePicker
+            id="asset-valuation-date"
+            value={value.valuationDate}
+            onChange={(next) => update("valuationDate", next)}
+            ariaLabel={t("assets.valuationDate")}
+            max={todayIso()}
+          />
+        </div>
+        {showInputMode || value.inputMode === "unit_price" ? (
+          <div
+            className={cn(
+              "flex flex-col gap-2",
+              currencyControl && "sm:col-span-2 sm:order-last",
+            )}
+          >
+            <HelpTooltip content={t("assets.inputModeHint")}>
+              <Label className={cn(currencyControl && "whitespace-nowrap")}>
+                {t("assets.inputMode")}
+              </Label>
+            </HelpTooltip>
+            <Select
+              value={value.inputMode}
+              onValueChange={(next: AssetInputMode) =>
+                update("inputMode", next)
+              }
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="total" indicatorPosition="right">
+                  {t("assets.inputMode.total")}
+                </SelectItem>
+                <SelectItem value="unit_price" indicatorPosition="right">
+                  {t("assets.inputMode.unitPrice")}
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        ) : null}
+        {currencyControl}
+      </div>
+
       {showGrowth ? (
-        <AssetGrowthFields value={value} onChange={onChange} />
+        <details className="border-t pt-5">
+          <summary className="cursor-pointer text-sm font-medium">
+            {t("assets.moreSettings")}
+            {value.growthMode !== "none"
+              ? ` – ${t("assets.growth.fixedRate")}`
+              : ""}
+          </summary>
+          <div className="pt-4">
+            <AssetGrowthFields value={value} onChange={onChange} />
+          </div>
+        </details>
       ) : null}
     </div>
   );
@@ -318,8 +332,8 @@ export function AssetGrowthFields({
   ) => onChange({ ...value, [key]: next });
 
   return (
-    <div className="space-y-4">
-      <div className="space-y-2">
+    <div className="space-y-6">
+      <div className="flex flex-col gap-2">
         <HelpTooltip content={t("assets.annualRateHint")}>
           <Label>{t("assets.valueChange")}</Label>
         </HelpTooltip>
@@ -342,10 +356,12 @@ export function AssetGrowthFields({
       </div>
 
       {value.growthMode === "fixed_rate" ? (
-        <div className="rounded-lg border bg-muted/20 p-4">
-          <div className="grid gap-4 md:grid-cols-3">
-            <div className="space-y-2">
-              <Label htmlFor="asset-annual-rate">{t("assets.annualRate")}</Label>
+        <div className="@container">
+          <div className="grid gap-4 @min-[20rem]:grid-cols-2 @min-[34rem]:grid-cols-3">
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="asset-annual-rate">
+                {t("assets.annualRate")}
+              </Label>
               <div className="relative">
                 <Input
                   id="asset-annual-rate"
@@ -360,8 +376,10 @@ export function AssetGrowthFields({
                 </span>
               </div>
             </div>
-            <div className="space-y-2">
-              <Label>{t("assets.compounding")}</Label>
+            <div className="flex flex-col gap-2">
+              <HelpTooltip content={t("assets.compoundingHint")}>
+                <Label>{t("assets.compounding")}</Label>
+              </HelpTooltip>
               <Select
                 value={value.compounding}
                 onValueChange={(next: AssetCompounding) =>
@@ -373,14 +391,18 @@ export function AssetGrowthFields({
                 </SelectTrigger>
                 <SelectContent>
                   {COMPOUNDING_MODES.map((mode) => (
-                    <SelectItem key={mode} value={mode} indicatorPosition="right">
+                    <SelectItem
+                      key={mode}
+                      value={mode}
+                      indicatorPosition="right"
+                    >
                       {t(compoundingKey(mode))}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-2">
+            <div className="flex flex-col gap-2 @min-[20rem]:col-span-2 @min-[34rem]:col-span-1">
               <div className="flex items-center justify-between gap-3">
                 <Label>{t("assets.growthEndDate")}</Label>
                 {value.growthEndDate ? (
