@@ -15,7 +15,8 @@ export function Toaster(props: ToasterProps) {
   return (
     <Sonner
       theme={theme as ToasterProps["theme"]}
-      className="toaster group [--width:31rem]"
+      className="toaster"
+      style={{ width: "min(24rem, calc(100vw - 2rem))" }}
       position="top-right"
       duration={6_000}
       closeButton
@@ -29,29 +30,27 @@ export function Toaster(props: ToasterProps) {
         ),
       }}
       toastOptions={{
+        unstyled: true,
         classNames: {
           toast:
-            "group toast group-[.toaster]:relative group-[.toaster]:min-h-[4.75rem] group-[.toaster]:max-w-[calc(100vw-2rem)] group-[.toaster]:rounded-lg group-[.toaster]:border group-[.toaster]:border-l-4 group-[.toaster]:border-border group-[.toaster]:border-l-border group-[.toaster]:bg-card group-[.toaster]:px-5 group-[.toaster]:py-4 group-[.toaster]:pr-12 group-[.toaster]:text-card-foreground group-[.toaster]:shadow-[0_18px_45px_-28px_hsl(var(--foreground)/0.55),0_8px_24px_-18px_hsl(var(--foreground)/0.25)]",
-          content: "group-[.toast]:gap-1.5",
-          icon:
-            "group-[.toast]:mt-0.5 group-[.toast]:flex group-[.toast]:h-8 group-[.toast]:w-8 group-[.toast]:items-center group-[.toast]:justify-center group-[.toast]:rounded-md group-[.toast]:bg-muted/60",
-          title:
-            "group-[.toast]:text-[15px] group-[.toast]:font-semibold group-[.toast]:leading-5 group-[.toast]:tracking-normal group-[.toast]:text-foreground",
-          description:
-            "group-[.toast]:text-sm group-[.toast]:leading-5 group-[.toast]:text-muted-foreground",
+            "toast pointer-events-auto flex w-full items-center gap-3 rounded-lg border bg-popover p-4 pr-12 text-popover-foreground shadow-lg [&[data-expanded=false][data-front=false]>*]:opacity-0",
+          content: "flex min-w-0 flex-1 flex-col gap-1",
+          icon: "flex h-5 w-5 shrink-0 items-center justify-center",
+          title: "text-sm font-medium leading-5",
+          description: "text-sm leading-5 text-muted-foreground",
           actionButton:
-            "group-[.toast]:h-8 group-[.toast]:rounded-md group-[.toast]:border group-[.toast]:border-border group-[.toast]:bg-background group-[.toast]:px-3 group-[.toast]:text-sm group-[.toast]:font-medium group-[.toast]:text-foreground group-[.toast]:shadow-sm group-[.toast]:hover:bg-muted",
+            "shrink-0 rounded-md border bg-background px-3 py-1.5 text-sm font-medium hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
           cancelButton:
-            "group-[.toast]:h-8 group-[.toast]:rounded-md group-[.toast]:bg-muted group-[.toast]:px-3 group-[.toast]:text-sm group-[.toast]:font-medium group-[.toast]:text-muted-foreground group-[.toast]:hover:bg-muted/80",
+            "shrink-0 rounded-md bg-muted px-3 py-1.5 text-sm text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
           closeButton:
-            "group-[.toast]:!left-auto group-[.toast]:!right-2 group-[.toast]:!top-2 group-[.toast]:!h-7 group-[.toast]:!w-7 group-[.toast]:!translate-x-0 group-[.toast]:!translate-y-0 group-[.toast]:!rounded-md group-[.toast]:!border-0 group-[.toast]:!bg-transparent group-[.toast]:!text-muted-foreground group-[.toast]:!shadow-none group-[.toast]:hover:!bg-muted group-[.toast]:hover:!text-foreground",
+            "absolute right-3 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-md border-0 bg-transparent! p-0 text-muted-foreground! hover:bg-muted! hover:text-foreground! focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring [&>svg]:h-4 [&>svg]:w-4",
           success:
-            "group-[.toaster]:!border-l-positive group-[.toaster]:bg-card",
-          info: "group-[.toaster]:!border-l-info group-[.toaster]:bg-card",
+            "border-positive/40 bg-[linear-gradient(hsl(var(--positive)/0.10),hsl(var(--positive)/0.10))]",
+          info: "border-info/40 bg-[linear-gradient(hsl(var(--info)/0.10),hsl(var(--info)/0.10))]",
           warning:
-            "group-[.toaster]:!border-l-warning group-[.toaster]:bg-card",
+            "border-warning/40 bg-[linear-gradient(hsl(var(--warning)/0.10),hsl(var(--warning)/0.10))]",
           error:
-            "group-[.toaster]:!border-l-destructive group-[.toaster]:bg-card",
+            "border-destructive/40 bg-[linear-gradient(hsl(var(--destructive)/0.10),hsl(var(--destructive)/0.10))]",
         },
       }}
       {...props}

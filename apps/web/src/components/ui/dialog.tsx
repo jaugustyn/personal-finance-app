@@ -29,7 +29,7 @@ DialogOverlay.displayName = DialogPrimitive.Overlay.displayName;
 export const DialogContent = React.forwardRef<
   React.ComponentRef<typeof DialogPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content>
->(({ className, children, ...props }, ref) => {
+>(({ className, children, onInteractOutside, ...props }, ref) => {
   const { t } = useT();
   return (
     <DialogPortal>
@@ -41,6 +41,16 @@ export const DialogContent = React.forwardRef<
           className,
         )}
         {...props}
+        onInteractOutside={(event) => {
+          onInteractOutside?.(event);
+          const target = event.detail.originalEvent.target;
+          if (
+            target instanceof Element &&
+            target.closest("[data-sonner-toaster]")
+          ) {
+            event.preventDefault();
+          }
+        }}
       >
         {children}
         <DialogPrimitive.Close className="absolute right-4 top-4 rounded-md p-1 text-muted-foreground opacity-70 transition-opacity hover:opacity-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring">

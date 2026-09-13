@@ -333,13 +333,13 @@ export function DatePicker({
           id={id}
           type="button"
           variant="outline"
-          className="relative w-full justify-center bg-transparent px-9 text-[15px] font-normal"
+          className="w-full justify-between bg-transparent px-3 text-sm font-normal"
           aria-label={ariaLabel}
         >
-          <CalendarDays className="absolute left-3 h-4 w-4 text-muted-foreground" />
-          <span className="truncate">
+          <span className="truncate text-left">
             {value ? formatDate(value) : ariaLabel}
           </span>
+          <CalendarDays className="h-4 w-4 shrink-0 text-muted-foreground" />
         </Button>
       </PopoverTrigger>
       <PopoverContent align="end" className="w-[18rem] p-3">
