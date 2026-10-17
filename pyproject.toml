@@ -17,9 +17,9 @@ dependencies = [
     "alembic>=1.18.4",
     "psycopg[binary]>=3.3.4",
     # data / ml
-    "pandas>=3.0.5",
-    "numpy>=2.4.6",
-    "scikit-learn>=1.9.0",
+    "pandas>=3.0.6",
+    "numpy>=2.5.4",
+    "scikit-learn>=1.9.1",
     "statsmodels>=0.14",
     "joblib>=1.4",
     # observability / llm-client
@@ -29,7 +29,7 @@ dependencies = [
 
 [project.optional-dependencies]
 augment = [
-    "ollama>=0.3",
+    "ollama>=0.6.3",
 ]
 dev = [
     "pytest>=8.3",
