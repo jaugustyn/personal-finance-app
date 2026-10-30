@@ -20,6 +20,8 @@ import { ImportsHistory } from "./_components/imports-history";
 import { SuccessBox } from "./_components/success-box";
 import {
   LOGICAL_FIELDS,
+  isFieldMapped,
+  requiredFieldsMapped,
   type FieldKey,
 } from "./_lib/import-fields";
 
@@ -176,7 +178,7 @@ export default function ImportsPage() {
     if (!file || nextAccountId === null || !currentPreview) return;
     const cleaned = cleanImportMapping(nextMapping);
     const source = currentPreview.detected_source ?? "generic";
-    if (source === "generic" && (!cleaned.date || !cleaned.amount)) {
+    if (source === "generic" && (!cleaned.date || !isFieldMapped("amount", cleaned))) {
       latestMappingPreviewKey.current = null;
       return;
     }
@@ -204,7 +206,7 @@ export default function ImportsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [accountId, file, preview?.account_id]);
 
-  const requiredOk = !!mapping.date && !!mapping.amount && !!mapping.merchant;
+  const requiredOk = requiredFieldsMapped(mapping);
   const canCommit =
     !!file &&
     !uploadMut.isPending &&

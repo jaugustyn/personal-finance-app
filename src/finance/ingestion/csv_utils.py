@@ -10,14 +10,22 @@ from datetime import datetime
 from decimal import Decimal, InvalidOperation
 
 
-def decode_csv(raw: bytes) -> str:
-    """Best-effort decode: utf-8-sig -> utf-8 -> cp1250 -> latin1."""
-    for enc in ("utf-8-sig", "utf-8", "cp1250", "latin1"):
+def detect_encoding(raw: bytes) -> str:
+    """First encoding that decodes ``raw``: utf-8-sig -> utf-8 -> cp1250 -> latin1."""
+    if raw.startswith(b"\xef\xbb\xbf"):
+        return "utf-8-sig"
+    for enc in ("utf-8", "cp1250"):
         try:
-            return raw.decode(enc)
+            raw.decode(enc)
+            return enc
         except UnicodeDecodeError:
             continue
-    return raw.decode("latin1", errors="replace")
+    return "latin1"
+
+
+def decode_csv(raw: bytes) -> str:
+    """Best-effort decode using :func:`detect_encoding`."""
+    return raw.decode(detect_encoding(raw), errors="replace")
 
 
 def sniff_delimiter(sample: str) -> str:

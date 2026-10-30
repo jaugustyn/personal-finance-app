@@ -4,6 +4,8 @@ import type { TranslationKey } from "@/lib/i18n";
 export const LOGICAL_FIELDS = [
   { key: "date", required: true, recommended: false, description: "" },
   { key: "amount", required: true, recommended: false, description: "" },
+  { key: "debit_amount", required: false, recommended: false, description: "" },
+  { key: "credit_amount", required: false, recommended: false, description: "" },
   { key: "currency", required: false, recommended: false, description: "" },
   { key: "merchant", required: true, recommended: false, description: "" },
   { key: "title", required: false, recommended: true, description: "" },
@@ -21,6 +23,22 @@ export type FieldSpec = {
 };
 
 const LOGICAL_FIELD_KEYS = new Set<string>(LOGICAL_FIELDS.map((field) => field.key));
+const SPLIT_AMOUNT_FIELDS: FieldKey[] = ["debit_amount", "credit_amount"];
+
+/** Whether `key` is covered; `amount` is also covered by debit/credit columns. */
+export function isFieldMapped(
+  key: FieldKey,
+  mapping: Partial<Record<FieldKey, string>>,
+): boolean {
+  if (mapping[key]) return true;
+  return key === "amount" && SPLIT_AMOUNT_FIELDS.some((field) => Boolean(mapping[field]));
+}
+
+export function requiredFieldsMapped(mapping: Partial<Record<FieldKey, string>>): boolean {
+  return LOGICAL_FIELDS.filter((field) => field.required).every((field) =>
+    isFieldMapped(field.key, mapping),
+  );
+}
 
 export function fieldSpecsFromPreview(preview: ImportPreview | null): FieldSpec[] {
   if (!preview?.field_specs?.length) return [...LOGICAL_FIELDS];

@@ -41,6 +41,7 @@ import {
   buildCustomWarnings,
   fieldHintKey,
   fieldSpecsFromPreview,
+  isFieldMapped,
   LOGICAL_FIELDS,
   type FieldKey,
 } from "../_lib/import-fields";
@@ -232,7 +233,7 @@ function ColumnMappingSection({
   const fieldSpecs = fieldSpecsFromPreview(preview);
   const requiredComplete = fieldSpecs
     .filter((spec) => spec.required)
-    .every((spec) => Boolean(mapping[spec.key]));
+    .every((spec) => isFieldMapped(spec.key, mapping));
 
   return (
     <DisclosureSection

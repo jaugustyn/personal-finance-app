@@ -11,14 +11,15 @@ from finance.currencies import load_fx_rate_lookup, resolve_base_currency
 from finance.domain.dto import TransactionDTO
 from finance.domain.models import Transaction
 from finance.ingestion.base import BankParser
-from finance.ingestion.csv_utils import (
-    csv_dict_reader,
-    decode_csv,
-    parse_amount_with_currency,
-    parse_date,
+from finance.ingestion.csv_utils import parse_date
+from finance.ingestion.generic import (
+    CsvTable,
+    GenericCsvParser,
+    read_csv_table,
+    resolve_column_map,
+    row_amount,
 )
-from finance.ingestion.generic import GenericCsvParser, auto_detect_columns
-from finance.ingestion.schema import REQUIRED_IMPORT_FIELDS, clean_column_map
+from finance.ingestion.schema import missing_required_fields
 from finance.ingestion.service import compute_dedup_hash
 from finance.ingestion.types import (
     ImportQualityIssue,
@@ -39,14 +40,15 @@ def assess_import_quality(
     account_id: int | None = None,
 ) -> ImportQualityReport:
     """Inspect an upload before committing it to the database."""
-    total_rows = _csv_data_row_count(raw)
+    table = read_csv_table(raw)
+    total_rows = len(table.rows)
     issues: list[ImportQualityIssue] = []
     dtos: list[TransactionDTO] = parsed_dtos or []
     generic_mapping: dict[str, str] | None = None
 
     if isinstance(parser, GenericCsvParser):
-        generic_mapping = _generic_mapping(parser, raw)
-        issues.extend(_generic_row_issues(raw, generic_mapping))
+        generic_mapping = resolve_column_map(parser.column_map, table.headers)
+        issues.extend(_generic_row_issues(table, generic_mapping))
         if any(
             issue.severity == "error"
             and (
@@ -120,31 +122,12 @@ def _sample_rows(rows: list[int], *, limit: int = 5) -> list[int]:
     return out
 
 
-def _csv_data_row_count(raw: bytes) -> int:
-    text = decode_csv(raw)
-    if not text.strip():
-        return 0
-    return sum(1 for _ in csv_dict_reader(text))
-
-
-def _generic_mapping(parser: GenericCsvParser, raw: bytes) -> dict[str, str]:
-    if parser.column_map:
-        return clean_column_map(parser.column_map)
-    reader = csv_dict_reader(decode_csv(raw))
-    return {
-        key: value
-        for key, value in auto_detect_columns(list(reader.fieldnames or [])).items()
-        if value is not None
-    }
-
-
 def _generic_row_issues(
-    raw: bytes,
+    table: CsvTable,
     mapping: dict[str, str],
 ) -> list[ImportQualityIssue]:
-    reader = csv_dict_reader(decode_csv(raw))
-    headers = set(reader.fieldnames or [])
-    missing_required = sorted(REQUIRED_IMPORT_FIELDS - set(mapping))
+    headers = set(table.headers)
+    missing_required = missing_required_fields(mapping)
     issues: list[ImportQualityIssue] = [
         ImportQualityIssue(
             f"missing_required_mapping_{field}",
@@ -165,31 +148,29 @@ def _generic_row_issues(
         return issues
 
     date_col = mapping["date"]
-    amount_col = mapping["amount"]
     currency_col = mapping.get("currency")
     merchant_col = mapping.get("merchant")
     title_col = mapping.get("title")
     row_hits: dict[tuple[str, IssueSeverity], list[int]] = defaultdict(list)
 
-    for index, row in enumerate(reader, start=2):
+    for index, row in enumerate(table.rows, start=table.header_line + 1):
         raw_date = (row.get(date_col, "") or "").strip()
         if not raw_date:
             row_hits[("missing_date", "error")].append(index)
         elif parse_date(raw_date) is None:
             row_hits[("invalid_date", "error")].append(index)
 
-        raw_amount = (row.get(amount_col, "") or "").strip()
-        amount, amount_currency = parse_amount_with_currency(raw_amount)
-        if not raw_amount:
+        parsed = row_amount(row, mapping)
+        if not parsed.raw:
             row_hits[("missing_amount", "error")].append(index)
-        elif amount is None:
+        elif parsed.amount is None:
             row_hits[("invalid_amount", "error")].append(index)
-        elif amount == 0:
+        elif parsed.amount == 0:
             row_hits[("zero_amount", "warning")].append(index)
 
         raw_currency = (
             (row.get(currency_col, "") or "").strip().upper() if currency_col else ""
-        ) or (amount_currency or "")
+        ) or (parsed.currency or "")
         if not raw_currency:
             row_hits[("missing_currency", "warning")].append(index)
         elif len(raw_currency) != 3 or not raw_currency.isalpha():
