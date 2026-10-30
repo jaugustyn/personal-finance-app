@@ -218,63 +218,37 @@ def cashflow(
 ) -> list[CashflowBucket]:
     start = _period_start(months)
     year, month = _month_parts()
-    transaction_type = effective_transaction_type_expr()
     stmt = select(
         year.label("year"),
         month.label("month"),
-        transaction_type.label("transaction_type"),
-        func.sum(func.abs(amount_base_expr())).label("amount"),
+        _income_expr().label("income"),
+        _expense_expr().label("gross_expenses"),
+        _typed_sum(TransactionType.REFUND, TransactionDirection.CREDIT).label("refunds"),
+        _typed_sum(TransactionType.DEBT_PAYMENT, TransactionDirection.DEBIT).label("debt"),
+        _typed_sum(TransactionType.ASSET_ALLOCATION, TransactionDirection.DEBIT).label(
+            "allocations"
+        ),
     ).where(*_base_filters(start, include_transfers=include_transfers)).group_by(
-        year,
-        month,
-        transaction_type,
-    )
+        year, month,
+    ).order_by(year, month)
     rows = session.execute(stmt).all()
-    sums: dict[str, dict[str, Decimal]] = {}
+    buckets = []
     for row in rows:
-        month_label = _month_label(row.year, row.month)
-        bucket = sums.setdefault(
-            month_label,
-            {
-                "income": Decimal(0),
-                "expenses": Decimal(0),
-                "refunds": Decimal(0),
-                "debt": Decimal(0),
-                "allocations": Decimal(0),
-            },
-        )
-        amount = Decimal(row.amount or 0)
-        if row.transaction_type in {
-            TransactionType.SALARY.value,
-            TransactionType.INCOME.value,
-        }:
-            bucket["income"] += amount
-        elif row.transaction_type == TransactionType.EXPENSE.value:
-            bucket["expenses"] += amount
-        elif row.transaction_type == TransactionType.REFUND.value:
-            bucket["refunds"] += amount
-        elif row.transaction_type == TransactionType.DEBT_PAYMENT.value:
-            bucket["debt"] += amount
-        elif row.transaction_type == TransactionType.ASSET_ALLOCATION.value:
-            bucket["allocations"] += amount
-    return [
-        CashflowBucket(
-            month=month,
-            income=values["income"],
-            expenses=values["expenses"] - values["refunds"],
-            refunds=values["refunds"],
-            debt_payments=values["debt"],
-            asset_allocations=values["allocations"],
-            net=(
-                values["income"]
-                - values["expenses"]
-                + values["refunds"]
-                - values["debt"]
-                - values["allocations"]
-            ),
-        )
-        for month, values in sorted(sums.items())
-    ]
+        income = Decimal(row.income)
+        refunds = Decimal(row.refunds)
+        expenses = Decimal(row.gross_expenses) - refunds
+        debt = Decimal(row.debt)
+        allocations = Decimal(row.allocations)
+        buckets.append(CashflowBucket(
+            month=_month_label(row.year, row.month),
+            income=income,
+            expenses=expenses,
+            refunds=refunds,
+            debt_payments=debt,
+            asset_allocations=allocations,
+            net=income - expenses - debt - allocations,
+        ))
+    return buckets
 
 
 def by_category(

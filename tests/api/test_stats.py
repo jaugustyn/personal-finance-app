@@ -1,8 +1,4 @@
-"""Smoke tests for /stats endpoints — verify routing + schema shape.
-
-Hits the live DB (assumes docker postgres is up). If DB is empty, endpoints
-should still return 200 with empty/zero values.
-"""
+"""Statistics HTTP contracts and aggregates against an isolated test database."""
 from datetime import date
 from decimal import Decimal
 
@@ -11,12 +7,9 @@ from fastapi.testclient import TestClient
 from sqlalchemy import event
 from sqlalchemy.orm import Session
 
-from apps.api.main import app
 from finance.domain.models import Transaction
 from finance.stats import service as stats_service
 from finance.transactions.merchants import create_aliases
-
-client = TestClient(app, raise_server_exceptions=False)
 
 
 def _add_tx(session: Session, **kwargs) -> None:
@@ -37,20 +30,16 @@ def _add_tx(session: Session, **kwargs) -> None:
     session.add(Transaction(**defaults))
 
 
-def test_overview_shape() -> None:
+def test_overview_shape(client: TestClient) -> None:
     r = client.get("/stats/overview")
-    if r.status_code >= 500:
-        return  # DB unreachable in test env
     assert r.status_code == 200
     body = r.json()
     for key in ("total_income", "total_expenses", "net_cashflow", "savings_rate", "tx_count"):
         assert key in body
 
 
-def test_cashflow_shape() -> None:
+def test_cashflow_shape(client: TestClient) -> None:
     r = client.get("/stats/cashflow?months=6")
-    if r.status_code >= 500:
-        return
     assert r.status_code == 200
     assert isinstance(r.json(), list)
 
@@ -84,26 +73,20 @@ def test_cashflow_buckets_months_without_postgres_to_char(
     assert Decimal(rows["2026-02"]["income"]) == Decimal("100.00")
 
 
-def test_by_category_shape() -> None:
+def test_by_category_shape(client: TestClient) -> None:
     r = client.get("/stats/by-category?months=3")
-    if r.status_code >= 500:
-        return
     assert r.status_code == 200
     assert isinstance(r.json(), list)
 
 
-def test_cumulative_cashflow_shape() -> None:
+def test_cumulative_cashflow_shape(client: TestClient) -> None:
     r = client.get("/stats/cumulative-cashflow?months=12")
-    if r.status_code >= 500:
-        return
     assert r.status_code == 200
     assert isinstance(r.json(), list)
 
 
-def test_top_merchants_shape() -> None:
+def test_top_merchants_shape(client: TestClient) -> None:
     r = client.get("/stats/top-merchants?limit=5")
-    if r.status_code >= 500:
-        return
     assert r.status_code == 200
     data = r.json()
     assert isinstance(data, list)
@@ -465,10 +448,8 @@ def test_stats_all_data_ignores_month_window(
     assert "Old Shop" in [row["merchant"] for row in all_response.json()]
 
 
-def test_category_trend_shape() -> None:
+def test_category_trend_shape(client: TestClient) -> None:
     r = client.get("/stats/category-trend?months=6&limit=5")
-    if r.status_code >= 500:
-        return
     assert r.status_code == 200
     assert isinstance(r.json(), list)
 
@@ -539,10 +520,8 @@ def test_spend_distribution_shape_and_outlier_fence(
     assert body["iqr_upper"] < 5000.0
 
 
-def test_recap_shape() -> None:
+def test_recap_shape(client: TestClient) -> None:
     r = client.get("/stats/recap?period=month")
-    if r.status_code >= 500:
-        return
     assert r.status_code == 200
     body = r.json()
     for key in (
