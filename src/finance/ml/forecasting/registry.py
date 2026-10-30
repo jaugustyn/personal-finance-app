@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import warnings
 from dataclasses import dataclass
-from typing import Protocol
+from typing import ClassVar, Protocol
 
 import numpy as np
 import pandas as pd
@@ -15,6 +15,9 @@ import pandas as pd
 
 class Forecaster(Protocol):
     name: str
+
+    @property
+    def min_history(self) -> int: ...
 
     def fit(self, y: pd.Series) -> Forecaster: ...
     def predict(self, horizon: int) -> pd.Series: ...
@@ -24,6 +27,7 @@ class Forecaster(Protocol):
 class NaiveForecaster:
     """Predict the last observed value for every future step."""
     name: str = "naive"
+    min_history: ClassVar[int] = 1
     _last: float = 0.0
     _last_index: pd.Timestamp | None = None
 
@@ -47,6 +51,7 @@ class NaiveForecaster:
 class MeanForecaster:
     """Predict the rolling-3 mean of the most recent observations."""
     name: str = "mean3"
+    min_history: ClassVar[int] = 1
     window: int = 3
     _mean: float = 0.0
     _last_index: pd.Timestamp | None = None
@@ -71,6 +76,7 @@ class MeanForecaster:
 class SESForecaster:
     """Simple Exponential Smoothing (statsmodels)."""
     name = "ses"
+    min_history = 2
 
     def __init__(self, alpha: float | None = None) -> None:
         self.alpha = alpha
@@ -80,7 +86,7 @@ class SESForecaster:
     def fit(self, y: pd.Series) -> SESForecaster:
         from statsmodels.tsa.holtwinters import SimpleExpSmoothing
 
-        if len(y) < 2:
+        if len(y) < self.min_history:
             raise ValueError("SES requires at least 2 points")
         model = SimpleExpSmoothing(y.astype(float), initialization_method="estimated")
         with warnings.catch_warnings():
@@ -110,6 +116,7 @@ class HoltDampedForecaster:
     """Holt trend with damping to avoid unrealistic long-range growth."""
 
     name = "holt_damped"
+    min_history = 6
 
     def __init__(self) -> None:
         self._fitted = None
@@ -118,7 +125,7 @@ class HoltDampedForecaster:
     def fit(self, y: pd.Series) -> HoltDampedForecaster:
         from statsmodels.tsa.holtwinters import Holt
 
-        if len(y) < 6:
+        if len(y) < self.min_history:
             raise ValueError("Holt trend requires at least 6 observations")
         model = Holt(
             y.astype(float),
@@ -154,8 +161,12 @@ class SeasonalNaiveForecaster:
     _season: np.ndarray | None = None
     _last_index: pd.Timestamp | None = None
 
+    @property
+    def min_history(self) -> int:
+        return self.season_length * 2
+
     def fit(self, y: pd.Series) -> SeasonalNaiveForecaster:
-        if len(y) < self.season_length * 2:
+        if len(y) < self.min_history:
             raise ValueError("Seasonal naive requires at least 24 observations")
         self._season = y.tail(self.season_length).to_numpy(dtype=float)
         self._last_index = y.index[-1]

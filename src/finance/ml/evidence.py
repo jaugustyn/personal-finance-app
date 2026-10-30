@@ -166,7 +166,6 @@ def build_forecasting_evidence(
             direction="debit",
             exclude_incomplete_month=True,
         )
-        cv = evaluate_walk_forward(series, horizon=horizon, min_train=min_train)
         readiness = forecast_readiness(
             series,
             horizon=horizon,
@@ -176,6 +175,10 @@ def build_forecasting_evidence(
             selected = forecast_best(series, horizon=horizon, min_train=min_train)
         except ForecastDataNotReady:
             selected = None
+        cv = (
+            selected.validation_metrics if selected is not None
+            else evaluate_walk_forward(series, horizon=horizon, min_train=min_train)
+        )
         out.append(
             {
                 "category": category,

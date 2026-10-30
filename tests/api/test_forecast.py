@@ -58,3 +58,28 @@ def test_forecast_returns_validation_diagnostics(client, db_session) -> None:
     assert body["validation_folds"] >= 6
     assert isinstance(body["is_baseline"], bool)
     assert len(body["forecast"]) == 3
+
+
+def test_category_forecast_starts_after_global_history_even_after_spending_stops(
+    client, db_session,
+) -> None:
+    _seed_months(db_session, 18)
+    rows = db_session.query(Transaction).order_by(Transaction.booking_date).all()
+    for row in rows[-4:]:
+        row.category = "transport"
+    rows[-1].direction = "credit"
+    rows[-1].transaction_type = "salary"
+    rows[-1].amount = Decimal("5000")
+    rows[-1].category = None
+    db_session.commit()
+    last_month = pd.Timestamp(rows[-1].booking_date)
+
+    response = client.get("/forecast?category=food&horizon=3")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["history_months"] == 18
+    assert body["active_months"] == 14
+    assert body["history"][-1]["month"] == last_month.date().isoformat()
+    assert [item["amount"] for item in body["history"][-4:]] == [0.0] * 4
+    assert body["forecast"][0]["month"] == (last_month + pd.offsets.MonthBegin(1)).date().isoformat()
