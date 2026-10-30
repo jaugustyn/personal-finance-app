@@ -21,6 +21,7 @@ from finance.ingestion.registry import available_sources, detect_source, get_par
 from finance.ingestion.schema import clean_column_map, import_quality_warnings, validate_column_map
 from finance.ingestion.service import ingest_transactions
 from finance.ingestion.types import FxRateMode, ImportQualityReport
+from finance.ml.classification.evaluation_sets import invalidate_for_transactions
 
 
 class ImportNotFound(LookupError):
@@ -242,6 +243,11 @@ def delete_import(session: Session, import_id: int) -> DeletedImport:
     if import_row is None:
         raise ImportNotFound("Import not found.")
     try:
+        invalidate_for_transactions(
+            session,
+            select(Transaction.id).where(Transaction.import_id == import_id),
+            reason="frozen_transaction_deleted",
+        )
         result = session.execute(
             delete(Transaction).where(Transaction.import_id == import_id)
         )

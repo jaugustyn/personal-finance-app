@@ -17,6 +17,7 @@ from finance.domain.models import MerchantAlias, MlModelVersion, MlTrainingJob, 
 from finance.llm import client as llm_client
 from finance.ml.classification import lifecycle
 from finance.ml.classification.artifacts import (
+    artifact_sha256,
     build_model_artifact,
     require_compatible_artifact,
     require_runtime_artifact,
@@ -41,7 +42,6 @@ from finance.ml.classification.evaluation_sets import (
 )
 from finance.ml.classification.lifecycle import (
     TrainingJobConflict,
-    _artifact_sha256,
     activate_model_version,
     enqueue_training_job,
     run_training_job,
@@ -267,7 +267,8 @@ def test_merchant_holdout_keeps_supplied_merchant_groups_together() -> None:
         assert group_ids <= merchant_ids or group_ids.isdisjoint(merchant_ids)
 
 
-def test_candidate_uses_both_primary_holdouts_and_reports_calibration() -> None:
+@pytest.mark.parametrize("estimator", ["logreg", "linear_svc_calibrated"])
+def test_candidate_uses_both_primary_holdouts_and_reports_calibration(estimator: str) -> None:
     rows = []
     transaction_id = 1
     merchant_names = ["alpha", "beta", "gamma", "delta", "omega"]
@@ -299,7 +300,7 @@ def test_candidate_uses_both_primary_holdouts_and_reports_calibration() -> None:
 
     result = evaluate_candidate(
         frame,
-        estimator="logreg",
+        estimator=estimator,
         feature_set="baseline",
         split_ids=split_ids,
         frozen_evaluation_set=False,
@@ -307,6 +308,11 @@ def test_candidate_uses_both_primary_holdouts_and_reports_calibration() -> None:
 
     assert result.metrics["time"]["macro_f1"] > 0.90
     assert result.metrics["merchant"]["macro_f1"] > 0.90
+    for name in ("time", "merchant", "oof"):
+        assert result.metrics[name]["weighted_f1"] > 0.90
+        matrix = np.asarray(result.metrics[name]["confusion_matrix"])
+        assert matrix.shape == (len(Category), len(Category))
+        assert matrix.sum() == result.metrics[name]["n"]
     assert "brier_multiclass" in result.metrics["oof"]["calibration"]
     assert result.confidence_policy == {
         "source": "fixed_runtime_threshold",
@@ -614,7 +620,7 @@ def test_active_model_is_not_a_regression_gate_without_frozen_evaluation_set(
             feature_set="baseline",
             status="active",
             artifact_path=str(path),
-            artifact_sha256=_artifact_sha256(path),
+            artifact_sha256=artifact_sha256(path),
             dataset_fingerprint="old-fingerprint",
             metrics={},
             gates={"promotable": True},
@@ -697,7 +703,7 @@ def test_activation_verifies_artifact_and_supports_rollback(
             feature_set="baseline",
             status="candidate",
             artifact_path=str(path),
-            artifact_sha256=_artifact_sha256(path),
+            artifact_sha256=artifact_sha256(path),
             dataset_fingerprint="fingerprint",
             metrics={},
             gates={"promotable": True},

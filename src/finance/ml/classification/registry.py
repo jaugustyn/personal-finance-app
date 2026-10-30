@@ -15,9 +15,9 @@ ESTIMATORS: dict[str, Callable[[], BaseEstimator]] = {
     "logreg": lambda: LogisticRegression(
         max_iter=2000, class_weight="balanced", C=1.0, n_jobs=None
     ),
-    "linear_svc": lambda: LinearSVC(C=1.0, class_weight="balanced"),
+    "linear_svc": lambda: LinearSVC(C=1.0, class_weight="balanced", random_state=42),
     "linear_svc_calibrated": lambda: CalibratedClassifierCV(
-        estimator=LinearSVC(C=1.0, class_weight="balanced"),
+        estimator=LinearSVC(C=1.0, class_weight="balanced", random_state=42),
         method="sigmoid",
         cv=2,
     ),

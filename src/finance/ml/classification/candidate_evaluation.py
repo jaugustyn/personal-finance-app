@@ -4,11 +4,10 @@ from __future__ import annotations
 import math
 import time
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, TypedDict
 
 import numpy as np
 import pandas as pd
-from sklearn.metrics import classification_report, confusion_matrix, f1_score, log_loss
 from sklearn.model_selection import (
     StratifiedGroupKFold,
     StratifiedKFold,
@@ -22,6 +21,13 @@ from finance.ml.classification.constants import (
     MODEL_MIN_CLASS_SUPPORT,
 )
 from finance.ml.classification.evaluation_sets import thesis_data_readiness
+from finance.ml.classification.metrics import (
+    CalibratedPredictionMetrics,
+    HoldoutMetrics,
+    PredictionMetrics,
+    calibration_metrics,
+    prediction_metrics,
+)
 from finance.ml.classification.pipeline import (
     build_pipeline,
     build_pipeline_v2,
@@ -45,15 +51,57 @@ MAX_REGRESSION = 0.02
 MAX_P99_MS = 200.0
 
 
+class RankingMetrics(TypedDict):
+    worst_macro_f1: float
+    mean_macro_f1: float
+    mean_covered_accuracy: float
+
+
+class CandidateMetrics(TypedDict):
+    time: HoldoutMetrics
+    merchant: HoldoutMetrics
+    oof: CalibratedPredictionMetrics
+    p99_ms: float
+    labels: list[str]
+    class_counts: dict[str, int]
+    unsupported_classes: dict[str, int]
+    confidence_diagnostics: dict[str, Any]
+    ranking: RankingMetrics
+
+
+class GateResult(TypedDict):
+    passed: bool
+    checks: dict[str, bool]
+
+
+class CandidateGates(TypedDict):
+    technical: GateResult
+    thesis: GateResult
+    regression: float | None
+    promotable: bool
+    level: str
+
+
+class BenchmarkEvaluation(TypedDict):
+    estimator: str
+    feature_set: str
+    benchmark_only: bool
+    promotable: bool
+    stratified_cv: PredictionMetrics
+    time: PredictionMetrics
+    merchant: PredictionMetrics
+    p99_ms: float
+
+
 @dataclass(frozen=True)
 class CandidateEvaluation:
     estimator: str
     feature_set: str
     pipeline: Any
-    metrics: dict[str, Any]
+    metrics: CandidateMetrics
     confidence_policy: dict[str, Any]
     confidence_diagnostics: dict[str, Any]
-    gates: dict[str, Any]
+    gates: CandidateGates
 
 
 @dataclass(frozen=True)
@@ -181,8 +229,9 @@ def development_split_ids(df: pd.DataFrame) -> dict[str, set[int]]:
     label_set = set(labels)
     ordered = supported.sort_values(["booking_date", "transaction_id"], kind="stable")
     time_size = max(1, math.ceil(len(ordered) * 0.20))
-    time_frame = ordered.tail(time_size)
-    time_train = ordered.iloc[:-time_size]
+    time_cutoff = ordered.iloc[-time_size]["booking_date"]
+    time_frame = ordered[ordered["booking_date"] >= time_cutoff]
+    time_train = ordered[ordered["booking_date"] < time_cutoff]
     if (
         set(time_frame["category"].astype(str)) != label_set
         or set(time_train["category"].astype(str)) != label_set
@@ -228,9 +277,24 @@ def prepare_experiment(
     resolved_splits = (
         split_ids if split_ids is not None else development_split_ids(supported)
     )
+    available_ids = set(supported["transaction_id"].astype(int))
+    for name in ("time", "merchant"):
+        ids = resolved_splits.get(name, set())
+        if not ids or not ids.issubset(available_ids):
+            raise ValidationSplitNotFeasible(
+                f"validation_split_not_feasible: {name} holdout is empty or missing rows"
+            )
+    time_rows = supported[supported["transaction_id"].isin(resolved_splits["time"])]
+    time_cutoff = time_rows["booking_date"].min()
+    groups = _merchant_groups(supported)
+    held_out_groups = groups[supported["transaction_id"].isin(resolved_splits["merchant"])]
     excluded = set().union(*resolved_splits.values())
+    # IDs alone are insufficient once new labels arrive after the freeze.
+    # Preserve both temporal and merchant separation for every candidate.
     training_pool = supported[
         ~supported["transaction_id"].astype(int).isin(excluded)
+        & (supported["booking_date"] < time_cutoff)
+        & ~groups.isin(held_out_groups)
     ].reset_index(drop=True)
     if training_pool.empty or set(training_pool["category"].astype(str)) != set(labels):
         raise ValidationSplitNotFeasible(
@@ -307,7 +371,6 @@ def derive_confidence_policy(
         if int(predicted_label.sum()) < 20:
             per_category[label] = {
                 **global_point,
-                "threshold": global_point["threshold"],
                 "inherited_global": True,
             }
             continue
@@ -321,7 +384,6 @@ def derive_confidence_policy(
         if int(point["covered"] or 0) < 10:
             point = {
                 **global_point,
-                "threshold": global_point["threshold"],
                 "inherited_global": True,
             }
         else:
@@ -348,55 +410,13 @@ def _policy_thresholds(policy: dict[str, Any], predicted: np.ndarray) -> np.ndar
     )
 
 
-def _calibration_metrics(
-    truth: np.ndarray,
-    predicted: np.ndarray,
-    proba: np.ndarray,
-    classes: np.ndarray,
-) -> dict[str, Any]:
-    class_index = {str(label): index for index, label in enumerate(classes)}
-    one_hot = np.zeros_like(proba, dtype=float)
-    for row_index, label in enumerate(truth):
-        one_hot[row_index, class_index[str(label)]] = 1.0
-    confidence = proba.max(axis=1)
-    correct = (truth == predicted).astype(float)
-    bins: list[dict[str, float | int]] = []
-    ece = 0.0
-    for lower in np.linspace(0.0, 0.9, 10):
-        upper = lower + 0.1
-        mask = (confidence >= lower) & (
-            confidence <= upper if upper >= 1.0 else confidence < upper
-        )
-        count = int(mask.sum())
-        if not count:
-            continue
-        accuracy = float(correct[mask].mean())
-        mean_confidence = float(confidence[mask].mean())
-        ece += (count / len(truth)) * abs(accuracy - mean_confidence)
-        bins.append(
-            {
-                "lower": float(lower),
-                "upper": float(min(upper, 1.0)),
-                "count": count,
-                "accuracy": accuracy,
-                "mean_confidence": mean_confidence,
-            }
-        )
-    return {
-        "log_loss": float(log_loss(truth, proba, labels=list(classes))),
-        "brier_multiclass": float(np.mean(np.sum((proba - one_hot) ** 2, axis=1))),
-        "ece": float(ece),
-        "reliability_bins": bins,
-    }
-
-
 def _slice_metrics(
     pipeline: Any,
     frame: pd.DataFrame,
     feature_selector: Any,
     policy: dict[str, Any],
     labels: list[str],
-) -> dict[str, Any]:
+) -> HoldoutMetrics:
     X = feature_selector(frame)  # noqa: N806
     truth = frame["category"].astype(str).to_numpy()
     predicted = np.asarray(pipeline.predict(X)).astype(str)
@@ -405,31 +425,8 @@ def _slice_metrics(
     thresholds = _policy_thresholds(policy, predicted)
     covered_mask = (confidence >= thresholds) & (predicted != Category.OTHER.value)
     covered = int(covered_mask.sum())
-    report = classification_report(
-        truth,
-        predicted,
-        labels=labels,
-        output_dict=True,
-        zero_division=0,
-    )
     return {
-        "n": int(len(frame)),
-        "macro_f1": float(
-            f1_score(
-                truth, predicted, labels=labels, average="macro", zero_division=0
-            )
-        ),
-        "weighted_f1": float(
-            f1_score(
-                truth,
-                predicted,
-                labels=labels,
-                average="weighted",
-                zero_division=0,
-            )
-        ),
-        "per_category": report,
-        "confusion_matrix": confusion_matrix(truth, predicted, labels=labels).tolist(),
+        **prediction_metrics(truth, predicted, labels=labels),
         "coverage": float(covered / len(frame)),
         "covered": covered,
         "accuracy_on_covered": (
@@ -437,51 +434,9 @@ def _slice_metrics(
             if covered
             else None
         ),
-        "calibration": _calibration_metrics(
+        "calibration": calibration_metrics(
             truth, predicted, proba, np.asarray(pipeline.classes_)
         ),
-    }
-
-
-def _prediction_metrics(
-    truth: np.ndarray,
-    predicted: np.ndarray,
-    *,
-    labels: list[str],
-) -> dict[str, Any]:
-    report = classification_report(
-        truth,
-        predicted,
-        labels=labels,
-        output_dict=True,
-        zero_division=0,
-    )
-    return {
-        "n": int(len(truth)),
-        "macro_f1": float(
-            f1_score(
-                truth,
-                predicted,
-                labels=labels,
-                average="macro",
-                zero_division=0,
-            )
-        ),
-        "weighted_f1": float(
-            f1_score(
-                truth,
-                predicted,
-                labels=labels,
-                average="weighted",
-                zero_division=0,
-            )
-        ),
-        "per_category": report,
-        "confusion_matrix": confusion_matrix(
-            truth,
-            predicted,
-            labels=labels,
-        ).tolist(),
     }
 
 
@@ -493,10 +448,10 @@ def evaluate_pipeline_slices(
     split_ids: dict[str, set[int]],
     confidence_policy: dict[str, Any],
     labels: list[str],
-) -> dict[str, Any]:
+) -> dict[str, HoldoutMetrics]:
     """Evaluate an already fitted pipeline on the exact candidate holdouts."""
     _, feature_selector = _builders(feature_set)
-    slices: dict[str, Any] = {}
+    slices: dict[str, HoldoutMetrics] = {}
     for split in ("time", "merchant"):
         ids = split_ids.get(split, set())
         frame = df[df["transaction_id"].astype(int).isin(ids)].reset_index(drop=True)
@@ -548,7 +503,7 @@ def evaluate_benchmark(
     estimator: str,
     feature_set: str,
     split_ids: dict[str, set[int]],
-) -> dict[str, Any]:
+) -> BenchmarkEvaluation:
     """Evaluate a research-only model without creating a promotable artifact."""
     benchmark_variant = estimator in BENCHMARK_ONLY_ESTIMATORS or (
         estimator in PROMOTABLE_ESTIMATORS and feature_set != "baseline"
@@ -568,7 +523,7 @@ def evaluate_benchmark(
     ).astype(str)
     pipeline = pipeline_builder(ESTIMATORS[estimator]())
     pipeline.fit(X_train, y_train)
-    slices: dict[str, Any] = {}
+    slices: dict[str, PredictionMetrics] = {}
     for split in ("time", "merchant"):
         frame = df[
             df["transaction_id"].astype(int).isin(split_ids.get(split, set()))
@@ -577,13 +532,13 @@ def evaluate_benchmark(
             raise ValueError(f"Empty {split} holdout.")
         truth = frame["category"].astype(str).to_numpy()
         predicted = np.asarray(pipeline.predict(feature_selector(frame))).astype(str)
-        slices[split] = _prediction_metrics(truth, predicted, labels=labels)
+        slices[split] = prediction_metrics(truth, predicted, labels=labels)
     return {
         "estimator": estimator,
         "feature_set": feature_set,
         "benchmark_only": True,
         "promotable": False,
-        "stratified_cv": _prediction_metrics(
+        "stratified_cv": prediction_metrics(
             y_train.to_numpy(), oof_predicted, labels=labels
         ),
         "time": slices["time"],
@@ -684,15 +639,14 @@ def evaluate_candidate(
         )
         if value is not None
     ]
-    metrics = {
+    metrics: CandidateMetrics = {
         "time": slices["time"],
         "merchant": slices["merchant"],
         "oof": {
-            "n": len(train),
-            **_prediction_metrics(
+            **prediction_metrics(
                 y_train.to_numpy(), oof_predicted, labels=labels
             ),
-            "calibration": _calibration_metrics(
+            "calibration": calibration_metrics(
                 y_train.to_numpy(),
                 oof_predicted,
                 oof_proba,
@@ -717,6 +671,9 @@ def evaluate_candidate(
             ),
         },
     }
+    runtime_variant = (
+        estimator in PROMOTABLE_ESTIMATORS and feature_set in PROMOTABLE_FEATURE_SETS
+    )
     return CandidateEvaluation(
         estimator=estimator,
         feature_set=feature_set,
@@ -728,9 +685,11 @@ def evaluate_candidate(
             "technical": {"passed": technical_passed, "checks": technical_checks},
             "thesis": {"passed": thesis_passed, "checks": thesis_checks},
             "regression": regression,
-            "promotable": technical_passed,
+            "promotable": technical_passed and runtime_variant,
             "level": (
-                "thesis_ready"
+                "benchmark_only"
+                if not runtime_variant
+                else "thesis_ready"
                 if thesis_passed
                 else "technical"
                 if technical_passed
@@ -744,9 +703,9 @@ def rank_evaluations(evaluations: list[CandidateEvaluation]) -> list[CandidateEv
     return sorted(
         evaluations,
         key=lambda result: (
-            -float(result.metrics["ranking"]["worst_macro_f1"]),
-            -float(result.metrics["ranking"]["mean_macro_f1"]),
-            -float(result.metrics["ranking"]["mean_covered_accuracy"]),
-            float(result.metrics["p99_ms"]),
+            -result.metrics["ranking"]["worst_macro_f1"],
+            -result.metrics["ranking"]["mean_macro_f1"],
+            -result.metrics["ranking"]["mean_covered_accuracy"],
+            result.metrics["p99_ms"],
         ),
     )

@@ -20,8 +20,7 @@ from finance.domain.models import (
     Transaction,
 )
 from finance.ml.classification import predict as predict_mod
-from finance.ml.classification.artifacts import build_model_artifact
-from finance.ml.classification.lifecycle import _artifact_sha256
+from finance.ml.classification.artifacts import artifact_sha256, build_model_artifact
 from finance.ml.review_queue import review_queue
 
 
@@ -121,7 +120,7 @@ def _register_active_model(
             feature_set="baseline",
             status="active",
             artifact_path=str(path),
-            artifact_sha256=_artifact_sha256(path),
+            artifact_sha256=artifact_sha256(path),
             dataset_fingerprint="test-fingerprint",
             metrics={},
             gates={"promotable": True},

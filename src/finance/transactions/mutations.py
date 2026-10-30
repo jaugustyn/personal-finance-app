@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from finance.db import command_transaction
 from finance.domain.models import MlFeedbackEvent, Transaction
+from finance.ml.classification.evaluation_sets import invalidate_for_transactions
 from finance.ml.classification.policy import (
     DEFAULT_POLICY,
     ClassificationPolicy,
@@ -154,6 +155,7 @@ def bulk_delete(session: Session, ids: list[int]) -> int:
     if not ids:
         return 0
     with command_transaction(session):
+        invalidate_for_transactions(session, ids, reason="frozen_transaction_deleted")
         session.execute(
             update(MlFeedbackEvent)
             .where(MlFeedbackEvent.transaction_id.in_(ids))
@@ -168,6 +170,7 @@ def delete_transaction(session: Session, tx_id: int) -> bool:
     if tx is None:
         return False
     with command_transaction(session):
+        invalidate_for_transactions(session, [tx_id], reason="frozen_transaction_deleted")
         session.execute(
             update(MlFeedbackEvent)
             .where(MlFeedbackEvent.transaction_id == tx_id)

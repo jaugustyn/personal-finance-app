@@ -6,6 +6,7 @@ from typing import Any
 import pandas as pd
 
 from finance.ml.classification.candidate_evaluation import (
+    CandidateEvaluation,
     ValidationSplitNotFeasible,
     candidate_variants,
     development_split_ids,
@@ -23,26 +24,19 @@ from finance.ml.classification.evaluation import (
 )
 
 
-def _mean(values: list[object]) -> float | None:
-    numeric = [float(value) for value in values if isinstance(value, int | float)]
-    return sum(numeric) / len(numeric) if numeric else None
-
-
-def _model_report(result: Any) -> dict[str, Any]:
+def _model_report(result: CandidateEvaluation) -> dict[str, Any]:
     metrics = result.metrics
     time_metrics = metrics["time"]
     merchant_metrics = metrics["merchant"]
     return {
         "macro_f1": metrics["ranking"]["mean_macro_f1"],
-        "weighted_f1": _mean(
-            [time_metrics.get("weighted_f1"), merchant_metrics.get("weighted_f1")]
-        ),
-        "confusion_matrix": time_metrics.get("confusion_matrix", []),
-        "labels": metrics.get("labels", []),
+        "weighted_f1": (time_metrics["weighted_f1"] + merchant_metrics["weighted_f1"]) / 2,
+        "confusion_matrix": time_metrics["confusion_matrix"],
+        "labels": metrics["labels"],
         "time": time_metrics,
         "merchant": merchant_metrics,
-        "oof": metrics.get("oof", {}),
-        "p99_ms": metrics.get("p99_ms"),
+        "oof": metrics["oof"],
+        "p99_ms": metrics["p99_ms"],
         "gates": result.gates,
         "runtime_confidence_policy": result.confidence_policy,
         "oof_confidence_diagnostics": result.confidence_diagnostics,

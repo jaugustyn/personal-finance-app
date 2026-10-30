@@ -24,6 +24,7 @@ from finance.ml.classification.dataset import load_training_set  # noqa: E402
 from finance.ml.classification.evaluation_sets import (  # noqa: E402
     current_evaluation_set,
     split_transaction_ids,
+    validate_evaluation_set,
 )
 from finance.ml.classification.predict import (  # noqa: E402
     active_classification_policy,
@@ -113,9 +114,14 @@ def main(argv: list[str] | None = None) -> int:
         evaluation_set = current_evaluation_set(session)
         if evaluation_set is None:
             raise SystemExit("Freeze a private evaluation set before the LLM experiment.")
-        split_ids = split_transaction_ids(session, evaluation_set.id)
         df = load_training_set(session)
+        if not validate_evaluation_set(session, evaluation_set, df):
+            session.commit()
+            raise SystemExit("Frozen evaluation set is no longer valid; freeze a new set.")
+        split_ids = split_transaction_ids(session, evaluation_set.id)
         artifact = require_registered_active_artifact(session)
+        if artifact.get("evaluation_set_id") != evaluation_set.id:
+            raise SystemExit("Train and activate a model evaluated on the current frozen set.")
     policy = active_classification_policy(artifact=artifact)
     slices = {
         name: _evaluate_slice(

@@ -10,7 +10,7 @@ from uuid import uuid4
 import numpy as np
 import pandas as pd
 from sklearn.model_selection import StratifiedGroupKFold
-from sqlalchemy import select
+from sqlalchemy import Select, select
 from sqlalchemy.orm import Session
 
 from finance.domain.enums import Category
@@ -41,6 +41,7 @@ def dataset_fingerprint(df: pd.DataFrame) -> str:
         "category",
         "category_confirmation_method",
         "category_confirmed_at",
+        "category_origin_ref",
         "booking_date",
         "merchant",
         "title",
@@ -51,7 +52,7 @@ def dataset_fingerprint(df: pd.DataFrame) -> str:
         "direction",
         "transaction_type",
     )
-    digest = hashlib.sha256(b"category_dataset_v3\0")
+    digest = hashlib.sha256(b"category_dataset_v4\0")
     for row in df.sort_values("transaction_id").itertuples(index=False):
         values = []
         for column in columns:
@@ -102,14 +103,6 @@ def split_transaction_ids(session: Session, evaluation_set_id: str) -> dict[str,
     return out
 
 
-def excluded_training_ids(session: Session) -> set[int]:
-    current = current_evaluation_set(session)
-    if current is None:
-        return set()
-    split_ids = split_transaction_ids(session, current.id)
-    return set().union(*split_ids.values())
-
-
 def thesis_data_readiness(df: pd.DataFrame) -> dict[str, object]:
     categories = [item.value for item in Category]
     counts = df["category"].astype(str).value_counts().to_dict() if not df.empty else {}
@@ -152,7 +145,8 @@ def _has_holdout_support(frame: pd.DataFrame) -> bool:
 def _time_holdout(df: pd.DataFrame) -> pd.DataFrame:
     ordered = df.sort_values(["booking_date", "transaction_id"], kind="stable")
     size = max(1, math.ceil(len(ordered) * HOLDOUT_FRACTION))
-    holdout = ordered.tail(size).copy()
+    cutoff = ordered.iloc[-size]["booking_date"]
+    holdout = ordered[ordered["booking_date"] >= cutoff].copy()
     if not _has_holdout_support(holdout):
         raise EvaluationSetError(
             "Time holdout does not contain at least 5 examples of every category."
@@ -205,9 +199,12 @@ def _merchant_holdout(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def freeze_evaluation_set(session: Session) -> MlEvaluationSet:
-    if current_evaluation_set(session) is not None:
-        raise EvaluationSetError("An active evaluation set already exists.")
     df = load_training_set(session)
+    current = current_evaluation_set(session)
+    if current is not None:
+        if validate_evaluation_set(session, current, df):
+            raise EvaluationSetError("An active evaluation set already exists.")
+        session.commit()
     readiness = thesis_data_readiness(df)
     if not readiness["ready"]:
         raw_failures = readiness.get("failures", [])
@@ -232,6 +229,10 @@ def freeze_evaluation_set(session: Session) -> MlEvaluationSet:
             "random_state": HOLDOUT_RANDOM_STATE,
             "time_support": _support(time_holdout),
             "merchant_support": _support(merchant_holdout),
+            "split_fingerprints": {
+                name: dataset_fingerprint(df[df["transaction_id"].isin(frame["transaction_id"])])
+                for name, frame in (("time", time_holdout), ("merchant", merchant_holdout))
+            },
         },
     )
     session.add(evaluation_set)
@@ -271,13 +272,23 @@ def invalidate_for_label_change(
     *,
     reason: str = "frozen_label_changed",
 ) -> bool:
+    return invalidate_for_transactions(session, [transaction_id], reason=reason)
+
+
+def invalidate_for_transactions(
+    session: Session,
+    transaction_ids: list[int] | Select[tuple[int]],
+    *,
+    reason: str,
+) -> bool:
+    """Invalidate atomically with the caller's transaction mutation; do not commit."""
     evaluation_set = current_evaluation_set(session)
     if evaluation_set is None:
         return False
     member_exists = session.execute(
         select(MlEvaluationMember.id)
         .where(MlEvaluationMember.evaluation_set_id == evaluation_set.id)
-        .where(MlEvaluationMember.transaction_id == transaction_id)
+        .where(MlEvaluationMember.transaction_id.in_(transaction_ids))
         .limit(1)
     ).scalar_one_or_none()
     if member_exists is None:
@@ -288,11 +299,54 @@ def invalidate_for_label_change(
     return True
 
 
+def validate_evaluation_set(
+    session: Session,
+    evaluation_set: MlEvaluationSet,
+    df: pd.DataFrame,
+) -> bool:
+    """Check frozen features and membership; the caller persists invalidation."""
+    if evaluation_set.status != "active":
+        return False
+    fingerprints = evaluation_set.config.get("split_fingerprints")
+    reason = None
+    if not isinstance(fingerprints, dict) or not all(
+        fingerprints.get(name) for name in ("time", "merchant")
+    ):
+        reason = "frozen_snapshot_missing"
+    else:
+        members = evaluation_members(session, evaluation_set.id)
+        available_ids = set(df["transaction_id"].astype(int)) if not df.empty else set()
+        for name in ("time", "merchant"):
+            ids = {member.transaction_id for member in members if member.split == name}
+            if not ids or None in ids or not ids.issubset(available_ids):
+                reason = "frozen_members_missing"
+                break
+            frame = df[df["transaction_id"].isin(ids)]
+            if dataset_fingerprint(frame) != fingerprints[name]:
+                reason = "frozen_data_changed"
+                break
+    if reason is None:
+        return True
+    evaluation_set.status = "invalidated"
+    evaluation_set.invalidated_at = datetime.now(UTC)
+    evaluation_set.invalidation_reason = reason
+    return False
+
+
 def evaluation_set_summary(session: Session) -> dict[str, object]:
     evaluation_set = current_evaluation_set(session)
+    df = load_training_set(session)
     if evaluation_set is None:
-        readiness = thesis_data_readiness(load_training_set(session))
+        readiness = thesis_data_readiness(df)
         return {"active": False, "data_readiness": readiness}
+    if not validate_evaluation_set(session, evaluation_set, df):
+        session.commit()
+        return {
+            "active": False,
+            "id": evaluation_set.id,
+            "invalidation_reason": evaluation_set.invalidation_reason,
+            "data_readiness": thesis_data_readiness(df),
+        }
     ids = split_transaction_ids(session, evaluation_set.id)
     return {
         "active": True,

@@ -23,6 +23,7 @@ from finance.ml.classification.artifacts import (
 )
 from finance.ml.classification.candidate_evaluation import (
     ALL_LABELS,
+    BenchmarkEvaluation,
     CandidateEvaluation,
     candidate_variants,
     development_split_ids,
@@ -36,10 +37,13 @@ from finance.ml.classification.candidate_evaluation import (
 )
 from finance.ml.classification.dataset import load_training_set
 from finance.ml.classification.evaluation_sets import (
+    EvaluationSetError,
     current_evaluation_set,
     dataset_fingerprint,
     split_transaction_ids,
+    validate_evaluation_set,
 )
+from finance.ml.classification.metrics import HoldoutMetrics
 from finance.ml.classification.predict import load_registered_artifact
 
 CANDIDATES_DIR = Path("data/models/candidates")
@@ -171,7 +175,7 @@ def _active_comparison(
     df: pd.DataFrame,
     split_ids: dict[str, set[int]],
     evaluation_set_id: str | None,
-) -> dict[str, object] | None:
+) -> dict[str, HoldoutMetrics] | None:
     if evaluation_set_id is None:
         return None
     active = session.execute(
@@ -211,11 +215,6 @@ def _active_comparison(
         raise ValueError(
             "The active model cannot be evaluated as the regression baseline."
         ) from exc
-
-
-def _artifact_sha256(path: Path) -> str:
-    """Backward-compatible internal alias used by existing callers and tests."""
-    return artifact_sha256(path)
 
 
 def _serializable_result(result: CandidateEvaluation) -> dict[str, object]:
@@ -260,7 +259,7 @@ def _write_candidate_artifact(
     )
     joblib.dump(artifact, temporary_path)
     temporary_path.replace(final_path)
-    return final_path, _artifact_sha256(final_path)
+    return final_path, artifact_sha256(final_path)
 
 
 def _finish_failed_job(
@@ -305,10 +304,17 @@ def run_training_job(
             if job is None:
                 return
             df = load_training_set(session)
-            if df.empty:
-                raise ValueError("No explicitly confirmed category labels are available.")
             fingerprint = dataset_fingerprint(df)
             evaluation_set = current_evaluation_set(session)
+            if evaluation_set is not None and not validate_evaluation_set(
+                session, evaluation_set, df,
+            ):
+                session.commit()
+                raise EvaluationSetError(
+                    "Frozen evaluation set is no longer valid; freeze a new set before retrying."
+                )
+            if df.empty:
+                raise ValueError("No explicitly confirmed category labels are available.")
             evaluation_set_id = evaluation_set.id if evaluation_set else None
             split_ids = (
                 split_transaction_ids(session, evaluation_set.id)
@@ -324,7 +330,7 @@ def run_training_job(
             requested = list(job.requested_variants or [])
 
         evaluations: list[CandidateEvaluation] = []
-        benchmarks: list[dict[str, Any]] = []
+        benchmarks: list[BenchmarkEvaluation] = []
         failures: list[dict[str, str]] = []
         for variant in requested:
             estimator = str(variant["estimator"])
@@ -475,7 +481,7 @@ def activate_model_version(session: Session, model_id: str) -> MlModelVersion:
     if not version.promotable:
         raise ModelActivationError("Model version did not pass the technical gates.")
     path = Path(version.artifact_path)
-    if not path.exists() or _artifact_sha256(path) != version.artifact_sha256:
+    if not path.exists() or artifact_sha256(path) != version.artifact_sha256:
         raise ModelActivationError("Candidate artifact checksum mismatch.")
     try:
         artifact = joblib.load(path)
