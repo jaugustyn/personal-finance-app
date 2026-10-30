@@ -5,7 +5,7 @@ import csv
 import io
 import json
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
 import pytest
@@ -29,6 +29,14 @@ DATE_TO = date(2026, 4, 30)
 EUR_RATE_DATE = date(2026, 4, 5)
 MAIN_ACCOUNT_NAME = "Rachunek główny"
 REVOLUT_ACCOUNT_NAME = "Revolut"
+
+
+def _as_utc(value: datetime) -> datetime:
+    # Synthetic fixture times use UTC; SQLite drops timezone information.
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
+
 
 GENERIC_COLUMN_MAP = {
     "date": "Date",
@@ -463,11 +471,11 @@ def assert_transaction_contract(
         .order_by(Transaction.booking_datetime)
     ).all()
     expected_revolut_times = {
-        transaction.booking_datetime
+        _as_utc(transaction.booking_datetime)
         for transaction in REFERENCE_SCENARIO.transactions
         if transaction.source == "revolut"
     }
-    assert set(revolut_times) == expected_revolut_times
+    assert {_as_utc(value) for value in revolut_times} == expected_revolut_times
 
 
 def assert_stats_contract(client: TestClient) -> None:
@@ -613,10 +621,12 @@ def assert_export_contract(client: TestClient) -> None:
     assert shopping["notes"].startswith("'=WEBSERVICE")
     assert json.loads(shopping["tags"]) == ["referencyjna", "ważne"]
     revolut_times = {
-        row["booking_datetime"] for row in rows if row["source"] == "revolut"
+        _as_utc(datetime.fromisoformat(row["booking_datetime"]))
+        for row in rows
+        if row["source"] == "revolut"
     }
     expected_revolut_times = {
-        transaction.booking_datetime.isoformat(sep=" ")
+        _as_utc(transaction.booking_datetime)
         for transaction in REFERENCE_SCENARIO.transactions
         if transaction.source == "revolut"
     }

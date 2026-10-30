@@ -108,6 +108,18 @@ uv run python scripts\inspect_report.py --profile classification-strict
 Aggregate outputs are written to `data/reports`. Row-level anomaly review,
 model artifacts and database contents remain local.
 
+For the separate thesis feature experiment, prepare a valid frozen evaluation
+set and run:
+
+```powershell
+uv run python scripts/compare_classification_features.py --from-db
+```
+
+This command compares the two classifiers on baseline and extended features
+without changing the registry or active model. Its reports are development
+validation, not a final test; follow the
+[thesis experiment protocol](thesis-experiment-protocol.md) for that distinction.
+
 ## 6. Quality checks
 
 Backend:
@@ -122,18 +134,28 @@ uv run python scripts\check_data_integrity.py
 ```
 
 The fast reference financial scenario is part of the regular test suite.
-PostgreSQL integration tests are excluded from a plain `pytest` run. Their real
-import and deduplication path requires a dedicated database whose name ends
-with `_test`:
+API tests share an isolated SQLite session factory for requests and background
+jobs; their clients are closed before disposing the database. Statistics and
+successful authentication checks require HTTP 200, including on an empty
+database. A server error must fail the test.
+PostgreSQL integration tests are excluded from a plain `pytest` run. They cover
+real imports, deduplication, foreign keys and atomic deletion, including rollback
+after a failed commit. They require a dedicated database whose name ends with
+`_test`:
 
 ```powershell
 $env:TEST_DATABASE_URL="postgresql+psycopg://finance:finance@localhost:5432/finance_test"
 $env:DATABASE_URL=$env:TEST_DATABASE_URL
-uv run pytest tests\integration\test_reference_financial_scenario_postgres.py -m postgres_integration --no-cov
+uv run alembic upgrade head
+uv run alembic check
+uv run pytest tests/integration -m postgres_integration --no-cov
 ```
 
 The integration fixture applies Alembic migrations and clears that test
-database. It refuses to run against a database without the `_test` suffix.
+database. It refuses to run against a non-PostgreSQL database or a database
+without the `_test` suffix. Connections use UTC so synthetic fixture timestamps
+have a stable interpretation. Fixed-charge and subscription API tests also use
+explicit reference dates rather than the machine's current date.
 
 Frontend:
 
@@ -180,8 +202,9 @@ code `0` means no critical inconsistency; exit code `1` means the reported IDs
 require review or an explicit currency recomputation.
 
 CI runs the regular backend and frontend suites for every pull request. The
-PostgreSQL reference scenario and migration checks remain explicit local
-integration checks. Docker images are rebuilt only after Docker or dependency
-changes. Dependency security audits run after relevant lockfile changes,
+backend job also starts a disposable PostgreSQL 16 service, applies migrations,
+checks for schema drift and runs all tests marked `postgres_integration`.
+Docker images are rebuilt only after Docker or dependency changes.
+Dependency security audits run after relevant lockfile changes,
 weekly and on explicit request. The Docker workflow also scans both runtime
 images for fixed critical vulnerabilities.
