@@ -92,6 +92,7 @@ export function ImportsHistory() {
     }
     if (normalized === "pekao") return "Pekao";
     if (normalized === "revolut") return "Revolut";
+    if (normalized === "credit_agricole") return "Credit Agricole";
     return source;
   };
   const columns: DataTableColumn<ImportHistoryRow>[] = [

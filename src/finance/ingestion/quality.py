@@ -1,7 +1,6 @@
 """Deterministic quality checks for transaction imports."""
 from __future__ import annotations
 
-import csv
 import io
 from collections import Counter, defaultdict
 
@@ -13,10 +12,10 @@ from finance.domain.dto import TransactionDTO
 from finance.domain.models import Transaction
 from finance.ingestion.base import BankParser
 from finance.ingestion.csv_utils import (
+    csv_dict_reader,
     decode_csv,
+    parse_amount_with_currency,
     parse_date,
-    parse_decimal,
-    sniff_delimiter,
 )
 from finance.ingestion.generic import GenericCsvParser, auto_detect_columns
 from finance.ingestion.schema import REQUIRED_IMPORT_FIELDS, clean_column_map
@@ -125,17 +124,13 @@ def _csv_data_row_count(raw: bytes) -> int:
     text = decode_csv(raw)
     if not text.strip():
         return 0
-    delimiter = sniff_delimiter(text)
-    reader = csv.DictReader(io.StringIO(text), delimiter=delimiter)
-    return sum(1 for _ in reader)
+    return sum(1 for _ in csv_dict_reader(text))
 
 
 def _generic_mapping(parser: GenericCsvParser, raw: bytes) -> dict[str, str]:
     if parser.column_map:
         return clean_column_map(parser.column_map)
-    text = decode_csv(raw)
-    delimiter = sniff_delimiter(text)
-    reader = csv.DictReader(io.StringIO(text), delimiter=delimiter)
+    reader = csv_dict_reader(decode_csv(raw))
     return {
         key: value
         for key, value in auto_detect_columns(list(reader.fieldnames or [])).items()
@@ -147,9 +142,7 @@ def _generic_row_issues(
     raw: bytes,
     mapping: dict[str, str],
 ) -> list[ImportQualityIssue]:
-    text = decode_csv(raw)
-    delimiter = sniff_delimiter(text)
-    reader = csv.DictReader(io.StringIO(text), delimiter=delimiter)
+    reader = csv_dict_reader(decode_csv(raw))
     headers = set(reader.fieldnames or [])
     missing_required = sorted(REQUIRED_IMPORT_FIELDS - set(mapping))
     issues: list[ImportQualityIssue] = [
@@ -186,7 +179,7 @@ def _generic_row_issues(
             row_hits[("invalid_date", "error")].append(index)
 
         raw_amount = (row.get(amount_col, "") or "").strip()
-        amount = parse_decimal(raw_amount)
+        amount, amount_currency = parse_amount_with_currency(raw_amount)
         if not raw_amount:
             row_hits[("missing_amount", "error")].append(index)
         elif amount is None:
@@ -196,8 +189,8 @@ def _generic_row_issues(
 
         raw_currency = (
             (row.get(currency_col, "") or "").strip().upper() if currency_col else ""
-        )
-        if not currency_col or not raw_currency:
+        ) or (amount_currency or "")
+        if not raw_currency:
             row_hits[("missing_currency", "warning")].append(index)
         elif len(raw_currency) != 3 or not raw_currency.isalpha():
             row_hits[("invalid_currency", "warning")].append(index)

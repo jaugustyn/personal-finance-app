@@ -55,6 +55,7 @@ class BankSource(StrEnum):
     PKO = "pko"
     PEKAO = "pekao"
     REVOLUT = "revolut"
+    CREDIT_AGRICOLE = "credit_agricole"
     MBANK = "mbank"
     ING = "ing"
     MANUAL = "manual"

@@ -15,8 +15,6 @@ deterministic mapping; the generic parser is the fallback / "any CSV" entry.
 """
 from __future__ import annotations
 
-import csv
-import io
 from dataclasses import dataclass
 from datetime import datetime
 from typing import IO
@@ -26,9 +24,10 @@ from finance.domain.dto import TransactionDTO
 from finance.domain.enums import BankSource, TransactionDirection
 from finance.ingestion.base import BankParser, ParseError
 from finance.ingestion.csv_utils import (
+    csv_dict_reader,
     decode_csv,
+    parse_amount_with_currency,
     parse_date,
-    parse_decimal,
     sniff_delimiter,
 )
 from finance.ingestion.schema import REQUIRED_IMPORT_FIELDS, clean_column_map
@@ -112,7 +111,7 @@ def preview_csv(stream: IO[bytes], *, max_rows: int = 5) -> CsvPreview:
     text = decode_csv(raw)
     encoding = "utf-8" if raw.startswith(b"\xef\xbb\xbf") or _try("utf-8", raw) else "cp1250"
     delimiter = sniff_delimiter(text)
-    reader = csv.DictReader(io.StringIO(text), delimiter=delimiter)
+    reader = csv_dict_reader(text, delimiter)
     headers = list(reader.fieldnames or [])
     rows: list[dict[str, str]] = []
     for i, row in enumerate(reader):
@@ -153,9 +152,7 @@ class GenericCsvParser(BankParser):
         self.column_map = column_map or {}
 
     def parse(self, stream: IO[bytes], filename: str = "") -> list[TransactionDTO]:
-        text = decode_csv(stream.read())
-        delimiter = sniff_delimiter(text)
-        reader = csv.DictReader(io.StringIO(text), delimiter=delimiter)
+        reader = csv_dict_reader(decode_csv(stream.read()))
         headers = list(reader.fieldnames or [])
         if not headers:
             raise ParseError("Empty CSV (no header row).")
@@ -184,13 +181,15 @@ class GenericCsvParser(BankParser):
             dt = parse_date(row.get(date_col, "") or "")
             if dt is None:
                 continue
-            amount = parse_decimal(row.get(amount_col, "") or "")
+            amount, amount_currency = parse_amount_with_currency(row.get(amount_col, "") or "")
             if amount is None:
                 continue
             direction = (
                 TransactionDirection.CREDIT if amount > 0 else TransactionDirection.DEBIT
             )
-            currency = (row.get(currency_col, "PLN") if currency_col else "PLN").strip().upper()
+            currency = (
+                (row.get(currency_col, "") if currency_col else "") or amount_currency or "PLN"
+            ).strip().upper()
             merchant = (row.get(merchant_col, "") if merchant_col else "").strip()
             title = (row.get(title_col, "") if title_col else "").strip()
             raw_category = (row.get(category_col, "") if category_col else "").strip() or None

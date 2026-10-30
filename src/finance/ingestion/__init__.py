@@ -1,5 +1,6 @@
 """Bank statement parsers + ingestion service."""
 # Import parser modules so their @register_parser decorators run.
+from finance.ingestion import credit_agricole as _credit_agricole  # noqa: F401, E402
 from finance.ingestion import pekao as _pekao  # noqa: F401, E402
 from finance.ingestion import revolut as _revolut  # noqa: F401, E402
 from finance.ingestion.base import BankParser, ParseError
