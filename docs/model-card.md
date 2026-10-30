@@ -65,9 +65,27 @@ Two primary holdouts have equal importance:
 - a time holdout representing later transactions;
 - a grouped holdout representing unseen merchants.
 
+The time boundary includes complete booking dates. The shared training pool
+contains only rows before that boundary and excludes every merchant group
+present in the merchant holdout, including newly confirmed transactions added
+after a freeze. Both slices may overlap with each other, but neither overlaps
+the training pool.
+
+Frozen sets store separate fingerprints of both slices, including features
+and confirmation provenance. Missing or changed evaluation data invalidates
+the set before training or the explicit LLM experiment. Transaction/import
+deletion invalidates membership atomically with deletion. Notes and changes
+outside the evaluation slices do not invalidate a set. Older frozen sets
+without slice fingerprints must be explicitly frozen again; no snapshot is
+reconstructed from potentially changed data.
+
 OOF predictions from stratified CV provide calibration diagnostics only.
 Candidate ranking uses the lower holdout macro-F1 first, followed by mean
 macro-F1, covered accuracy and latency.
+
+Because these holdouts guide model selection, they are validation sets. A
+final thesis evaluation needs a separate untouched test set after model and
+feature choices have been fixed.
 
 Reports include macro-F1, weighted-F1, per-class metrics, confusion matrices,
 coverage, covered accuracy, log-loss, multiclass Brier score, ECE, reliability
@@ -87,7 +105,7 @@ The fixed runtime threshold `0.55` is an application policy, not a claim of
 90% accuracy. OOF-derived thresholds are reported but do not control runtime.
 
 The optional strict-evaluation status additionally uses a manually frozen private
-test, broader class support and stricter metrics. It is deliberately separate
+validation set, broader class support and stricter metrics. It is deliberately separate
 from everyday activation and hidden from the normal UI.
 
 ## Artifact lifecycle

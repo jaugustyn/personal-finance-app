@@ -67,6 +67,25 @@ cannot silently become gold labels.
 Timestamped versions are also written for audit. Stable `latest_*` files are
 convenient inputs for the inspector and later analysis.
 
+## Feature comparison for the thesis
+
+```powershell
+uv run python scripts/compare_classification_features.py --from-db
+```
+
+This separate, read-only experiment requires a valid frozen evaluation set.
+It compares Logistic Regression and calibrated LinearSVC with both `baseline`
+and `feature_v2`, using identical training rows and validation membership.
+Each variant reports macro-F1, weighted-F1, confusion matrices, calibration,
+coverage at the fixed threshold and prediction latency. It neither registers
+nor activates models. Reports are written to
+`data/reports/feature_comparison_<timestamp>.json` and include data fingerprints
+and library versions without transaction text or identifiers.
+
+These are development validation results, not an independent final test.
+See the [thesis experiment protocol](thesis-experiment-protocol.md) for feature
+definitions, limitations and the planned final evaluation.
+
 ## Anomaly review
 
 Fill `is_relevant` in the private review file with `yes/no`, `1/0` or
@@ -104,6 +123,23 @@ prove model quality; metric interpretation remains a separate analysis step.
 - Forecasting requires complete monthly history and selects among baseline,
   damped-trend and seasonal candidates using horizon-matched walk-forward RMSE.
   A more complex model must improve the best baseline by at least 5%.
+  Eligible models share identical validation origins. Seasonal naive needs
+  24 training months plus enough history for all requested validation folds
+  (32 months for a three-month horizon and six folds). Ineligible models have
+  status `insufficient_history`. Any failed fold gives status `failed`, null
+  aggregate scores and exclusion from selection; successful models report
+  `n_folds`, `expected_folds`, `failed_folds` and `min_train_months`.
+  `horizon_metrics` reports RMSE, MAPE and fold counts for each step 1..h;
+  MAPE is null when all actual values at that step are zero. Nonnegative
+  spending constraints are identical in validation and final predictions.
+- Category histories end at the observation boundary of the supplied dataset,
+  with trailing months without category spending filled with zero. Runtime
+  uses transactions convertible to PLN, including income and transfers for
+  the boundary. It excludes the incomplete current month and future rows;
+  it does not extend stale imports to today or add leading zero history.
+  These boundaries describe available imports, not a guarantee that every
+  transaction in the period was imported. Keep imports complete when
+  interpreting zeros and forecast quality.
 - Anomaly detection is unsupervised and must be evaluated with manual top-k
   review.
 - Subscription output is cadence detection and requires manual validation.
