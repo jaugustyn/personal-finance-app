@@ -3,13 +3,23 @@
 from datetime import date
 from decimal import Decimal
 
+import pytest
+
 from finance.domain.models import CategoryDef, Transaction
+from finance.fixed_charges import service as fixed_charge_service
 from finance.fixed_charges.service import (
     create_fixed_charge,
     link_fixed_charge_transactions,
     list_fixed_charges,
     next_due_date,
 )
+
+
+@pytest.fixture(autouse=True)
+def reference_date(freeze_date) -> date:
+    today = date(2026, 7, 1)
+    freeze_date(today, fixed_charge_service)
+    return today
 
 
 def test_fixed_charge_crud_and_pause(client, db_session) -> None:
@@ -158,8 +168,16 @@ def _transaction(
     )
 
 
-def test_manual_transaction_link_updates_payment_status(client, db_session) -> None:
-    today = date.today()
+@pytest.mark.parametrize("today, expected_upcoming", [
+    (date(2026, 7, 1), 0),
+    (date(2026, 9, 27), 1),
+    (date(2024, 1, 31), 1),
+    (date(2025, 1, 31), 1),
+])
+def test_manual_transaction_link_updates_payment_status(
+    client, db_session, freeze_date, today, expected_upcoming,
+) -> None:
+    freeze_date(today, fixed_charge_service)
     db_session.add_all(
         [
             _transaction(
@@ -207,7 +225,7 @@ def test_manual_transaction_link_updates_payment_status(client, db_session) -> N
     assert row["current_paid_amount"] == 2050.0
     assert row["linked_transaction_count"] == 1
     assert row["last_payment_date"] == today.isoformat()
-    assert client.get("/fixed-charges").json()["summary"]["next_30_days_count"] == 0
+    assert client.get("/fixed-charges").json()["summary"]["next_30_days_count"] == expected_upcoming
 
     history = client.get(f"/fixed-charges/{charge['id']}/transactions").json()
     assert len(history["linked"]) == 1
@@ -222,8 +240,8 @@ def test_manual_transaction_link_updates_payment_status(client, db_session) -> N
     assert restored["linked_transaction_count"] == 0
 
 
-def test_create_manual_payment_is_linked_atomically(client, db_session) -> None:
-    today = date.today()
+def test_create_manual_payment_is_linked_atomically(client, db_session, reference_date) -> None:
+    today = reference_date
     charge = client.post(
         "/fixed-charges",
         json={
@@ -260,8 +278,8 @@ def test_create_manual_payment_is_linked_atomically(client, db_session) -> None:
     assert client.get("/fixed-charges").json()["items"][0]["payment_status"] == "paid"
 
 
-def test_invalid_manual_payment_does_not_leave_transaction(client, db_session) -> None:
-    today = date.today()
+def test_invalid_manual_payment_does_not_leave_transaction(client, db_session, reference_date) -> None:
+    today = reference_date
     charge = client.post(
         "/fixed-charges",
         json={
@@ -297,8 +315,9 @@ def test_invalid_manual_payment_does_not_leave_transaction(client, db_session) -
 def test_manual_payment_rejects_missing_or_archived_account(
     client,
     db_session,
+    reference_date,
 ) -> None:
-    today = date.today()
+    today = reference_date
     charge = client.post(
         "/fixed-charges",
         json={
@@ -339,8 +358,8 @@ def test_manual_payment_rejects_missing_or_archived_account(
     assert db_session.query(Transaction).count() == before
 
 
-def test_transaction_cannot_be_linked_to_two_fixed_charges(client, db_session) -> None:
-    today = date.today()
+def test_transaction_cannot_be_linked_to_two_fixed_charges(client, db_session, reference_date) -> None:
+    today = reference_date
     transaction = _transaction(
         dedup_hash="fixed-link-conflict",
         booking_date=today,

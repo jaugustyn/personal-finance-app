@@ -2,14 +2,21 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
+
+import pytest
 
 from finance.domain.models import MerchantAlias, Transaction
 from finance.ml.subscriptions import projection as subscription_projection
 from finance.ml.subscriptions import service as subscription_service
 from finance.ml.subscriptions.service import list_subscription_rows
 from finance.transactions.merchants import merchant_identity
+
+
+@pytest.fixture(autouse=True)
+def _reference_date(freeze_date) -> None:
+    freeze_date(date(2026, 7, 1), subscription_service)
 
 
 def _subscription_tx(month: int, merchant: str = "Spotify") -> Transaction:
@@ -195,7 +202,17 @@ def test_subscription_feedback_can_confirm_exact_subscription_key(client, db_ses
     assert confirmed["is_confirmed"] is True
 
 
-def test_manual_subscription_category_creates_confirmed_row(client, db_session) -> None:
+@pytest.mark.parametrize("stale_days, expected_status", [
+    (0, "needs_review"),
+    (59, "needs_review"),
+    (60, "paused_or_missing"),
+    (179, "paused_or_missing"),
+    (180, "probably_cancelled"),
+])
+def test_manual_subscription_category_creates_confirmed_row(
+    client, db_session, freeze_date, stale_days, expected_status,
+) -> None:
+    freeze_date(date(2026, 6, 10) + timedelta(days=stale_days), subscription_service)
     db_session.add(
         Transaction(
             booking_date=date(2026, 6, 10),
@@ -225,7 +242,7 @@ def test_manual_subscription_category_creates_confirmed_row(client, db_session) 
     assert rows[0]["source"] == "category"
     assert rows[0]["is_confirmed"] is True
     assert rows[0]["user_decision"] == "confirmed"
-    assert rows[0]["status"] == "needs_review"
+    assert rows[0]["status"] == expected_status
 
 
 def test_rejected_subscription_is_removed_from_list(client, db_session) -> None:
@@ -481,13 +498,7 @@ def test_confirmed_subscription_is_not_hidden_by_min_confidence(client, db_sessi
     assert after.json()[0]["is_confirmed"] is True
 
 
-def test_subscription_price_increase_status(client, db_session, monkeypatch) -> None:
-    class _FixedDate(date):
-        @classmethod
-        def today(cls) -> date:
-            return cls(2026, 7, 1)
-
-    monkeypatch.setattr(subscription_service, "date", _FixedDate)
+def test_subscription_price_increase_status(client, db_session) -> None:
     for month, amount in [(3, "-49.99"), (4, "-49.99"), (5, "-60.00"), (6, "-60.00")]:
         db_session.add(
             Transaction(
@@ -517,13 +528,7 @@ def test_subscription_price_increase_status(client, db_session, monkeypatch) -> 
     assert row["price_change_pct"] is not None
 
 
-def test_subscription_overview_returns_kpis(client, db_session, monkeypatch) -> None:
-    class _FixedDate(date):
-        @classmethod
-        def today(cls) -> date:
-            return cls(2026, 7, 1)
-
-    monkeypatch.setattr(subscription_service, "date", _FixedDate)
+def test_subscription_overview_returns_kpis(client, db_session) -> None:
     for month in range(3, 7):
         db_session.add(_subscription_tx(month))
     db_session.commit()
@@ -542,12 +547,6 @@ def test_subscription_overview_skips_unused_row_details(
     db_session,
     monkeypatch,
 ) -> None:
-    class _FixedDate(date):
-        @classmethod
-        def today(cls) -> date:
-            return cls(2026, 7, 1)
-
-    monkeypatch.setattr(subscription_service, "date", _FixedDate)
     for month in range(3, 7):
         db_session.add(_subscription_tx(month))
     db_session.commit()

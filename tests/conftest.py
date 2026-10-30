@@ -1,9 +1,7 @@
 """Shared pytest fixtures.
 
-Provides a SQLite in-memory database with FastAPI's ``get_session`` dependency
-overridden, so router tests don't need a running Postgres. Endpoints relying
-on postgres-specific features (``ON CONFLICT``) are tested separately and
-skipped when no real Postgres is reachable.
+Provides an isolated SQLite database for requests and background tasks.
+PostgreSQL-specific behavior is covered by the separate integration suite.
 """
 from __future__ import annotations
 
@@ -19,6 +17,7 @@ os.environ["API_DOCS_ENABLED"] = "true"
 os.environ["DATABASE_URL"] = "sqlite+pysqlite:///:memory:"
 
 from collections.abc import Iterator
+from datetime import date
 
 import pytest
 from fastapi.testclient import TestClient
@@ -33,6 +32,21 @@ from finance.domain.enums import AccountKind, BankSource
 from finance.domain.models import Account, Base, Import, Transaction
 
 DEFAULT_TEST_ACCOUNT_ID = 1
+
+
+@pytest.fixture
+def freeze_date(monkeypatch):
+    """Freeze date.today only in the explicitly supplied domain modules."""
+    def freeze(value: date, *modules) -> None:
+        class FrozenDate(date):
+            @classmethod
+            def today(cls) -> date:
+                return value
+
+        for module in modules:
+            monkeypatch.setattr(module, "date", FrozenDate)
+
+    return freeze
 
 
 def _assign_default_test_account(
@@ -74,34 +88,37 @@ def db_engine():
         engine.dispose()
 
 
-@pytest.fixture(scope="function")
-def db_session(db_engine) -> Iterator[Session]:
-    SessionMaker = sessionmaker(bind=db_engine, autoflush=False, autocommit=False, future=True)
-    event.listen(SessionMaker, "before_flush", _assign_default_test_account)
-    session = SessionMaker()
+@pytest.fixture
+def session_factory(db_engine):
+    factory = sessionmaker(bind=db_engine, autoflush=False)
+    event.listen(factory, "before_flush", _assign_default_test_account)
     try:
-        yield session
+        yield factory
     finally:
-        session.close()
-        event.remove(SessionMaker, "before_flush", _assign_default_test_account)
+        event.remove(factory, "before_flush", _assign_default_test_account)
 
 
-@pytest.fixture(scope="function")
-def client(db_engine) -> Iterator[TestClient]:
-    """TestClient with ``get_session`` pointing at the in-memory SQLite."""
-    SessionMaker = sessionmaker(bind=db_engine, autoflush=False, autocommit=False, future=True)
-    event.listen(SessionMaker, "before_flush", _assign_default_test_account)
+@pytest.fixture
+def db_session(session_factory) -> Iterator[Session]:
+    with session_factory() as session:
+        yield session
+
+
+@pytest.fixture
+def client(session_factory, monkeypatch) -> Iterator[TestClient]:
+    """Keep request sessions and background jobs in the same test database."""
+    from apps.api.routers import imports, ml
+
+    monkeypatch.setattr(imports, "SessionLocal", session_factory)
+    monkeypatch.setattr(ml, "SessionLocal", session_factory)
 
     def _override_session() -> Iterator[Session]:
-        s = SessionMaker()
-        try:
-            yield s
-        finally:
-            s.close()
+        with session_factory() as session:
+            yield session
 
     app.dependency_overrides[get_session] = _override_session
     try:
-        yield TestClient(app, raise_server_exceptions=False)
+        with TestClient(app, raise_server_exceptions=False) as test_client:
+            yield test_client
     finally:
         app.dependency_overrides.pop(get_session, None)
-        event.remove(SessionMaker, "before_flush", _assign_default_test_account)
