@@ -6,14 +6,18 @@ Parser orchestration is covered separately by ingestion use-case tests.
 """
 import io
 import json
+from datetime import date
+from decimal import Decimal
 
 import pytest
 
 from finance.domain.dto import ImportSummary
 from finance.domain.enums import BankSource
+from finance.domain.models import Import, Transaction
 from finance.ingestion import ParseError
 from finance.ingestion.types import ImportQualityReport
 from finance.ingestion.use_cases import ImportUploadResult, select_upload_parser
+from finance.profile.service import create_rule
 
 
 @pytest.fixture
@@ -103,6 +107,30 @@ def test_upload_with_skip_categories(client, _patch_ingest) -> None:
     assert r.status_code == 200
     assert len(_patch_ingest) == 1
     assert _patch_ingest[0]["skip_categories"] is True
+
+
+def test_upload_background_suggestions_use_import_database(client, db_session, _patch_ingest):
+    db_session.add(Import(id=1, source="pekao", filename="synthetic.csv"))
+    tx = Transaction(
+        import_id=1, booking_date=date(2026, 1, 1), amount=Decimal("-20"),
+        currency="PLN", direction="debit", merchant="Synthetic bakery", title="Purchase",
+        source="pekao", transaction_type="expense", dedup_hash="background-import",
+    )
+    db_session.add(tx)
+    create_rule(db_session, pattern="Synthetic bakery", category="food")
+    db_session.commit()
+
+    response = client.post(
+        "/imports",
+        files={"file": ("pekao.csv", b"header\nrow\n", "text/csv")},
+        data={"source": "pekao", "account_id": "1"},
+    )
+
+    assert response.status_code == 200
+    db_session.refresh(tx)
+    assert tx.category is None
+    assert tx.category_predicted == "food"
+    assert tx.category_predicted_source == "rule"
 
 
 def test_upload_with_require_existing_fx_mode(client, _patch_ingest) -> None:

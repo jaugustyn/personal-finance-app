@@ -268,15 +268,6 @@ def load_rule_matcher(session: Session) -> PersonalRuleMatcher:
     return PersonalRuleMatcher(tuple(list_rules(session, active_only=True)))
 
 
-def find_matching_rule(
-    session: Session,
-    *,
-    merchant: str | None,
-    title: str | None,
-) -> PersonalRule | None:
-    return load_rule_matcher(session).find(merchant=merchant, title=title)
-
-
 def effect_for_transaction(
     session: Session,
     *,

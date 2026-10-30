@@ -37,7 +37,7 @@ from finance.ml.classification.policy import (
     recommended_action_for_decision,
 )
 from finance.ml.feedback import EVENT_AUTO_RULE_CATEGORY, record_transaction_feedback
-from finance.profile.service import RULE_MODE_AUTO, effect_for_transaction
+from finance.profile.service import RULE_MODE_AUTO, load_rule_matcher
 from finance.transactions.category_provenance import (
     bank_mapping_ref,
     model_version_ref,
@@ -336,8 +336,9 @@ def reclassify_unlabelled(
         return 0
     updated = 0
     registered_artifact: dict[str, Any] | None = None
+    rule_matcher = load_rule_matcher(session)
     for r in rows:
-        personal = effect_for_transaction(session, merchant=r.merchant, title=r.title)
+        personal = rule_matcher.effect(merchant=r.merchant, title=r.title)
         effective_type = effective_transaction_type(r)
         category_candidate = is_expense_category_candidate(
             r.direction,

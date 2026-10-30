@@ -7,8 +7,9 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
+from sqlalchemy import event, select
 
-from finance.domain.models import MlModelVersion, Transaction
+from finance.domain.models import MlFeedbackEvent, MlModelVersion, Transaction
 from finance.ml.classification import predict as predict_mod
 from finance.ml.classification.artifacts import artifact_sha256, build_model_artifact
 from finance.ml.classification.policy import DEFAULT_POLICY
@@ -254,3 +255,79 @@ def test_personal_rule_runs_before_model(db_session, monkeypatch) -> None:
     assert tx.category is None
     assert tx.category_predicted == "food"
     assert tx.category_predicted_source == "rule"
+
+
+@pytest.mark.parametrize("count", [1, 12, 100])
+@pytest.mark.parametrize("mode", ["suggest_only", "auto_apply"])
+def test_batch_loads_rules_once_and_preserves_priority_and_provenance(
+    db_session, db_engine, monkeypatch, count, mode,
+) -> None:
+    create_rule(db_session, pattern="Lidl", category="other", priority=100)
+    preferred = create_rule(db_session, pattern="Lidl", category="food", priority=10, mode=mode)
+    preferred_id = preferred.id
+    create_rule(db_session, pattern="Lidl", category="transport", priority=1, active=False)
+    db_session.add_all([
+        Transaction(
+            booking_date=date(2026, 1, 10), amount=Decimal("-42"), currency="PLN",
+            direction="debit", merchant="Lidl", title="Synthetic purchase",
+            transaction_type="expense", raw_category="Transport",
+            source="pekao", dedup_hash=f"batch-rules-{index}",
+        )
+        for index in range(count)
+    ])
+    db_session.commit()
+    monkeypatch.setattr(
+        predict_mod, "require_registered_active_artifact",
+        lambda _session: (_ for _ in ()).throw(AssertionError("model should not load")),
+    )
+    rule_queries = []
+
+    def count_queries(_connection, _cursor, statement, _parameters, _context, _many):
+        if statement.lstrip().upper().startswith("SELECT") and "FROM personal_rules" in statement:
+            rule_queries.append(statement)
+
+    event.listen(db_engine, "before_cursor_execute", count_queries)
+    try:
+        assert predict_mod.reclassify_unlabelled(db_session) == count
+    finally:
+        event.remove(db_engine, "before_cursor_execute", count_queries)
+
+    assert len(rule_queries) == 1
+    for tx in db_session.scalars(select(Transaction)):
+        assert tx.category_confirmed_at is None
+        if mode == "auto_apply":
+            assert tx.category == "food"
+            assert tx.category_confirmation_method == "personal_rule_auto"
+            assert tx.category_origin_ref == f"personal_rule:{preferred_id}"
+            assert tx.category_predicted is None
+        else:
+            assert tx.category is None
+            assert tx.category_confirmation_method is None
+            assert tx.category_predicted == "food"
+            assert tx.category_predicted_ref == f"personal_rule:{preferred_id}"
+    events = list(db_session.scalars(select(MlFeedbackEvent)))
+    assert len(events) == (count if mode == "auto_apply" else 0)
+
+
+def test_batch_observes_rule_changes_on_next_call(db_session, monkeypatch) -> None:
+    rule = create_rule(db_session, pattern="Lidl", category="food")
+    tx = Transaction(
+        booking_date=date(2026, 1, 10), amount=Decimal("-42"), currency="PLN",
+        direction="debit", merchant="Lidl", title="Synthetic purchase",
+        transaction_type="expense", source="pekao", dedup_hash="batch-rule-refresh",
+    )
+    db_session.add(tx)
+    db_session.commit()
+    monkeypatch.setattr(
+        predict_mod, "require_registered_active_artifact",
+        lambda _session: (_ for _ in ()).throw(AssertionError("model should not load")),
+    )
+    assert predict_mod.reclassify_unlabelled(db_session) == 1
+    db_session.refresh(tx)
+    assert tx.category_predicted == "food"
+
+    rule.category = "transport"
+    db_session.commit()
+    assert predict_mod.reclassify_unlabelled(db_session) == 1
+    db_session.refresh(tx)
+    assert tx.category_predicted == "transport"
