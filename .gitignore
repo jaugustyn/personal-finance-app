@@ -38,6 +38,9 @@ data/**
 .ipynb_checkpoints/
 notebooks/*.ipynb
 
+# Local notes, sources and generated files
+/notes/
+
 # Docker
 postgres-data/
 ollama-data/
